@@ -1,0 +1,106 @@
+contract_id: GateInput.v1
+version: 1
+date: '2026-02-22'
+purpose: "Deterministic input contract for Rulebook AG0\u2013AG6 evaluation (action\
+  \ guardrails)."
+required_fields:
+- name: env
+  type: Environment
+  notes: local/dev/stage/prod
+- name: cluster_id
+  type: string
+  notes: Canonical identity; derived as cluster_id := cluster_name (exact).
+- name: stream_id
+  type: string
+  notes: Logical end-to-end pipeline grouping key.
+- name: criticality_tier
+  type: CriticalityTier
+  notes: Used for paging caps (TIER_0 only in prod).
+- name: topic
+  type: string
+  notes: Topic that triggered the anomaly key.
+- name: topic_role
+  type: string
+  notes: e.g., SOURCE_TOPIC / SHARED_TOPIC / SINK_TOPIC (must match registry semantics).
+- name: anomaly_family
+  type: string
+  notes: e.g., CONSUMER_LAG / VOLUME_DROP / THROUGHPUT_CONSTRAINED_PROXY.
+- name: proposed_action
+  type: Action
+  notes: Diagnosis result before gates apply.
+- name: diagnosis_confidence
+  type: number
+  notes: "0.0\u20131.0; deterministic scalar from diagnosis stage."
+- name: sustained
+  type: boolean
+  notes: True if anomaly sustained for sustained_intervals_required windows.
+- name: findings
+  type: array<Finding>
+  notes: Findings that justify the diagnosis and declare evidence requirements.
+- name: evidence_status_map
+  type: map<string,EvidenceStatus>
+  notes: Evidence primitive -> status (PRESENT/UNKNOWN/ABSENT/STALE).
+- name: action_fingerprint
+  type: string
+  notes: Identity-only fingerprint (no timestamps/metric values).
+optional_fields:
+- name: consumer_group
+  type: string
+  notes: Required for lag-based anomalies; omit/empty otherwise.
+- name: partition_count_observed
+  type: integer
+  notes: For confidence downgrade when partition coverage changes.
+- name: peak
+  type: boolean
+  notes: If computed; used for postmortem selector (AG6).
+- name: case_id
+  type: string
+  notes: Stable case identifier (not required for gating but useful for audit).
+- name: decision_basis
+  type: object
+  notes: 'Optional deterministic linkage: e.g., primary_finding_id, finding_ids[].'
+finding_contract:
+  required_fields:
+  - name: finding_id
+    type: string
+  - name: name
+    type: string
+  - name: is_anomalous
+    type: boolean
+  - name: evidence_required
+    type: array<string>
+    notes: Evidence primitives required for this finding; drives AG2.
+  optional_fields:
+  - name: is_primary
+    type: boolean
+    notes: If present, AG2 should prefer primary anomalous finding for evidence requirements.
+  - name: severity
+    type: string
+  - name: reason_codes
+    type: array<string>
+evidence_status_semantics:
+  PRESENT: Evidence was collected and meets freshness/validity criteria.
+  UNKNOWN: Metric/telemetry series missing for the expected identity labels OR collection
+    failed in a way that cannot be distinguished from 'no data'. Never interpret as
+    0.
+  ABSENT: Evidence is explicitly known to not exist / not applicable (rare; use sparingly).
+  STALE: Evidence exists but is older than allowed staleness threshold for the case
+    window.
+mapping_notes:
+- 'env: from topology instance/env (not from metric job labels if they disagree).'
+- 'cluster_id: deterministic cluster_id := cluster_name (exact string).'
+- 'stream_id: from topology registry lookup using anomaly key (env, cluster_id, topic/group)
+  -> stream_id.'
+- 'topic_role: from topology instance topic_index scoped to (env, cluster_id).'
+- 'findings: MUST be structured output from diagnosis stage; do not derive from free-text.'
+- 'evidence_status_map: produced by Evidence Builder; missing Prometheus series MUST
+  emit UNKNOWN.'
+- 'action_fingerprint: include env/cluster_id/stream_id/topic_role/(topic|group)/anomaly_family/tier;
+  exclude timestamps and metric values.'
+validation_invariants:
+- CaseFile must be written to object storage before publishing Kafka header (Invariant
+  A).
+- Outbox ensures publish-after-crash semantics (Invariant B2).
+- partition is aggregation-only; never identity.
+- 'Ignore labels for identity: instance, job, client_id, consumer_id, member_host,
+  unknown fields.'

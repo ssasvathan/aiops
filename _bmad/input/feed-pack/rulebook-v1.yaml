@@ -1,0 +1,238 @@
+# Rulebook v1 — Action Guardrails (AG0–AG6)
+# Freeze target for Phase 0 + Phase 1A triage-first MVP.
+#
+# Scope:
+# - Guardrails ONLY (deterministic safety + operability caps).
+# - NOT a diagnosis case library (that lives in diagnosis-policy.yaml).
+#
+# Non-negotiables reflected here:
+# - Prometheus truth; missing series => EvidenceStatus=UNKNOWN (never 0).
+# - PAGE only for PROD + TIER_0.
+# - Deny PAGE for SOURCE_TOPIC (cap to TICKET/NOTIFY).
+# - Evidence requirements declared per Finding (finding.evidence_required[]). No central required_evidence list.
+
+rulebook_id: rulebook.v1
+version: 1
+evaluation_interval_minutes: 5
+sustained_intervals_required: 5
+
+enums:
+  Environment: [local, dev, stage, prod]
+  CriticalityTier: [TIER_0, TIER_1, TIER_2, UNKNOWN]
+  Action: [PAGE, TICKET, NOTIFY, OBSERVE, SUPPRESS]
+  EvidenceStatus: [PRESENT, UNKNOWN, ABSENT, STALE]
+
+ordering:
+  # Higher to lower urgency (used by cap logic).
+  action_severity_desc: [PAGE, TICKET, NOTIFY, OBSERVE, SUPPRESS]
+
+defaults:
+  # If Prometheus series is missing for an evidence key, treat as UNKNOWN (never as 0).
+  missing_series_policy: UNKNOWN_NOT_ZERO
+
+  # For required evidence: only PRESENT satisfies.
+  required_evidence_policy: PRESENT_ONLY
+
+  # If a rule needs confidence and it's absent, treat as UNKNOWN and apply caps.
+  missing_confidence_policy: DOWNGRADE
+
+  # If sustained can't be computed (missing intervals), treat as UNKNOWN and apply caps.
+  missing_sustained_policy: DOWNGRADE
+
+caps:
+  # Hard caps by environment (even if diagnosis says PAGE).
+  max_action_by_env:
+    local: OBSERVE
+    dev:   OBSERVE
+    stage: NOTIFY
+    prod:  PAGE
+
+  # Hard cap by tier in PROD.
+  max_action_by_tier_in_prod:
+    TIER_0: PAGE
+    TIER_1: TICKET
+    TIER_2: NOTIFY
+    UNKNOWN: NOTIFY
+
+  # Hard deny paging for certain topic roles.
+  paging_denied_topic_roles: [SOURCE_TOPIC]
+
+inputs_contract:
+  # Minimal fields the gating engine must have (any missing => AG0 triggers).
+  required_fields:
+    - env
+    - cluster_id
+    - stream_id
+    - criticality_tier
+    - topic
+    - topic_role
+    - anomaly_family
+    - proposed_action
+    - diagnosis_confidence
+    - sustained
+    - findings
+    - evidence_status_map
+    - action_fingerprint
+
+  # Findings MUST declare their own evidence requirements (no global list).
+  finding_contract:
+    required_fields: [finding_id, name, is_anomalous, evidence_required]
+    evidence_required_field: evidence_required  # list[str]
+    # Example evidence keys a finding may reference:
+    # - prometheus:kafka_consumergroup_group_lag
+    # - prometheus:kafka_server_brokertopicmetrics_messagesinpersec
+    # - peak_profile:is_peak_window
+    # - topology:topic_role
+    # - sink:SINK_CONNECTIVITY (Phase 3+)
+
+gates:
+  - id: AG0
+    name: "Schema & invariants"
+    intent: "Never page/ticket on malformed or incomplete decision inputs."
+    applies_when: "always"
+    checks:
+      - check_id: AG0_REQUIRED_FIELDS_PRESENT
+        type: required_fields_present
+        fields_ref: inputs_contract.required_fields
+    effect:
+      on_fail:
+        cap_action_to: OBSERVE
+        set_reason_codes: [AG0_INVALID_INPUT]
+        set_reason_text:
+          - "Missing/invalid required fields for gating; forcing OBSERVE."
+        force_postmortem_mode: NONE
+
+  - id: AG1
+    name: "Environment + tier caps"
+    intent: "PAGE is only allowed in PROD + TIER_0."
+    applies_when: "always"
+    checks:
+      - check_id: AG1_ENV_CAP
+        type: cap_by_env
+        max_action_by_env_ref: caps.max_action_by_env
+      - check_id: AG1_TIER_CAP_PROD
+        type: cap_by_tier_in_prod
+        max_action_by_tier_ref: caps.max_action_by_tier_in_prod
+    effect:
+      on_cap_applied:
+        set_reason_codes: [AG1_ENV_OR_TIER_CAP]
+        set_reason_text:
+          - "Action capped by environment and/or criticality tier policy."
+
+  - id: AG2
+    name: "Evidence sufficiency (Finding-declared)"
+    intent: "If required evidence is UNKNOWN/ABSENT/STALE, downgrade (never assume 0)."
+    applies_when:
+      any:
+        - "proposed_action in [PAGE, TICKET]"
+        - "diagnosis_confidence is UNKNOWN"
+        - "sustained is UNKNOWN"
+    checks:
+      - check_id: AG2_REQUIRED_EVIDENCE_PRESENT
+        type: required_evidence_present
+        # Required evidence is aggregated ONLY from the findings that are both anomalous AND referenced for this case.
+        # Selection rule must be deterministic (not LLM narrative).
+        findings_selector:
+          mode: "anomalous_only"
+          # if your pipeline marks decision-driving findings, set this to true and populate finding.is_primary.
+          prefer_primary_flag: true
+          primary_flag_field: is_primary
+        required_policy_ref: defaults.required_evidence_policy
+        evidence_status_map_ref: evidence_status_map
+    effect:
+      on_fail:
+        cap_action_to: NOTIFY
+        set_reason_codes: [AG2_INSUFFICIENT_EVIDENCE]
+        set_reason_text:
+          - "One or more required evidence keys are not PRESENT (UNKNOWN/ABSENT/STALE); downgrading action."
+        confidence_floor: 0.6
+
+  - id: AG3
+    name: "Paging denied for SOURCE_TOPIC"
+    intent: "Never PAGE on SOURCE_TOPIC anomalies (routing noise + stewardship domain)."
+    applies_when:
+      all:
+        - "topic_role in caps.paging_denied_topic_roles"
+        - "proposed_action == PAGE"
+    checks:
+      - check_id: AG3_DENY_PAGING_ON_SOURCE
+        type: always_fail  # applies_when already scoped; this is a policy enforcement gate
+    effect:
+      on_fail:
+        cap_action_to: TICKET
+        set_reason_codes: [AG3_PAGING_DENIED_SOURCE_TOPIC]
+        set_reason_text:
+          - "Paging denied for SOURCE_TOPIC; capped to TICKET."
+
+  - id: AG4
+    name: "Confidence + sustained gating"
+    intent: "Prevent high-urgency actions when confidence/sustained are weak or UNKNOWN."
+    applies_when:
+      any:
+        - "proposed_action in [PAGE, TICKET]"
+        - "diagnosis_confidence < 0.6"
+        - "sustained != true"
+    checks:
+      - check_id: AG4_CONFIDENCE_MIN
+        type: min_value
+        field: diagnosis_confidence
+        min: 0.6
+      - check_id: AG4_SUSTAINED_REQUIRED_FOR_HIGH_URGENCY
+        type: equals
+        field: sustained
+        value: true
+    effect:
+      on_fail:
+        cap_action_to: OBSERVE
+        set_reason_codes: [AG4_LOW_CONFIDENCE_OR_NOT_SUSTAINED]
+        set_reason_text:
+          - "High-urgency requires sustained=true and confidence>=0.6; capped to OBSERVE."
+
+  - id: AG5
+    name: "Storm control (dedupe)"
+    intent: "Prevent repeated paging/ticket storms on the same fingerprint."
+    applies_when:
+      any:
+        - "proposed_action in [PAGE, TICKET, NOTIFY]"
+    checks:
+      - check_id: AG5_DEDUPE
+        type: dedupe_check
+        key_field: action_fingerprint
+        # Dedupe store is Redis (TTL varies by env; configured elsewhere).
+        dedupe_store: redis
+        on_lookup_error: "DEGRADE_AND_ALLOW_NOTIFY"  # do not PAGE if dedupe is broken
+    effect:
+      on_duplicate:
+        cap_action_to: OBSERVE
+        set_reason_codes: [AG5_DUPLICATE_SUPPRESSED]
+        set_reason_text:
+          - "Duplicate action_fingerprint seen within TTL; suppressing to OBSERVE."
+      on_store_error:
+        cap_action_to: NOTIFY
+        set_reason_codes: [AG5_DEDUPE_STORE_ERROR]
+        set_reason_text:
+          - "Dedupe store unavailable; preventing PAGE/TICKET and allowing NOTIFY only."
+
+  - id: AG6
+    name: "Postmortem policy selector"
+    intent: "Selectively require postmortems (SOFT in Phase 1A; HARD in Phase 1B when SN linkage exists)."
+    applies_when:
+      all:
+        - "env == prod"
+        - "criticality_tier == TIER_0"
+    checks:
+      - check_id: AG6_PM_PEAK_SUSTAINED
+        type: all_true
+        fields:
+          - peak_context.is_peak_window
+          - sustained
+    effect:
+      on_pass:
+        set_postmortem_required: true
+        set_postmortem_reason_codes: [PM_PEAK_SUSTAINED]
+        # Mode is selected by deployment phase flag (Phase 1A vs 1B) outside this rulebook.
+        # This keeps Rulebook stable while allowing phased rollout.
+        set_reason_text:
+          - "Peak + sustained on PROD TIER_0 => postmortem required (mode depends on phase)."
+      on_fail:
+        set_postmortem_required: false

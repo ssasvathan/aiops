@@ -1,0 +1,158 @@
+# Topology Registry (instances-based) + ownership routing map
+# Cluster identities are canonicalized as: cluster_id := Prometheus cluster_name (exact string)
+# Populated clusters for prod:
+# - Business_Essential
+# - Business_Critical
+#
+# NOTE: This file is derived from topology-registry.instances-v2.ownership-v1.yaml and has placeholders filled.
+version: 2
+routing_directory:
+- routing_key: OWN::Streaming::KafkaPlatform::Ops
+  owning_team_id: kafka-platform-ops
+  owning_team_name: Kafka Platform Ops
+  support_channel: '#platform-kafka-ops'
+  escalation_policy_ref: null
+  service_now_assignment_group: null
+ownership_map:
+  consumer_group_owners: []
+  topic_owners:
+  - match:
+      env: prod
+      cluster_id: Business_Essential
+      topic: payment-p-events
+    routing_key: OWN::Streaming::KafkaPlatform::Ops
+    source: REGISTRY
+    confidence: 0.7
+    reason_codes:
+    - TOPIC_OWNER_CONFIGURED
+  - match:
+      env: prod
+      cluster_id: Business_Critical
+      topic: payment-p-events
+    routing_key: OWN::Streaming::KafkaPlatform::Ops
+    source: REGISTRY
+    confidence: 0.7
+    reason_codes:
+    - TOPIC_OWNER_CONFIGURED
+  stream_default_owner:
+  - match:
+      stream_id: kafka_ingestion_shared_p
+      env: prod
+      cluster_id: Business_Essential
+    routing_key: OWN::Streaming::KafkaPlatform::Ops
+    source: REGISTRY
+    confidence: 0.6
+    reason_codes:
+    - STREAM_DEFAULT_OWNER_CONFIGURED
+  - match:
+      stream_id: kafka_ingestion_shared_p
+      env: prod
+      cluster_id: Business_Critical
+    routing_key: OWN::Streaming::KafkaPlatform::Ops
+    source: REGISTRY
+    confidence: 0.6
+    reason_codes:
+    - STREAM_DEFAULT_OWNER_CONFIGURED
+streams:
+- stream_id: kafka_ingestion_shared_p
+  description: Shared Kafka ingestion pipeline for Payments-domain Kafka sources
+  criticality_tier: TIER_0
+  owners:
+    platform_team: streaming-platform-ops
+  instances:
+  - env: prod
+    cluster_id: Business_Essential
+    topics:
+      source_stream: e2-p-sourcestream
+      standardizer: e2-p-standerdize
+      audit_raw: e2-p-raw
+    shared_components:
+      nifi_flow_id: nifi-edl-writer-main
+    sources:
+    - source_system: Payments
+      source_topic: payment-p-events
+      steward_team: payments-data-stewards
+      criticality_tier: TIER_0
+    sinks:
+    - sink_id: edl_payments_events_v1
+      type: hdfs_path
+      hdfs_path: /edl/source/payments/p/events/v1
+      hive_external_view: edl_payments_p_events_v1
+      ranger_access_groups:
+      - finance_p_analyst
+      - fraud_p_service
+      domains:
+      - Finance
+      - Fraud
+    peak_window_policy:
+      mode: computed
+      timezone: America/Toronto
+      metric: ingress_msgs_per_min
+      bucket_minutes: 15
+      peak_threshold:
+        type: percentile
+        value: 75
+      min_window_minutes: 60
+      recompute_frequency: weekly
+    topic_index:
+      payment-p-events:
+        role: SOURCE_TOPIC
+        stream_id: kafka_ingestion_shared_p
+        source_system: Payments
+      e2-p-sourcestream:
+        role: KAFKA_SOURCE_STREAM
+        stream_id: kafka_ingestion_shared_p
+      e2-p-standerdize:
+        role: STANDARDIZER_SHARED
+        stream_id: kafka_ingestion_shared_p
+      e2-p-raw:
+        role: AUDIT_RAW_SHARED
+        stream_id: kafka_ingestion_shared_p
+  - env: prod
+    cluster_id: Business_Critical
+    topics:
+      source_stream: e2-p-sourcestream
+      standardizer: e2-p-standerdize
+      audit_raw: e2-p-raw
+    shared_components:
+      nifi_flow_id: nifi-edl-writer-main
+    sources:
+    - source_system: Payments
+      source_topic: payment-p-events
+      steward_team: payments-data-stewards
+      criticality_tier: TIER_0
+    sinks:
+    - sink_id: edl_payments_events_v1
+      type: hdfs_path
+      hdfs_path: /edl/source/payments/p/events/v1
+      hive_external_view: edl_payments_p_events_v1
+      ranger_access_groups:
+      - finance_p_analyst
+      - fraud_p_service
+      domains:
+      - Finance
+      - Fraud
+    peak_window_policy:
+      mode: computed
+      timezone: America/Toronto
+      metric: ingress_msgs_per_min
+      bucket_minutes: 15
+      peak_threshold:
+        type: percentile
+        value: 75
+      min_window_minutes: 60
+      recompute_frequency: weekly
+    topic_index:
+      payment-p-events:
+        role: SOURCE_TOPIC
+        stream_id: kafka_ingestion_shared_p
+        source_system: Payments
+      e2-p-sourcestream:
+        role: KAFKA_SOURCE_STREAM
+        stream_id: kafka_ingestion_shared_p
+      e2-p-standerdize:
+        role: STANDARDIZER_SHARED
+        stream_id: kafka_ingestion_shared_p
+      e2-p-raw:
+        role: AUDIT_RAW_SHARED
+        stream_id: kafka_ingestion_shared_p

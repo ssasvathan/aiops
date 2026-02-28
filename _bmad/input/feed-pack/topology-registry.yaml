@@ -1,0 +1,64 @@
+version: 1
+
+streams:
+  - stream_id: kafka_ingestion_shared_p
+    env: prod
+    description: "Shared Kafka ingestion pipeline for Payments-domain Kafka sources"
+    owners:
+      platform_team: streaming-platform-ops
+    criticality_tier: TIER_0
+
+    topics:
+      source_stream: e2-p-sourcestream
+      standardizer: e2-p-standerdize
+      audit_raw: e2-p-raw
+
+    shared_components:
+      nifi_flow_id: nifi-edl-writer-main
+
+    sinks:
+      - sink_id: edl_payments_events_v1
+        type: hdfs_path
+        hdfs_path: /edl/source/payments/p/events/v1
+        hive_external_view: edl_payments_p_events_v1
+        ranger_access_groups:
+          - finance_p_analyst
+          - fraud_p_service
+        domains:
+          - Finance
+          - Fraud
+
+    sources:
+      - source_system: Payments
+        source_topic: payment-p-events
+        steward_team: payments-data-stewards
+        criticality_tier: TIER_0
+
+    peak_window_policy:
+      mode: computed
+      timezone: America/Toronto
+      metric: ingress_msgs_per_min
+      bucket_minutes: 15
+      peak_threshold:
+        type: percentile
+        value: 75
+      min_window_minutes: 60
+      recompute_frequency: weekly
+
+topic_index:
+  payment-p-events:
+    role: SOURCE_TOPIC
+    stream_id: kafka_ingestion_shared_p
+    source_system: Payments
+
+  e2-p-sourcestream:
+    role: KAFKA_SOURCE_STREAM
+    stream_id: kafka_ingestion_shared_p
+
+  e2-p-standerdize:
+    role: STANDARDIZER_SHARED
+    stream_id: kafka_ingestion_shared_p
+
+  e2-p-raw:
+    role: AUDIT_RAW_SHARED
+    stream_id: kafka_ingestion_shared_p

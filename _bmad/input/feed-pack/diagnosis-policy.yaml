@@ -1,0 +1,91 @@
+version: 1
+evaluation_interval_minutes: 5
+sustained_intervals: 5
+
+fault_domains:
+  UPSTREAM_PRODUCER: "Source system producer app / upstream API"
+  PLATFORM_PIPELINE: "Shared ingestion pipeline: source-stream/standardizer/NiFi/EDL landing"
+  DOWNSTREAM_CONSUMER: "Consumer group apps reading from Kafka"
+  KAFKA_INFRA: "Kafka brokers / partitions / networking"
+  UNKNOWN: "Insufficient evidence"
+
+rules:
+  - id: D1
+    name: "Lag buildup + consumer saturation => likely downstream consumer bottleneck"
+    applies_to: ["LAG_BUILDUP", "CONSUMER_SATURATION"]
+    evidence:
+      required:
+        - "consumer_lag.is_anomalous == true"
+        - "consumer_record_rate.is_low_or_flat == true OR consumer_poll_rate.is_low_or_flat == true"
+      supports:
+        - "consumer_rebalance_rate.is_high == true"
+      contradicts:
+        - "produce_retry_rate.is_high == true"
+    decision:
+      verdict: "LIKELY_REAL"
+      fault_domain: "DOWNSTREAM_CONSUMER"
+      urgency: "PAGE"
+
+  - id: D2
+    name: "Volume drop + upstream errors => likely upstream producer issue"
+    applies_to: ["VOLUME_DROP_SEASONAL"]
+    evidence:
+      required:
+        - "message_volume.is_anomalous == true AND direction == DOWN"
+      supports:
+        - "error_rate.is_high == true OR produce_retry_rate.is_high == true"
+    decision:
+      verdict: "LIKELY_REAL"
+      fault_domain: "UPSTREAM_PRODUCER"
+      urgency: "NOTIFY"
+
+  - id: D3
+    name: "Low confidence + not sustained => likely false positive"
+    applies_to: ["*"]
+    evidence:
+      required:
+        - "signal_agent_confidence < 0.6"
+        - "sustained == false"
+    decision:
+      verdict: "LIKELY_FALSE_POSITIVE"
+      fault_domain: "UNKNOWN"
+      urgency: "SUPPRESS"
+
+  - id: D4
+    name: "Sustained shared stream anomaly during peak => platform pipeline incident"
+    applies_to: ["LAG_BUILDUP", "CONSUMER_SATURATION"]
+    evidence:
+      required:
+        - "topic_role == KAFKA_SOURCE_STREAM"
+        - "sustained == true"
+        - "peak_context.is_peak_window == true"
+    decision:
+      verdict: "LIKELY_REAL"
+      fault_domain: "PLATFORM_PIPELINE"
+      urgency: "PAGE"
+
+  - id: D5
+    name: "Sustained lag on source topic => notify steward team"
+    applies_to: ["LAG_BUILDUP"]
+    evidence:
+      required:
+        - "topic_role == SOURCE_TOPIC"
+        - "sustained == true"
+      supports:
+        - "deviation_pct > 200"
+    decision:
+      verdict: "LIKELY_REAL"
+      fault_domain: "UPSTREAM_PRODUCER"
+      urgency: "TICKET"
+
+  - id: D6
+    name: "High confidence but not yet sustained => needs more evidence"
+    applies_to: ["*"]
+    evidence:
+      required:
+        - "signal_agent_confidence >= 0.6"
+        - "sustained == false"
+    decision:
+      verdict: "NEEDS_MORE_EVIDENCE"
+      fault_domain: "UNKNOWN"
+      urgency: "OBSERVE"
