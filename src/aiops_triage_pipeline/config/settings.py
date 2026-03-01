@@ -106,9 +106,9 @@ class Settings(BaseSettings):
             KAFKA_BOOTSTRAP_SERVERS=self.KAFKA_BOOTSTRAP_SERVERS,
             KAFKA_SECURITY_PROTOCOL=self.KAFKA_SECURITY_PROTOCOL,
             DATABASE_URL=self._mask_url(self.DATABASE_URL),
-            REDIS_URL=self.REDIS_URL,
+            REDIS_URL=self._mask_url(self.REDIS_URL),
             S3_ENDPOINT_URL=self.S3_ENDPOINT_URL,
-            S3_ACCESS_KEY=self.S3_ACCESS_KEY,
+            S3_ACCESS_KEY="[REDACTED]",
             S3_SECRET_KEY="[REDACTED]",
             S3_BUCKET=self.S3_BUCKET,
             INTEGRATION_MODE_PD=self.INTEGRATION_MODE_PD.value,
@@ -152,5 +152,8 @@ def load_policy_yaml(path: Path, model_class: type[T]) -> T:
     """
     import yaml  # Lazy import — only loaded when policy loading is requested
 
-    raw = yaml.safe_load(path.read_text())
-    return model_class.model_validate(raw)
+    try:
+        raw = yaml.safe_load(path.read_text())
+        return model_class.model_validate(raw)
+    except Exception as e:
+        raise ValueError(f"Failed to load {model_class.__name__} from {path}: {e}") from e

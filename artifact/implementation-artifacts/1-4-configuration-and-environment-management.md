@@ -1,6 +1,6 @@
 # Story 1.4: Configuration & Environment Management
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -616,8 +616,9 @@ None — implementation proceeded cleanly using exact patterns from Dev Notes.
 - `pyproject.toml` (updated — added pyyaml~=6.0 to dependencies)
 - `uv.lock` (regenerated — pyyaml 6.0.3 confirmed)
 - `tests/unit/config/conftest.py` (created — minimal_settings fixture)
-- `tests/unit/config/test_settings.py` (created — 8 unit tests)
+- `tests/unit/config/test_settings.py` (updated — 12 unit tests, +4 from code review)
 
 ## Change Log
 
 - 2026-03-01: Story 1.4 implemented — environment-aware Settings with pydantic-settings 2.x, per-integration OFF/LOG/MOCK/LIVE modes, Kerberos fail-fast validation, startup config logging with secret masking, `get_settings()` singleton, `load_policy_yaml()` helper, and pyyaml dependency added. 8 unit tests; all 83 unit tests pass; zero ruff errors.
+- 2026-03-01: Code review fixes — H1: removed unused `AppEnv`/`ENV_ACTION_CAPS` imports and fixed import sort order in test files (ruff now clean on both `src/` and `tests/`); H2: added 3 tests for `load_policy_yaml` (happy path, file-not-found, schema-mismatch); M1: replaced `structlog.configure()` global mutation with `structlog.testing.capture_logs()` context manager for test isolation; M2: added `test_kerberos_sasl_ssl_missing_krb5_conf_raises` covering the KRB5_CONF_PATH failure branch; M3: wrapped `load_policy_yaml` body in try/except to include file path and model name in error messages. 12 unit tests; all 87 unit tests pass; zero ruff errors.
