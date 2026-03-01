@@ -19,6 +19,7 @@ dependencies = [
     "pydantic-settings~=2.13.1",
     "psycopg[c]==3.3.3",
     "structlog==25.5.0",
+    "pyyaml~=6.0",
 ]
 
 [dependency-groups]
