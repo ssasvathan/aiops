@@ -1,0 +1,46 @@
+"""Internal operational event models for degraded-mode transitions."""
+
+from datetime import datetime
+
+from pydantic import BaseModel
+
+
+class DegradedModeEvent(BaseModel, frozen=True):
+    """Emitted when a component transitions to DEGRADED or UNAVAILABLE state.
+
+    Used by:
+    - Story 5.5: Redis unavailability → capped to NOTIFY-only
+    - Future stories: any DegradableError handler
+
+    Attributes:
+        affected_scope: Component or subsystem that degraded (e.g., "redis", "llm")
+        reason: Why the component degraded (e.g., "ConnectionRefusedError on port 6379")
+        capped_action_level: Maximum action level now in effect (e.g., "NOTIFY-only")
+        estimated_impact_window: Optional estimate of degradation duration (e.g., "unknown", "5m")
+        timestamp: UTC time when the transition occurred
+    """
+
+    affected_scope: str
+    reason: str
+    capped_action_level: str
+    estimated_impact_window: str | None = None
+    timestamp: datetime
+
+
+class TelemetryDegradedEvent(BaseModel, frozen=True):
+    """Emitted when Prometheus becomes totally unavailable (FR67a).
+
+    Used by:
+    - Story 2.7: Prometheus unavailability detection
+
+    Attributes:
+        affected_scope: Always "prometheus" for this event type
+        reason: Why Prometheus is unavailable (e.g., "HTTP 503 after 3 retries")
+        recovery_status: Current recovery state: "pending" | "resolved"
+        timestamp: UTC time of the detection
+    """
+
+    affected_scope: str
+    reason: str
+    recovery_status: str  # "pending" | "resolved"
+    timestamp: datetime
