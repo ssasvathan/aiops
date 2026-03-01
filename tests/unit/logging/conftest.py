@@ -4,7 +4,7 @@ import logging
 import pytest
 import structlog
 
-from aiops_triage_pipeline.logging.setup import clear_correlation_id, configure_logging
+from aiops_triage_pipeline.logging.setup import configure_logging
 
 
 @pytest.fixture(autouse=True)
@@ -12,8 +12,9 @@ def reset_structlog():
     """Reset structlog and stdlib root logger after each test to prevent state bleed."""
     yield
     structlog.reset_defaults()
-    clear_correlation_id()
+    structlog.contextvars.clear_contextvars()
     root = logging.getLogger()
+    root.setLevel(logging.WARNING)  # stdlib default; prevents level bleed between tests
     root.handlers.clear()
 
 

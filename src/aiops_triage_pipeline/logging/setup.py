@@ -16,6 +16,8 @@ from typing import Any
 
 import structlog
 
+_VALID_LOG_LEVELS = frozenset({"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"})
+
 
 def _add_severity(
     logger: Any,
@@ -35,7 +37,9 @@ def configure_logging(log_level: str = "INFO") -> None:
     """Configure structlog for structured JSON output with correlation_id propagation.
 
     Call once at application startup before any pipeline operations begin.
-    Safe to call multiple times (reconfigures on each call).
+    Raises ValueError for unrecognized log_level values. Note: loggers already cached
+    via cache_logger_on_first_use retain the prior processor chain until
+    structlog.reset_defaults() is called.
 
     Processor pipeline:
     1. merge_contextvars — injects asyncio task-local fields (correlation_id)
@@ -47,9 +51,18 @@ def configure_logging(log_level: str = "INFO") -> None:
     7. JSONRenderer — renders event dict as JSON string
 
     Args:
-        log_level: Minimum log level: DEBUG, INFO, WARNING, ERROR. Default INFO.
+        log_level: Minimum log level: CRITICAL, DEBUG, ERROR, INFO, WARNING. Default INFO.
+
+    Raises:
+        ValueError: If log_level is not a recognised stdlib logging level name.
     """
-    level = getattr(logging, log_level.upper(), logging.INFO)
+    normalized = log_level.upper()
+    if normalized not in _VALID_LOG_LEVELS:
+        raise ValueError(
+            f"Invalid log_level {log_level!r}. Must be one of: "
+            f"{', '.join(sorted(_VALID_LOG_LEVELS))}"
+        )
+    level = getattr(logging, normalized)
     root = logging.getLogger()
     root.setLevel(level)
 
@@ -109,12 +122,13 @@ def bind_correlation_id(correlation_id: str) -> None:
 
 
 def clear_correlation_id() -> None:
-    """Clear all structlog context variables from the current asyncio task context.
+    """Clear correlation_id from the current asyncio task context.
 
+    Removes only the correlation_id key, leaving any other bound context vars intact.
     Call at the end of each case processing cycle to prevent stale correlation_ids
     from leaking into the next evaluation interval.
     """
-    structlog.contextvars.clear_contextvars()
+    structlog.contextvars.unbind_contextvars("correlation_id")
 
 
 def get_correlation_id() -> str | None:

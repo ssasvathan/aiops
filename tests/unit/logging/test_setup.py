@@ -17,6 +17,7 @@ from aiops_triage_pipeline.logging.setup import (
 def _last_log(stream: io.StringIO) -> dict:
     """Parse last non-empty JSON log line from the stream."""
     lines = [line for line in stream.getvalue().strip().split("\n") if line.strip()]
+    assert lines, f"Expected log output in stream, got empty. Stream value: {stream.getvalue()!r}"
     return json.loads(lines[-1])
 
 
@@ -114,6 +115,13 @@ def test_warning_appears_at_info_level(log_stream):
     get_logger("test").warning("warn_message")
     data = _last_log(log_stream)
     assert data["severity"] == "WARNING"
+
+
+def test_error_appears_at_info_level(log_stream):
+    """ERROR messages are emitted at INFO level with severity='ERROR' (AC2)."""
+    get_logger("test").error("error_message")
+    data = _last_log(log_stream)
+    assert data["severity"] == "ERROR"
 
 
 async def test_async_context_propagation():

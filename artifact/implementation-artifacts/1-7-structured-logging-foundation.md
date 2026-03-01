@@ -1,6 +1,6 @@
 # Story 1.7: Structured Logging Foundation
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -61,8 +61,8 @@ so that all pipeline events are consistently formatted and traceable across comp
 
 - [x] Task 4: Verify quality gates
   - [x] Run `uv run ruff check src/aiops_triage_pipeline/logging/` — zero errors
-  - [x] Run `uv run pytest tests/unit/logging/ -v` — all tests pass (14/14)
-  - [x] Run `uv run pytest -m "not integration"` — no regressions in full unit test suite (141/141)
+  - [x] Run `uv run pytest tests/unit/logging/ -v` — all tests pass (15/15)
+  - [x] Run `uv run pytest -m "not integration"` — no regressions in full unit test suite (142/142)
 
 ## Dev Notes
 
@@ -569,7 +569,14 @@ claude-sonnet-4-6
 - `get_logger(component)` pre-binds `component` key so all log events carry the originating module name
 - `bind_correlation_id` / `clear_correlation_id` / `get_correlation_id` wrap structlog.contextvars — asyncio.create_task() propagation confirmed via `test_async_context_propagation`
 - `logging/__init__.py` replaced stub with full 5-function public API + `__all__`
-- 14 unit tests written covering all ACs; all pass. Zero regressions in 141-test suite. Ruff clean.
+- 15 unit tests written covering all ACs; all pass. Zero regressions in 142-test suite. Ruff clean.
+- [Code Review] M1: Added `_VALID_LOG_LEVELS` validation to `configure_logging()` — now raises `ValueError` for unrecognised level names instead of silently falling back to INFO
+- [Code Review] M2: Fixed `clear_correlation_id()` to use `unbind_contextvars("correlation_id")` — now surgically removes only correlation_id instead of clearing all context vars; updated `conftest.py` reset fixture to call `clear_contextvars()` directly for full test isolation
+- [Code Review] M3: Added `test_error_appears_at_info_level` — verifies ERROR log level produces `severity == "ERROR"` output (AC2 gap)
+- [Code Review] M4: Added `sprint-status.yaml` to File List (was modified in implementation commit but omitted)
+- [Code Review] L1: Corrected `configure_logging()` docstring — accurately describes reconfiguration caveats with cached loggers
+- [Code Review] L2: Improved `_last_log()` test helper — assertion error now includes stream contents for easier debugging
+- [Code Review] L3: Added `root.setLevel(logging.WARNING)` to `reset_structlog` fixture — prevents log level bleed between tests
 
 ### File List
 
@@ -578,7 +585,9 @@ src/aiops_triage_pipeline/logging/__init__.py
 tests/unit/logging/__init__.py
 tests/unit/logging/conftest.py
 tests/unit/logging/test_setup.py
+artifact/implementation-artifacts/sprint-status.yaml
 
 ## Change Log
 
 - 2026-03-01: Story 1.7 implemented — structured logging foundation with structlog 25.5.0. Implemented `logging/setup.py` (7-stage processor pipeline, correlation_id via contextvars), updated `logging/__init__.py` exports, created 14 unit tests covering all ACs (14/14 pass, 141/141 suite passes, ruff clean).
+- 2026-03-01: Code review fixes applied — log_level validation (ValueError on bad input), `clear_correlation_id()` now uses unbind_contextvars for surgical removal, added ERROR level test, improved test fixture isolation and diagnostics. 15/15 tests pass, 142/142 suite, ruff clean. Status → done.
