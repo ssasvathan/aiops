@@ -1,0 +1,16 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # aiOps harness metrics — exposed by Story 1.9 traffic generator
+  # The harness container will be named 'harness' in docker-compose (Story 1.9 scope)
+  # This job defined now so prometheus.yml is ready when Story 1.9 adds the harness service
+  - job_name: 'aiops-harness'
+    scrape_interval: 5s
+    static_configs:
+      - targets: ['harness:8000']
