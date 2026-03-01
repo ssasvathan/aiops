@@ -1,3 +1,18 @@
-# Outbox policy - stub for Story 1.3 contract model
 schema_version: "v1"
-rules: []
+retention_by_env:
+  local:
+    sent_retention_days: 1
+    dead_retention_days: 7
+    max_retry_attempts: 3
+  dev:
+    sent_retention_days: 3
+    dead_retention_days: 14
+    max_retry_attempts: 3
+  uat:
+    sent_retention_days: 7
+    dead_retention_days: 30
+    max_retry_attempts: 5
+  prod:
+    sent_retention_days: 14     # FR26: SENT 14d prod
+    dead_retention_days: 90     # FR26: DEAD 90d prod
+    max_retry_attempts: 5

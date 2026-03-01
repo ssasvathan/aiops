@@ -1,3 +1,61 @@
-# Prometheus metrics contract - stub for Story 1.3 contract model
+# Prometheus Metrics Contract v1 (names + roles + tolerated aliases)
 schema_version: "v1"
-rules: []
+version: v1
+date: "2026-02-22"
+status: FROZEN
+
+identity:
+  cluster_id_rule: "cluster_id := cluster_name (exact string; no transforms)"
+  topic_identity_labels: ["env", "cluster_name", "topic"]
+  lag_identity_labels: ["env", "cluster_name", "group", "topic"]
+  ignore_labels_for_identity: ["instance", "job", "nodes_group", "client_id", "consumer_id", "member_host", "partition"]
+
+metrics:
+  topic_messages_in_per_sec:
+    canonical: "kafka_server_brokertopicmetrics_messagesinpersec"
+    role: "Primary ingress rate signal for peak/near-peak and volume drop detection"
+    aliases: []
+  topic_bytes_in_per_sec:
+    canonical: "kafka_server_brokertopicmetrics_bytesinpersec"
+    role: "Supplementary ingress volume signal (large message / payload shifts)"
+    aliases:
+      - "kafka_server_brokertopicmetrics_bvtesinpersec"
+  topic_bytes_out_per_sec:
+    canonical: "kafka_server_brokertopicmetrics_bytesoutpersec"
+    role: "Supplementary egress volume signal"
+    aliases:
+      - "kafka_server_brokertopicmetrics_bytesoutperseq"
+  failed_produce_requests_per_sec:
+    canonical: "kafka_server_brokertopicmetrics_failedproducerequestspersec"
+    role: "Broker/topic produce error-rate indicator"
+    aliases: []
+  failed_fetch_requests_per_sec:
+    canonical: "kafka_server_brokertopicmetrics_failedfetchrequestspersec"
+    role: "Broker/topic fetch error-rate indicator"
+    aliases: []
+  total_produce_requests_per_sec:
+    canonical: "kafka_server_brokertopicmetrics_totalproducerequestspersec"
+    role: "Denominator for produce failure ratio; throughput context"
+    aliases:
+      - "kafka_server_brokertopicmetrics_totalproducereauestspersec"
+  total_fetch_requests_per_sec:
+    canonical: "kafka_server_brokertopicmetrics_totalfetchrequestspersec"
+    role: "Denominator for fetch failure ratio; throughput context"
+    aliases: []
+  consumer_group_lag:
+    canonical: "kafka_consumergroup_group_lag"
+    role: "Primary lag signal (Burrow removed)"
+    aliases: []
+  consumer_group_offset:
+    canonical: "kafka_consumergroup_group_offset"
+    role: "Supplementary signal for progress/offset movement validation"
+    aliases: []
+
+truthfulness:
+  missing_series:
+    rule: "Missing series must map to EvidenceStatus=UNKNOWN (never treated as 0)."
+  partition:
+    rule: "partition is aggregation-only; never identity."
+
+notes:
+  - "If any canonical metric name differs in an environment, add the exact Prometheus name under aliases and bump version (v1.1)."

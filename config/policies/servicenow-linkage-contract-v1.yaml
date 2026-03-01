@@ -1,0 +1,5 @@
+schema_version: "v1"
+enabled: false
+max_correlation_window_days: 7
+correlation_strategy: []
+mi_creation_allowed: false    # FR67b: MI-1 posture — never allow automated MI creation

@@ -1,6 +1,6 @@
 # Story 1.3: Policy & Operational Contract Models
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -41,73 +41,73 @@ so that policy versioning, TTL configuration, and operational rules are enforced
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Implement `RulebookV1` (AC: #1, #2, #3, #4)
-  - [ ] Create `src/aiops_triage_pipeline/contracts/rulebook.py`
-  - [ ] Define nested models: `RulebookDefaults`, `RulebookCaps`, `GateEffect`, `GateEffects`, `GateCheck`, `GateSpec`
-  - [ ] Define `RulebookV1(BaseModel, frozen=True)` with all required fields (see Dev Notes)
-  - [ ] Set `schema_version: Literal["v1"] = "v1"`
-  - [ ] Update `config/policies/rulebook-v1.yaml` with valid field values matching the model
+- [x] Task 1: Implement `RulebookV1` (AC: #1, #2, #3, #4)
+  - [x] Create `src/aiops_triage_pipeline/contracts/rulebook.py`
+  - [x] Define nested models: `RulebookDefaults`, `RulebookCaps`, `GateEffect`, `GateEffects`, `GateCheck`, `GateSpec`
+  - [x] Define `RulebookV1(BaseModel, frozen=True)` with all required fields (see Dev Notes)
+  - [x] Set `schema_version: Literal["v1"] = "v1"`
+  - [x] Update `config/policies/rulebook-v1.yaml` with valid field values matching the model
 
-- [ ] Task 2: Implement `PeakPolicyV1` (AC: #1, #2, #3, #4)
-  - [ ] Create `src/aiops_triage_pipeline/contracts/peak_policy.py`
-  - [ ] Define nested models: `PeakThresholdPolicy`
-  - [ ] Define `PeakPolicyV1(BaseModel, frozen=True)` with all required fields (see Dev Notes)
-  - [ ] Update `config/policies/peak-policy-v1.yaml` with valid field values
+- [x] Task 2: Implement `PeakPolicyV1` (AC: #1, #2, #3, #4)
+  - [x] Create `src/aiops_triage_pipeline/contracts/peak_policy.py`
+  - [x] Define nested models: `PeakThresholdPolicy`
+  - [x] Define `PeakPolicyV1(BaseModel, frozen=True)` with all required fields (see Dev Notes)
+  - [x] Update `config/policies/peak-policy-v1.yaml` with valid field values
 
-- [ ] Task 3: Implement `PrometheusMetricsContractV1` (AC: #1, #2, #3, #4)
-  - [ ] Create `src/aiops_triage_pipeline/contracts/prometheus_metrics.py`
-  - [ ] Define nested models: `MetricIdentityConfig`, `MetricDefinition`, `TruthfulnessConfig`
-  - [ ] Define `PrometheusMetricsContractV1(BaseModel, frozen=True)` (see Dev Notes for full field spec from authoritative YAML)
-  - [ ] Update `config/policies/prometheus-metrics-contract-v1.yaml` with full field values (copy from `_bmad/input/feed-pack/prometheus-metrics-contract-v1.yaml`)
+- [x] Task 3: Implement `PrometheusMetricsContractV1` (AC: #1, #2, #3, #4)
+  - [x] Create `src/aiops_triage_pipeline/contracts/prometheus_metrics.py`
+  - [x] Define nested models: `MetricIdentityConfig`, `MetricDefinition`, `TruthfulnessConfig`
+  - [x] Define `PrometheusMetricsContractV1(BaseModel, frozen=True)` (see Dev Notes for full field spec from authoritative YAML)
+  - [x] Update `config/policies/prometheus-metrics-contract-v1.yaml` with full field values (copy from `_bmad/input/feed-pack/prometheus-metrics-contract-v1.yaml`)
 
-- [ ] Task 4: Implement `RedisTtlPolicyV1` (AC: #1, #2, #3, #4)
-  - [ ] Create `src/aiops_triage_pipeline/contracts/redis_ttl_policy.py`
-  - [ ] Define nested model: `RedisTtlsByEnv`
-  - [ ] Define `RedisTtlPolicyV1(BaseModel, frozen=True)` with `ttls_by_env: dict[str, RedisTtlsByEnv]`
-  - [ ] Update `config/policies/redis-ttl-policy-v1.yaml` with values for local/dev/uat/prod envs
+- [x] Task 4: Implement `RedisTtlPolicyV1` (AC: #1, #2, #3, #4)
+  - [x] Create `src/aiops_triage_pipeline/contracts/redis_ttl_policy.py`
+  - [x] Define nested model: `RedisTtlsByEnv`
+  - [x] Define `RedisTtlPolicyV1(BaseModel, frozen=True)` with `ttls_by_env: dict[str, RedisTtlsByEnv]`
+  - [x] Update `config/policies/redis-ttl-policy-v1.yaml` with values for local/dev/uat/prod envs
 
-- [ ] Task 5: Implement `OutboxPolicyV1` (AC: #1, #2, #3, #4)
-  - [ ] Create `src/aiops_triage_pipeline/contracts/outbox_policy.py`
-  - [ ] Define nested model: `OutboxRetentionPolicy`
-  - [ ] Define `OutboxPolicyV1(BaseModel, frozen=True)` with `retention_by_env: dict[str, OutboxRetentionPolicy]`
-  - [ ] Update `config/policies/outbox-policy-v1.yaml` with retention values per FR26 (SENT 14d prod, DEAD 90d prod)
+- [x] Task 5: Implement `OutboxPolicyV1` (AC: #1, #2, #3, #4)
+  - [x] Create `src/aiops_triage_pipeline/contracts/outbox_policy.py`
+  - [x] Define nested model: `OutboxRetentionPolicy`
+  - [x] Define `OutboxPolicyV1(BaseModel, frozen=True)` with `retention_by_env: dict[str, OutboxRetentionPolicy]`
+  - [x] Update `config/policies/outbox-policy-v1.yaml` with retention values per FR26 (SENT 14d prod, DEAD 90d prod)
 
-- [ ] Task 6: Implement `ServiceNowLinkageContractV1` (AC: #1, #2, #3, #4)
-  - [ ] Create `src/aiops_triage_pipeline/contracts/sn_linkage.py`
-  - [ ] Define `ServiceNowLinkageContractV1(BaseModel, frozen=True)` (Phase 1B contract; minimal for Phase 1A, see Dev Notes)
-  - [ ] Create `config/policies/servicenow-linkage-contract-v1.yaml` with stub values
+- [x] Task 6: Implement `ServiceNowLinkageContractV1` (AC: #1, #2, #3, #4)
+  - [x] Create `src/aiops_triage_pipeline/contracts/sn_linkage.py`
+  - [x] Define `ServiceNowLinkageContractV1(BaseModel, frozen=True)` (Phase 1B contract; minimal for Phase 1A, see Dev Notes)
+  - [x] Create `config/policies/servicenow-linkage-contract-v1.yaml` with stub values
 
-- [ ] Task 7: Implement `LocalDevContractV1` (AC: #1, #2, #3, #4)
-  - [ ] Create `src/aiops_triage_pipeline/contracts/local_dev.py`
-  - [ ] Define nested model: `LocalDevIntegrationModes`
-  - [ ] Define `LocalDevContractV1(BaseModel, frozen=True)` (see Dev Notes)
-  - [ ] Create `config/policies/local-dev-contract-v1.yaml` with integration mode defaults
+- [x] Task 7: Implement `LocalDevContractV1` (AC: #1, #2, #3, #4)
+  - [x] Create `src/aiops_triage_pipeline/contracts/local_dev.py`
+  - [x] Define nested model: `LocalDevIntegrationModes`
+  - [x] Define `LocalDevContractV1(BaseModel, frozen=True)` (see Dev Notes)
+  - [x] Create `config/policies/local-dev-contract-v1.yaml` with integration mode defaults
 
-- [ ] Task 8: Implement `TopologyRegistryLoaderRulesV1` (AC: #1, #2, #3, #4)
-  - [ ] Create `src/aiops_triage_pipeline/contracts/topology_registry.py`
-  - [ ] Define `TopologyRegistryLoaderRulesV1(BaseModel, frozen=True)` (see Dev Notes)
-  - [ ] Create `config/policies/topology-registry-loader-rules-v1.yaml` with loader rules
+- [x] Task 8: Implement `TopologyRegistryLoaderRulesV1` (AC: #1, #2, #3, #4)
+  - [x] Create `src/aiops_triage_pipeline/contracts/topology_registry.py`
+  - [x] Define `TopologyRegistryLoaderRulesV1(BaseModel, frozen=True)` (see Dev Notes)
+  - [x] Create `config/policies/topology-registry-loader-rules-v1.yaml` with loader rules
 
-- [ ] Task 9: Update `contracts/__init__.py` exports (AC: #1)
-  - [ ] ADD policy contract exports to the existing Story 1.2 event contract exports (ADDITIVE — do not remove Story 1.2 exports)
-  - [ ] Add to `__all__`: `RulebookV1`, `PeakPolicyV1`, `PrometheusMetricsContractV1`, `RedisTtlPolicyV1`, `OutboxPolicyV1`, `ServiceNowLinkageContractV1`, `LocalDevContractV1`, `TopologyRegistryLoaderRulesV1`
-  - [ ] Add to `__all__`: nested models needed by consuming code: `RulebookDefaults`, `RulebookCaps`, `GateSpec`, `GateEffect`, `PeakThresholdPolicy`, `RedisTtlsByEnv`, `OutboxRetentionPolicy`
+- [x] Task 9: Update `contracts/__init__.py` exports (AC: #1)
+  - [x] ADD policy contract exports to the existing Story 1.2 event contract exports (ADDITIVE — do not remove Story 1.2 exports)
+  - [x] Add to `__all__`: `RulebookV1`, `PeakPolicyV1`, `PrometheusMetricsContractV1`, `RedisTtlPolicyV1`, `OutboxPolicyV1`, `ServiceNowLinkageContractV1`, `LocalDevContractV1`, `TopologyRegistryLoaderRulesV1`
+  - [x] Add to `__all__`: nested models needed by consuming code: `RulebookDefaults`, `RulebookCaps`, `GateSpec`, `GateEffect`, `PeakThresholdPolicy`, `RedisTtlsByEnv`, `OutboxRetentionPolicy`
 
-- [ ] Task 10: Create unit tests (AC: #7)
-  - [ ] Create `tests/unit/contracts/test_policy_models.py`
-  - [ ] For each of the 8 contracts: test immutability (mutation raises `ValidationError`)
-  - [ ] For each of the 8 contracts: test `model_dump_json()` → `model_validate_json()` round-trip
-  - [ ] For each of the 8 contracts: test `schema_version` field equals `"v1"`
-  - [ ] Test `RulebookV1` construction from dict (simulating YAML-loaded dict)
-  - [ ] Test `RulebookV1.caps.paging_denied_topic_roles` is accessible and correct type
-  - [ ] Test `PrometheusMetricsContractV1.metrics` keys are accessible
-  - [ ] Test `RedisTtlPolicyV1.ttls_by_env["prod"].dedupe_seconds` is correct
-  - [ ] Test `OutboxPolicyV1.retention_by_env["prod"].sent_retention_days == 14`
-  - [ ] Place reusable fixtures in `tests/unit/contracts/conftest.py` (not in the test file itself)
+- [x] Task 10: Create unit tests (AC: #7)
+  - [x] Create `tests/unit/contracts/test_policy_models.py`
+  - [x] For each of the 8 contracts: test immutability (mutation raises `ValidationError`)
+  - [x] For each of the 8 contracts: test `model_dump_json()` → `model_validate_json()` round-trip
+  - [x] For each of the 8 contracts: test `schema_version` field equals `"v1"`
+  - [x] Test `RulebookV1` construction from dict (simulating YAML-loaded dict)
+  - [x] Test `RulebookV1.caps.paging_denied_topic_roles` is accessible and correct type
+  - [x] Test `PrometheusMetricsContractV1.metrics` keys are accessible
+  - [x] Test `RedisTtlPolicyV1.ttls_by_env["prod"].dedupe_seconds` is correct
+  - [x] Test `OutboxPolicyV1.retention_by_env["prod"].sent_retention_days == 14`
+  - [x] Place reusable fixtures in `tests/unit/contracts/conftest.py` (not in the test file itself)
 
-- [ ] Task 11: Verify quality gates (AC: #6)
-  - [ ] Run `uv run ruff check src/aiops_triage_pipeline/contracts/` — zero errors
-  - [ ] Run `uv run pytest tests/unit/contracts/test_policy_models.py` — all tests pass
+- [x] Task 11: Verify quality gates (AC: #6)
+  - [x] Run `uv run ruff check src/aiops_triage_pipeline/contracts/` — zero errors
+  - [x] Run `uv run pytest tests/unit/contracts/test_policy_models.py` — all tests pass
 
 ## Dev Notes
 
@@ -815,4 +815,52 @@ claude-opus-4-6
 
 ### Completion Notes List
 
+- Implemented all 8 frozen Pydantic policy contract models (`frozen=True`) with `schema_version: Literal["v1"] = "v1"` on each.
+- `GateCheck` and `GateSpec` use `model_config = ConfigDict(frozen=True, extra="allow")` to handle polymorphic gate type-specific fields from the rulebook YAML.
+- Updated 5 existing stub YAML files with real values and created 3 new YAML files for contracts not previously stubbed.
+- `prometheus-metrics-contract-v1.yaml` copied verbatim from `_bmad/input/feed-pack/prometheus-metrics-contract-v1.yaml` with `schema_version: "v1"` added.
+- `rulebook-v1.yaml` copied from feed-pack with full AG0–AG6 gate definitions and `schema_version: "v1"` added.
+- `contracts/__init__.py` updated additively — all Story 1.2 event contract exports preserved; 15 new policy contract names added to `__all__`.
+- `tests/unit/contracts/conftest.py` updated additively — all Story 1.2 fixtures preserved; 8 new policy contract fixtures added.
+- 24 new unit tests in `test_policy_models.py`: immutability (8), round-trip (8), schema_version (1), semantic field checks (6), YAML-dict loading (1).
+- All 72 tests pass (48 Story 1.2 + 24 Story 1.3). Zero ruff errors.
+- **Code review fixes (2026-03-01):** 5 MEDIUM issues resolved:
+  - `LocalDevIntegrationModes` fields typed as `Literal["OFF","LOG","MOCK","LIVE"]` via `_IntegrationMode` alias — invalid mode strings now fail at validation time.
+  - `RedisTtlPolicyV1` and `OutboxPolicyV1` gained `@model_validator(mode="after")` enforcing all 4 required environment keys (`local`, `dev`, `uat`, `prod`).
+  - `prometheus-metrics-contract-v1.yaml`: removed copy-paste alias that was identical to canonical for `failed_fetch_requests_per_sec`.
+  - `conftest.py` fixtures `minimal_redis_ttl` and `minimal_outbox_policy` updated to include all 4 required environments.
+  - 2 new tests added for `GateSpec.applies_when` extra-field round-trip (dict and string forms).
+- All 74 tests pass (48 Story 1.2 + 26 Story 1.3). Zero ruff errors.
+
 ### File List
+
+**New files created:**
+- `src/aiops_triage_pipeline/contracts/rulebook.py`
+- `src/aiops_triage_pipeline/contracts/peak_policy.py`
+- `src/aiops_triage_pipeline/contracts/prometheus_metrics.py`
+- `src/aiops_triage_pipeline/contracts/redis_ttl_policy.py`
+- `src/aiops_triage_pipeline/contracts/outbox_policy.py`
+- `src/aiops_triage_pipeline/contracts/sn_linkage.py`
+- `src/aiops_triage_pipeline/contracts/local_dev.py`
+- `src/aiops_triage_pipeline/contracts/topology_registry.py`
+- `config/policies/servicenow-linkage-contract-v1.yaml`
+- `config/policies/local-dev-contract-v1.yaml`
+- `config/policies/topology-registry-loader-rules-v1.yaml`
+- `tests/unit/contracts/test_policy_models.py`
+
+**Modified files:**
+- `src/aiops_triage_pipeline/contracts/__init__.py`
+- `config/policies/rulebook-v1.yaml`
+- `config/policies/peak-policy-v1.yaml`
+- `config/policies/prometheus-metrics-contract-v1.yaml`
+- `config/policies/redis-ttl-policy-v1.yaml`
+- `config/policies/outbox-policy-v1.yaml`
+- `tests/unit/contracts/conftest.py`
+- `artifact/implementation-artifacts/1-3-policy-and-operational-contract-models.md`
+- `artifact/implementation-artifacts/sprint-status.yaml`
+
+## Change Log
+
+- 2026-02-28: Implemented Story 1.3 — 8 frozen Pydantic policy contract models, 8 YAML policy files (5 updated, 3 created), additive __init__.py exports, and 24 unit tests. All AC satisfied. (claude-sonnet-4-6)
+- 2026-03-01: Code review — fixed 5 MEDIUM issues: `LocalDevIntegrationModes` mode validation, required-env validators on `RedisTtlPolicyV1`/`OutboxPolicyV1`, prometheus YAML alias bug, 2 new `GateSpec.applies_when` round-trip tests. 74/74 tests pass. (claude-sonnet-4-6)
+- 2026-03-01: Low-issue fixes — `__init__.py` import section reorganization, `conftest.py` imports from public API, `PeakPolicyV1` timezone IANA validator + `Literal` recompute_frequency, `RulebookV1` gates required-ID validator (AG0–AG6), fixture/test updates. 74/74 tests pass. (claude-sonnet-4-6)

@@ -1,0 +1,7 @@
+schema_version: "v1"
+supported_registry_versions: [1, 2]
+prefer_v2_format: true
+routing_key_required: true
+fail_on_unknown_topic_role: false
+unknown_routing_key_fallback: "OWN::Streaming::KafkaPlatform::Ops"
+cluster_id_transform: "NONE"

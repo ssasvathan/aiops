@@ -1,0 +1,12 @@
+schema_version: "v1"
+use_testcontainers: false
+integration_modes:
+  prometheus: "MOCK"
+  kafka_consumer: "MOCK"
+  kafka_producer: "MOCK"
+  pagerduty: "LOG"
+  slack: "LOG"
+  servicenow: "OFF"
+  llm: "MOCK"
+  redis: "LIVE"
+  postgres: "LIVE"

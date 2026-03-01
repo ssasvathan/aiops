@@ -1,3 +1,179 @@
-# Rulebook policy - stub for Story 1.3 contract model
 schema_version: "v1"
-rules: []
+rulebook_id: rulebook.v1
+version: 1
+evaluation_interval_minutes: 5
+sustained_intervals_required: 5
+
+defaults:
+  missing_series_policy: UNKNOWN_NOT_ZERO
+  required_evidence_policy: PRESENT_ONLY
+  missing_confidence_policy: DOWNGRADE
+  missing_sustained_policy: DOWNGRADE
+
+caps:
+  max_action_by_env:
+    local: OBSERVE
+    dev: OBSERVE
+    stage: NOTIFY
+    prod: PAGE
+  max_action_by_tier_in_prod:
+    TIER_0: PAGE
+    TIER_1: TICKET
+    TIER_2: NOTIFY
+    UNKNOWN: NOTIFY
+  paging_denied_topic_roles:
+    - SOURCE_TOPIC
+
+gates:
+  - id: AG0
+    name: "Schema & invariants"
+    intent: "Never page/ticket on malformed or incomplete decision inputs."
+    applies_when: "always"
+    checks:
+      - check_id: AG0_REQUIRED_FIELDS_PRESENT
+        type: required_fields_present
+        fields_ref: inputs_contract.required_fields
+    effect:
+      on_fail:
+        cap_action_to: OBSERVE
+        set_reason_codes:
+          - AG0_INVALID_INPUT
+        set_reason_text:
+          - "Missing/invalid required fields for gating; forcing OBSERVE."
+        force_postmortem_mode: NONE
+
+  - id: AG1
+    name: "Environment + tier caps"
+    intent: "PAGE is only allowed in PROD + TIER_0."
+    applies_when: "always"
+    checks:
+      - check_id: AG1_ENV_CAP
+        type: cap_by_env
+        max_action_by_env_ref: caps.max_action_by_env
+      - check_id: AG1_TIER_CAP_PROD
+        type: cap_by_tier_in_prod
+        max_action_by_tier_ref: caps.max_action_by_tier_in_prod
+    effect:
+      on_cap_applied:
+        set_reason_codes:
+          - AG1_ENV_OR_TIER_CAP
+        set_reason_text:
+          - "Action capped by environment and/or criticality tier policy."
+
+  - id: AG2
+    name: "Evidence sufficiency (Finding-declared)"
+    intent: "If required evidence is UNKNOWN/ABSENT/STALE, downgrade (never assume 0)."
+    applies_when:
+      any:
+        - "proposed_action in [PAGE, TICKET]"
+        - "diagnosis_confidence is UNKNOWN"
+        - "sustained is UNKNOWN"
+    checks:
+      - check_id: AG2_REQUIRED_EVIDENCE_PRESENT
+        type: required_evidence_present
+        findings_selector:
+          mode: "anomalous_only"
+          prefer_primary_flag: true
+          primary_flag_field: is_primary
+        required_policy_ref: defaults.required_evidence_policy
+        evidence_status_map_ref: evidence_status_map
+    effect:
+      on_fail:
+        cap_action_to: NOTIFY
+        set_reason_codes:
+          - AG2_INSUFFICIENT_EVIDENCE
+        set_reason_text:
+          - "One or more required evidence keys are not PRESENT (UNKNOWN/ABSENT/STALE); downgrading action."
+        confidence_floor: 0.6
+
+  - id: AG3
+    name: "Paging denied for SOURCE_TOPIC"
+    intent: "Never PAGE on SOURCE_TOPIC anomalies (routing noise + stewardship domain)."
+    applies_when:
+      all:
+        - "topic_role in caps.paging_denied_topic_roles"
+        - "proposed_action == PAGE"
+    checks:
+      - check_id: AG3_DENY_PAGING_ON_SOURCE
+        type: always_fail
+    effect:
+      on_fail:
+        cap_action_to: TICKET
+        set_reason_codes:
+          - AG3_PAGING_DENIED_SOURCE_TOPIC
+        set_reason_text:
+          - "Paging denied for SOURCE_TOPIC; capped to TICKET."
+
+  - id: AG4
+    name: "Confidence + sustained gating"
+    intent: "Prevent high-urgency actions when confidence/sustained are weak or UNKNOWN."
+    applies_when:
+      any:
+        - "proposed_action in [PAGE, TICKET]"
+        - "diagnosis_confidence < 0.6"
+        - "sustained != true"
+    checks:
+      - check_id: AG4_CONFIDENCE_MIN
+        type: min_value
+        field: diagnosis_confidence
+        min: 0.6
+      - check_id: AG4_SUSTAINED_REQUIRED_FOR_HIGH_URGENCY
+        type: equals
+        field: sustained
+        value: true
+    effect:
+      on_fail:
+        cap_action_to: OBSERVE
+        set_reason_codes:
+          - AG4_LOW_CONFIDENCE_OR_NOT_SUSTAINED
+        set_reason_text:
+          - "High-urgency requires sustained=true and confidence>=0.6; capped to OBSERVE."
+
+  - id: AG5
+    name: "Storm control (dedupe)"
+    intent: "Prevent repeated paging/ticket storms on the same fingerprint."
+    applies_when:
+      any:
+        - "proposed_action in [PAGE, TICKET, NOTIFY]"
+    checks:
+      - check_id: AG5_DEDUPE
+        type: dedupe_check
+        key_field: action_fingerprint
+        dedupe_store: redis
+        on_lookup_error: "DEGRADE_AND_ALLOW_NOTIFY"
+    effect:
+      on_duplicate:
+        cap_action_to: OBSERVE
+        set_reason_codes:
+          - AG5_DUPLICATE_SUPPRESSED
+        set_reason_text:
+          - "Duplicate action_fingerprint seen within TTL; suppressing to OBSERVE."
+      on_store_error:
+        cap_action_to: NOTIFY
+        set_reason_codes:
+          - AG5_DEDUPE_STORE_ERROR
+        set_reason_text:
+          - "Dedupe store unavailable; preventing PAGE/TICKET and allowing NOTIFY only."
+
+  - id: AG6
+    name: "Postmortem policy selector"
+    intent: "Selectively require postmortems (SOFT in Phase 1A; HARD in Phase 1B when SN linkage exists)."
+    applies_when:
+      all:
+        - "env == prod"
+        - "criticality_tier == TIER_0"
+    checks:
+      - check_id: AG6_PM_PEAK_SUSTAINED
+        type: all_true
+        fields:
+          - peak_context.is_peak_window
+          - sustained
+    effect:
+      on_pass:
+        set_postmortem_required: true
+        set_postmortem_reason_codes:
+          - PM_PEAK_SUSTAINED
+        set_reason_text:
+          - "Peak + sustained on PROD TIER_0 => postmortem required (mode depends on phase)."
+      on_fail:
+        set_postmortem_required: false

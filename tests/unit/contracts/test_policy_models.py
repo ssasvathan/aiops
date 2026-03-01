@@ -1,0 +1,242 @@
+"""Unit tests for Story 1.3 policy contract models."""
+
+import pytest
+from pydantic import ValidationError
+
+from aiops_triage_pipeline.contracts import (
+    GateEffects,
+    GateSpec,
+    LocalDevContractV1,
+    OutboxPolicyV1,
+    PeakPolicyV1,
+    PrometheusMetricsContractV1,
+    RedisTtlPolicyV1,
+    RulebookV1,
+    ServiceNowLinkageContractV1,
+    TopologyRegistryLoaderRulesV1,
+)
+
+# ── Immutability tests ────────────────────────────────────────────────────────
+
+
+def test_rulebook_is_frozen(minimal_rulebook: RulebookV1) -> None:
+    with pytest.raises(ValidationError):
+        minimal_rulebook.version = 2  # type: ignore[misc]
+
+
+def test_peak_policy_is_frozen(minimal_peak_policy: PeakPolicyV1) -> None:
+    with pytest.raises(ValidationError):
+        minimal_peak_policy.timezone = "UTC"  # type: ignore[misc]
+
+
+def test_prometheus_metrics_is_frozen(
+    minimal_prometheus_metrics: PrometheusMetricsContractV1,
+) -> None:
+    with pytest.raises(ValidationError):
+        minimal_prometheus_metrics.status = "DRAFT"  # type: ignore[misc]
+
+
+def test_redis_ttl_is_frozen(minimal_redis_ttl: RedisTtlPolicyV1) -> None:
+    with pytest.raises(ValidationError):
+        minimal_redis_ttl.ttls_by_env = {}  # type: ignore[misc]
+
+
+def test_outbox_policy_is_frozen(minimal_outbox_policy: OutboxPolicyV1) -> None:
+    with pytest.raises(ValidationError):
+        minimal_outbox_policy.retention_by_env = {}  # type: ignore[misc]
+
+
+def test_sn_linkage_is_frozen(minimal_sn_linkage: ServiceNowLinkageContractV1) -> None:
+    with pytest.raises(ValidationError):
+        minimal_sn_linkage.enabled = True  # type: ignore[misc]
+
+
+def test_local_dev_is_frozen(minimal_local_dev: LocalDevContractV1) -> None:
+    with pytest.raises(ValidationError):
+        minimal_local_dev.use_testcontainers = True  # type: ignore[misc]
+
+
+def test_topology_registry_is_frozen(
+    minimal_topology_registry: TopologyRegistryLoaderRulesV1,
+) -> None:
+    with pytest.raises(ValidationError):
+        minimal_topology_registry.prefer_v2_format = False  # type: ignore[misc]
+
+
+# ── Round-trip serialization tests ────────────────────────────────────────────
+
+
+def test_rulebook_round_trip(minimal_rulebook: RulebookV1) -> None:
+    json_str = minimal_rulebook.model_dump_json()
+    reconstructed = RulebookV1.model_validate_json(json_str)
+    assert minimal_rulebook == reconstructed
+
+
+def test_peak_policy_round_trip(minimal_peak_policy: PeakPolicyV1) -> None:
+    json_str = minimal_peak_policy.model_dump_json()
+    reconstructed = PeakPolicyV1.model_validate_json(json_str)
+    assert minimal_peak_policy == reconstructed
+
+
+def test_prometheus_metrics_round_trip(
+    minimal_prometheus_metrics: PrometheusMetricsContractV1,
+) -> None:
+    json_str = minimal_prometheus_metrics.model_dump_json()
+    reconstructed = PrometheusMetricsContractV1.model_validate_json(json_str)
+    assert minimal_prometheus_metrics == reconstructed
+
+
+def test_redis_ttl_round_trip(minimal_redis_ttl: RedisTtlPolicyV1) -> None:
+    json_str = minimal_redis_ttl.model_dump_json()
+    reconstructed = RedisTtlPolicyV1.model_validate_json(json_str)
+    assert minimal_redis_ttl == reconstructed
+
+
+def test_outbox_policy_round_trip(minimal_outbox_policy: OutboxPolicyV1) -> None:
+    json_str = minimal_outbox_policy.model_dump_json()
+    reconstructed = OutboxPolicyV1.model_validate_json(json_str)
+    assert minimal_outbox_policy == reconstructed
+
+
+def test_sn_linkage_round_trip(minimal_sn_linkage: ServiceNowLinkageContractV1) -> None:
+    json_str = minimal_sn_linkage.model_dump_json()
+    reconstructed = ServiceNowLinkageContractV1.model_validate_json(json_str)
+    assert minimal_sn_linkage == reconstructed
+
+
+def test_local_dev_round_trip(minimal_local_dev: LocalDevContractV1) -> None:
+    json_str = minimal_local_dev.model_dump_json()
+    reconstructed = LocalDevContractV1.model_validate_json(json_str)
+    assert minimal_local_dev == reconstructed
+
+
+def test_topology_registry_round_trip(
+    minimal_topology_registry: TopologyRegistryLoaderRulesV1,
+) -> None:
+    json_str = minimal_topology_registry.model_dump_json()
+    reconstructed = TopologyRegistryLoaderRulesV1.model_validate_json(json_str)
+    assert minimal_topology_registry == reconstructed
+
+
+# ── Schema version tests ──────────────────────────────────────────────────────
+
+
+def test_all_policy_contracts_have_schema_version_v1(
+    minimal_rulebook: RulebookV1,
+    minimal_peak_policy: PeakPolicyV1,
+    minimal_prometheus_metrics: PrometheusMetricsContractV1,
+    minimal_redis_ttl: RedisTtlPolicyV1,
+    minimal_outbox_policy: OutboxPolicyV1,
+    minimal_sn_linkage: ServiceNowLinkageContractV1,
+    minimal_local_dev: LocalDevContractV1,
+    minimal_topology_registry: TopologyRegistryLoaderRulesV1,
+) -> None:
+    contracts = [
+        minimal_rulebook,
+        minimal_peak_policy,
+        minimal_prometheus_metrics,
+        minimal_redis_ttl,
+        minimal_outbox_policy,
+        minimal_sn_linkage,
+        minimal_local_dev,
+        minimal_topology_registry,
+    ]
+    for contract in contracts:
+        assert contract.schema_version == "v1"
+
+
+# ── Semantic field tests ──────────────────────────────────────────────────────
+
+
+def test_rulebook_caps_paging_denied_roles(minimal_rulebook: RulebookV1) -> None:
+    assert "SOURCE_TOPIC" in minimal_rulebook.caps.paging_denied_topic_roles
+
+
+def test_redis_ttl_prod_dedupe_accessible(minimal_redis_ttl: RedisTtlPolicyV1) -> None:
+    assert minimal_redis_ttl.ttls_by_env["prod"].dedupe_seconds > 0
+
+
+def test_outbox_prod_retention(minimal_outbox_policy: OutboxPolicyV1) -> None:
+    assert minimal_outbox_policy.retention_by_env["prod"].sent_retention_days == 14
+    assert minimal_outbox_policy.retention_by_env["prod"].dead_retention_days == 90
+
+
+def test_sn_mi_creation_not_allowed(minimal_sn_linkage: ServiceNowLinkageContractV1) -> None:
+    # FR67b: MI-1 posture — automated MI creation must never be allowed
+    assert minimal_sn_linkage.mi_creation_allowed is False
+
+
+def test_prometheus_metrics_keys_accessible(
+    minimal_prometheus_metrics: PrometheusMetricsContractV1,
+) -> None:
+    assert "consumer_group_lag" in minimal_prometheus_metrics.metrics
+    metric = minimal_prometheus_metrics.metrics["consumer_group_lag"]
+    assert metric.canonical == "kafka_consumergroup_group_lag"
+
+
+def test_rulebook_model_validate_from_dict() -> None:
+    data = {
+        "rulebook_id": "rulebook.v1",
+        "version": 1,
+        "evaluation_interval_minutes": 5,
+        "sustained_intervals_required": 5,
+        "defaults": {
+            "missing_series_policy": "UNKNOWN_NOT_ZERO",
+            "required_evidence_policy": "PRESENT_ONLY",
+            "missing_confidence_policy": "DOWNGRADE",
+            "missing_sustained_policy": "DOWNGRADE",
+        },
+        "caps": {
+            "max_action_by_env": {"local": "OBSERVE", "dev": "OBSERVE", "prod": "PAGE"},
+            "max_action_by_tier_in_prod": {"TIER_0": "PAGE", "TIER_1": "TICKET"},
+            "paging_denied_topic_roles": ["SOURCE_TOPIC"],
+        },
+        "gates": [
+            {"id": gid, "name": gid, "intent": "Gate.", "effect": {}}
+            for gid in ("AG0", "AG1", "AG2", "AG3", "AG4", "AG5", "AG6")
+        ],
+    }
+    rulebook = RulebookV1.model_validate(data)
+    assert rulebook.rulebook_id == "rulebook.v1"
+    assert rulebook.evaluation_interval_minutes == 5
+    assert len(rulebook.gates) == 7
+
+
+def test_rulebook_caps_paging_denied_type(minimal_rulebook: RulebookV1) -> None:
+    assert isinstance(minimal_rulebook.caps.paging_denied_topic_roles, tuple)
+
+
+def test_gate_spec_applies_when_extra_field_round_trip() -> None:
+    """GateSpec extra='allow' for applies_when — verify extra fields survive a JSON round-trip."""
+    spec = GateSpec(
+        id="AG2",
+        name="Evidence sufficiency",
+        intent="Downgrade on missing evidence.",
+        effect=GateEffects(),
+        checks=(),
+        applies_when={
+            "any": ["proposed_action in [PAGE, TICKET]", "diagnosis_confidence is UNKNOWN"]
+        },
+    )
+    json_str = spec.model_dump_json()
+    reconstructed = GateSpec.model_validate_json(json_str)
+    assert spec == reconstructed
+    assert reconstructed.model_extra.get("applies_when") == {
+        "any": ["proposed_action in [PAGE, TICKET]", "diagnosis_confidence is UNKNOWN"]
+    }
+
+
+def test_gate_spec_applies_when_string_extra_field_round_trip() -> None:
+    """GateSpec applies_when as plain string (e.g. 'always') also survives round-trip."""
+    spec = GateSpec(
+        id="AG0",
+        name="Schema invariants",
+        intent="Never page on malformed inputs.",
+        effect=GateEffects(),
+        checks=(),
+        applies_when="always",
+    )
+    json_str = spec.model_dump_json()
+    reconstructed = GateSpec.model_validate_json(json_str)
+    assert spec == reconstructed
+    assert reconstructed.model_extra.get("applies_when") == "always"
