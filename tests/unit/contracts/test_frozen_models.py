@@ -10,6 +10,7 @@ Tests cover:
 """
 
 import json
+from datetime import datetime
 
 import pytest
 from pydantic import ValidationError
@@ -28,7 +29,6 @@ from aiops_triage_pipeline.contracts import (
     GateInputV1,
     TriageExcerptV1,
 )
-
 
 # ---------------------------------------------------------------------------
 # Finding nested model
@@ -117,6 +117,42 @@ class TestGateInputV1:
         data = json.loads(sample_gate_input.model_dump_json())
         assert data["evidence_status_map"]["throughput_metric"] == "UNKNOWN"
 
+    def test_gate_input_confidence_out_of_range_rejected(self):
+        with pytest.raises(ValidationError):
+            GateInputV1(
+                env=Environment.LOCAL,
+                cluster_id="c",
+                stream_id="s",
+                topic="t",
+                topic_role="SOURCE_TOPIC",
+                anomaly_family="CONSUMER_LAG",
+                criticality_tier=CriticalityTier.TIER_0,
+                proposed_action=Action.PAGE,
+                diagnosis_confidence=1.5,  # out of range: must be 0.0–1.0
+                sustained=True,
+                findings=(),
+                evidence_status_map={},
+                action_fingerprint="fp",
+            )
+
+    def test_gate_input_invalid_topic_role_rejected(self):
+        with pytest.raises(ValidationError):
+            GateInputV1(
+                env=Environment.LOCAL,
+                cluster_id="c",
+                stream_id="s",
+                topic="t",
+                topic_role="UNKNOWN_ROLE",  # not a valid Literal value
+                anomaly_family="CONSUMER_LAG",
+                criticality_tier=CriticalityTier.TIER_0,
+                proposed_action=Action.PAGE,
+                diagnosis_confidence=0.9,
+                sustained=True,
+                findings=(),
+                evidence_status_map={},
+                action_fingerprint="fp",
+            )
+
 
 # ---------------------------------------------------------------------------
 # ActionDecisionV1
@@ -186,6 +222,21 @@ class TestCaseHeaderEventV1:
         assert '"prod"' in json_str  # Environment enum values are lowercase strings
         assert '"TIER_0"' in json_str
 
+    def test_case_header_event_naive_datetime_rejected(self):
+        with pytest.raises(ValidationError):
+            CaseHeaderEventV1(
+                case_id="c1",
+                env=Environment.PROD,
+                cluster_id="cl",
+                stream_id="s",
+                topic="t",
+                anomaly_family="CONSUMER_LAG",
+                criticality_tier=CriticalityTier.TIER_0,
+                final_action=Action.PAGE,
+                routing_key="team-a",
+                evaluation_ts=datetime(2026, 2, 28, 12, 0, 0),  # naive — no tzinfo
+            )
+
 
 # ---------------------------------------------------------------------------
 # TriageExcerptV1
@@ -209,14 +260,15 @@ class TestTriageExcerptV1:
         assert isinstance(sample_triage_excerpt.findings, tuple)
 
     def test_triage_excerpt_evidence_unknown_preserved(self, sample_triage_excerpt):
-        assert sample_triage_excerpt.evidence_status_map["throughput_metric"] == EvidenceStatus.UNKNOWN
+        status = sample_triage_excerpt.evidence_status_map["throughput_metric"]
+        assert status == EvidenceStatus.UNKNOWN
 
     def test_triage_excerpt_evidence_unknown_serializes_as_string(self, sample_triage_excerpt):
         data = json.loads(sample_triage_excerpt.model_dump_json())
         assert data["evidence_status_map"]["throughput_metric"] == "UNKNOWN"
 
     def test_triage_excerpt_peak_defaults_none(self):
-        from datetime import datetime, timezone
+        from datetime import timezone
 
         excerpt = TriageExcerptV1(
             case_id="c1",
@@ -234,6 +286,24 @@ class TestTriageExcerptV1:
             triage_timestamp=datetime(2026, 2, 28, tzinfo=timezone.utc),
         )
         assert excerpt.peak is None
+
+    def test_triage_excerpt_naive_datetime_rejected(self):
+        with pytest.raises(ValidationError):
+            TriageExcerptV1(
+                case_id="c1",
+                env=Environment.DEV,
+                cluster_id="cl",
+                stream_id="s",
+                topic="t",
+                anomaly_family="CONSUMER_LAG",
+                topic_role="SOURCE_TOPIC",
+                criticality_tier=CriticalityTier.TIER_2,
+                routing_key="team-a",
+                sustained=False,
+                evidence_status_map={},
+                findings=(),
+                triage_timestamp=datetime(2026, 2, 28),  # naive — no tzinfo
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -279,7 +349,10 @@ class TestDiagnosisReportV1:
         assert fallback == reconstructed
 
     def test_diagnosis_report_all_fallback_reason_codes(self):
-        for code in ("LLM_UNAVAILABLE", "LLM_TIMEOUT", "LLM_ERROR", "LLM_STUB", "LLM_SCHEMA_INVALID"):
+        valid_codes = (
+            "LLM_UNAVAILABLE", "LLM_TIMEOUT", "LLM_ERROR", "LLM_STUB", "LLM_SCHEMA_INVALID"
+        )
+        for code in valid_codes:
             fallback = DiagnosisReportV1(
                 verdict="UNKNOWN",
                 confidence=DiagnosisConfidence.LOW,
@@ -287,6 +360,14 @@ class TestDiagnosisReportV1:
                 reason_codes=(code,),
             )
             assert code in fallback.reason_codes
+
+    def test_diagnosis_report_empty_verdict_rejected(self):
+        with pytest.raises(ValidationError):
+            DiagnosisReportV1(
+                verdict="",  # empty string — must be rejected
+                confidence=DiagnosisConfidence.LOW,
+                evidence_pack=EvidencePack(facts=(), missing_evidence=(), matched_rules=()),
+            )
 
     def test_evidence_pack_is_frozen(self, sample_evidence_pack):
         with pytest.raises(ValidationError):

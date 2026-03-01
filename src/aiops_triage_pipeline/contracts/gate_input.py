@@ -1,8 +1,8 @@
 """GateInputV1 — deterministic input to Rulebook AG0–AG6 evaluation (Stage 6)."""
 
-from typing import Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from aiops_triage_pipeline.contracts.enums import (
     Action,
@@ -29,12 +29,12 @@ class GateInputV1(BaseModel, frozen=True):
     cluster_id: str  # cluster_id := cluster_name (exact string)
     stream_id: str  # Logical end-to-end pipeline grouping key
     topic: str  # Topic that triggered the anomaly key
-    topic_role: str  # SOURCE_TOPIC / SHARED_TOPIC / SINK_TOPIC
-    anomaly_family: str  # CONSUMER_LAG / VOLUME_DROP / THROUGHPUT_CONSTRAINED_PROXY
+    topic_role: Literal["SOURCE_TOPIC", "SHARED_TOPIC", "SINK_TOPIC"]
+    anomaly_family: Literal["CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY"]
     criticality_tier: CriticalityTier
     # Diagnosis inputs
     proposed_action: Action  # Diagnosis result before gates apply
-    diagnosis_confidence: float  # 0.0–1.0; deterministic scalar from diagnosis stage
+    diagnosis_confidence: Annotated[float, Field(ge=0.0, le=1.0)]  # Deterministic scalar
     sustained: bool  # True if anomaly sustained for sustained_intervals_required windows
     findings: tuple[Finding, ...]  # Justify diagnosis; declare evidence requirements
     # Evidence primitive -> PRESENT/UNKNOWN/ABSENT/STALE
@@ -45,4 +45,4 @@ class GateInputV1(BaseModel, frozen=True):
     partition_count_observed: int | None = None  # For confidence downgrade on partition coverage
     peak: bool | None = None  # If computed; used for postmortem selector (AG6)
     case_id: str | None = None  # Stable case identifier (for audit)
-    decision_basis: dict | None = None  # Optional deterministic linkage
+    decision_basis: dict[str, Any] | None = None  # Optional deterministic linkage

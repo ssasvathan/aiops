@@ -1,6 +1,6 @@
 # Story 1.2: Event Contract Models
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -536,14 +536,15 @@ claude-sonnet-4-6
 
 - `src/aiops_triage_pipeline/contracts/__init__.py` (modified — replaced stub with full exports)
 - `src/aiops_triage_pipeline/contracts/enums.py` (new)
-- `src/aiops_triage_pipeline/contracts/gate_input.py` (new)
+- `src/aiops_triage_pipeline/contracts/gate_input.py` (modified — added AwareDatetime, Field constraints, Literal types, typed dict)
 - `src/aiops_triage_pipeline/contracts/action_decision.py` (new)
-- `src/aiops_triage_pipeline/contracts/case_header_event.py` (new)
-- `src/aiops_triage_pipeline/contracts/triage_excerpt.py` (new)
-- `src/aiops_triage_pipeline/contracts/diagnosis_report.py` (new)
+- `src/aiops_triage_pipeline/contracts/case_header_event.py` (modified — AwareDatetime, Literal anomaly_family)
+- `src/aiops_triage_pipeline/contracts/triage_excerpt.py` (modified — AwareDatetime, Literal topic_role/anomaly_family)
+- `src/aiops_triage_pipeline/contracts/diagnosis_report.py` (modified — verdict min_length=1 constraint)
 - `tests/unit/contracts/conftest.py` (new)
-- `tests/unit/contracts/test_frozen_models.py` (new)
+- `tests/unit/contracts/test_frozen_models.py` (modified — ruff fixes, added 6 validation tests)
 
 ## Change Log
 
 - 2026-02-28: Implemented Story 1.2 — created 5 frozen event contract models, shared enums, nested models (Finding, EvidencePack), updated contracts/__init__.py exports, created 43 unit tests. All ACs satisfied.
+- 2026-02-28: Code review fixes (AI) — enforced UTC-aware datetimes via `AwareDatetime` on `evaluation_ts`/`triage_timestamp`; constrained `diagnosis_confidence` to `0.0–1.0` via `Field(ge, le)`; enforced `verdict` non-empty via `Field(min_length=1)`; constrained `topic_role` and `anomaly_family` to `Literal` types across all contracts; typed `decision_basis` as `dict[str, Any]`; fixed 3 ruff violations in test file; added 6 validation tests. 49/49 tests pass, ruff clean.
