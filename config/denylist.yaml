@@ -1,0 +1,4 @@
+# Exposure denylist - versioned YAML
+# Full implementation in Story 1.5
+denylist_version: "v1.0.0-stub"
+denied_fields: []
