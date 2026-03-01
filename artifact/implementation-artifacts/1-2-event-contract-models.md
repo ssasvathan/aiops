@@ -1,6 +1,6 @@
 # Story 1.2: Event Contract Models
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -33,64 +33,64 @@ so that every pipeline stage shares a single source of truth for event data stru
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create shared enum types (AC: #5)
-  - [ ] Create `src/aiops_triage_pipeline/contracts/enums.py`
-  - [ ] Implement `Environment(str, Enum)`: LOCAL, DEV, UAT, PROD
-  - [ ] Implement `CriticalityTier(str, Enum)`: TIER_0, TIER_1, TIER_2, UNKNOWN
-  - [ ] Implement `Action(str, Enum)`: OBSERVE, NOTIFY, TICKET, PAGE
-  - [ ] Implement `EvidenceStatus(str, Enum)`: PRESENT, UNKNOWN, ABSENT, STALE
-  - [ ] Implement `DiagnosisConfidence(str, Enum)`: LOW, MEDIUM, HIGH
+- [x] Task 1: Create shared enum types (AC: #5)
+  - [x] Create `src/aiops_triage_pipeline/contracts/enums.py`
+  - [x] Implement `Environment(str, Enum)`: LOCAL, DEV, UAT, PROD
+  - [x] Implement `CriticalityTier(str, Enum)`: TIER_0, TIER_1, TIER_2, UNKNOWN
+  - [x] Implement `Action(str, Enum)`: OBSERVE, NOTIFY, TICKET, PAGE
+  - [x] Implement `EvidenceStatus(str, Enum)`: PRESENT, UNKNOWN, ABSENT, STALE
+  - [x] Implement `DiagnosisConfidence(str, Enum)`: LOW, MEDIUM, HIGH
 
-- [ ] Task 2: Implement `GateInputV1` (AC: #1, #2, #3, #4)
-  - [ ] Create `src/aiops_triage_pipeline/contracts/gate_input.py`
-  - [ ] Define `Finding` nested frozen model (see Dev Notes for full field spec)
-  - [ ] Define `GateInputV1(BaseModel, frozen=True)` with all required and optional fields (see Dev Notes)
-  - [ ] Set `schema_version: Literal["v1"] = "v1"`
-  - [ ] Verify field types match the authoritative contract YAML (`_bmad/input/feed-pack/gateinput-v1.contract.yaml`)
+- [x] Task 2: Implement `GateInputV1` (AC: #1, #2, #3, #4)
+  - [x] Create `src/aiops_triage_pipeline/contracts/gate_input.py`
+  - [x] Define `Finding` nested frozen model (see Dev Notes for full field spec)
+  - [x] Define `GateInputV1(BaseModel, frozen=True)` with all required and optional fields (see Dev Notes)
+  - [x] Set `schema_version: Literal["v1"] = "v1"`
+  - [x] Verify field types match the authoritative contract YAML (`_bmad/input/feed-pack/gateinput-v1.contract.yaml`)
 
-- [ ] Task 3: Implement `ActionDecisionV1` (AC: #1, #2, #3, #4)
-  - [ ] Create `src/aiops_triage_pipeline/contracts/action_decision.py`
-  - [ ] Define `ActionDecisionV1(BaseModel, frozen=True)` with all fields (see Dev Notes)
-  - [ ] Set `schema_version: Literal["v1"] = "v1"`
+- [x] Task 3: Implement `ActionDecisionV1` (AC: #1, #2, #3, #4)
+  - [x] Create `src/aiops_triage_pipeline/contracts/action_decision.py`
+  - [x] Define `ActionDecisionV1(BaseModel, frozen=True)` with all fields (see Dev Notes)
+  - [x] Set `schema_version: Literal["v1"] = "v1"`
 
-- [ ] Task 4: Implement `CaseHeaderEventV1` (AC: #1, #2, #3, #4)
-  - [ ] Create `src/aiops_triage_pipeline/contracts/case_header_event.py`
-  - [ ] Define `CaseHeaderEventV1(BaseModel, frozen=True)` (Kafka publish contract - small payload, header only)
-  - [ ] Set `schema_version: Literal["v1"] = "v1"`
-  - [ ] Use `datetime` with UTC-aware ISO 8601 for `evaluation_ts`
+- [x] Task 4: Implement `CaseHeaderEventV1` (AC: #1, #2, #3, #4)
+  - [x] Create `src/aiops_triage_pipeline/contracts/case_header_event.py`
+  - [x] Define `CaseHeaderEventV1(BaseModel, frozen=True)` (Kafka publish contract - small payload, header only)
+  - [x] Set `schema_version: Literal["v1"] = "v1"`
+  - [x] Use `datetime` with UTC-aware ISO 8601 for `evaluation_ts`
 
-- [ ] Task 5: Implement `TriageExcerptV1` (AC: #1, #2, #3, #4)
-  - [ ] Create `src/aiops_triage_pipeline/contracts/triage_excerpt.py`
-  - [ ] Define `TriageExcerptV1(BaseModel, frozen=True)` (Kafka publish contract + cold path input)
-  - [ ] Set `schema_version: Literal["v1"] = "v1"`
-  - [ ] Include `evidence_status_map: dict[str, EvidenceStatus]` — UNKNOWN-not-zero is critical
-  - [ ] Include `findings: tuple[Finding, ...]` (frozen tuple, not list, for immutability)
+- [x] Task 5: Implement `TriageExcerptV1` (AC: #1, #2, #3, #4)
+  - [x] Create `src/aiops_triage_pipeline/contracts/triage_excerpt.py`
+  - [x] Define `TriageExcerptV1(BaseModel, frozen=True)` (Kafka publish contract + cold path input)
+  - [x] Set `schema_version: Literal["v1"] = "v1"`
+  - [x] Include `evidence_status_map: dict[str, EvidenceStatus]` — UNKNOWN-not-zero is critical
+  - [x] Include `findings: tuple[Finding, ...]` (frozen tuple, not list, for immutability)
 
-- [ ] Task 6: Implement `DiagnosisReportV1` (AC: #1, #2, #3, #4)
-  - [ ] Create `src/aiops_triage_pipeline/contracts/diagnosis_report.py`
-  - [ ] Define `EvidencePack` nested frozen model with `facts`, `missing_evidence`, `matched_rules` fields
-  - [ ] Define `DiagnosisReportV1(BaseModel, frozen=True)` with all fields (see Dev Notes)
-  - [ ] Set `schema_version: Literal["v1"] = "v1"`
-  - [ ] Fallback contract: verdict=UNKNOWN, confidence=LOW, reason_codes for LLM_UNAVAILABLE/LLM_TIMEOUT/LLM_ERROR/LLM_STUB scenarios must be expressible
+- [x] Task 6: Implement `DiagnosisReportV1` (AC: #1, #2, #3, #4)
+  - [x] Create `src/aiops_triage_pipeline/contracts/diagnosis_report.py`
+  - [x] Define `EvidencePack` nested frozen model with `facts`, `missing_evidence`, `matched_rules` fields
+  - [x] Define `DiagnosisReportV1(BaseModel, frozen=True)` with all fields (see Dev Notes)
+  - [x] Set `schema_version: Literal["v1"] = "v1"`
+  - [x] Fallback contract: verdict=UNKNOWN, confidence=LOW, reason_codes for LLM_UNAVAILABLE/LLM_TIMEOUT/LLM_ERROR/LLM_STUB scenarios must be expressible
 
-- [ ] Task 7: Update `contracts/__init__.py` exports (AC: #1)
-  - [ ] Replace stub content with explicit `__all__` exports for all 5 contracts + enums
-  - [ ] Export: `GateInputV1`, `ActionDecisionV1`, `CaseHeaderEventV1`, `TriageExcerptV1`, `DiagnosisReportV1`
-  - [ ] Export: `Finding`, `EvidencePack`, `Environment`, `CriticalityTier`, `Action`, `EvidenceStatus`, `DiagnosisConfidence`
+- [x] Task 7: Update `contracts/__init__.py` exports (AC: #1)
+  - [x] Replace stub content with explicit `__all__` exports for all 5 contracts + enums
+  - [x] Export: `GateInputV1`, `ActionDecisionV1`, `CaseHeaderEventV1`, `TriageExcerptV1`, `DiagnosisReportV1`
+  - [x] Export: `Finding`, `EvidencePack`, `Environment`, `CriticalityTier`, `Action`, `EvidenceStatus`, `DiagnosisConfidence`
 
-- [ ] Task 8: Create unit tests (AC: #7)
-  - [ ] Create `tests/unit/contracts/` directory with `__init__.py` if not already present
-  - [ ] Create `tests/unit/contracts/test_frozen_models.py`
-  - [ ] For each of the 5 contracts: test immutability (mutation raises `ValidationError`)
-  - [ ] For each of the 5 contracts: test `model_dump_json()` → `model_validate_json()` round-trip
-  - [ ] For each of the 5 contracts: test `schema_version` field equals `"v1"`
-  - [ ] Test enum string serialization: assert `Action.PAGE` serializes to `"PAGE"` in JSON
-  - [ ] Test `EvidenceStatus.UNKNOWN` in `evidence_status_map` serializes correctly
-  - [ ] Test `DiagnosisReportV1` fallback construction (verdict=UNKNOWN, confidence=LOW)
+- [x] Task 8: Create unit tests (AC: #7)
+  - [x] Create `tests/unit/contracts/` directory with `__init__.py` if not already present
+  - [x] Create `tests/unit/contracts/test_frozen_models.py`
+  - [x] For each of the 5 contracts: test immutability (mutation raises `ValidationError`)
+  - [x] For each of the 5 contracts: test `model_dump_json()` → `model_validate_json()` round-trip
+  - [x] For each of the 5 contracts: test `schema_version` field equals `"v1"`
+  - [x] Test enum string serialization: assert `Action.PAGE` serializes to `"PAGE"` in JSON
+  - [x] Test `EvidenceStatus.UNKNOWN` in `evidence_status_map` serializes correctly
+  - [x] Test `DiagnosisReportV1` fallback construction (verdict=UNKNOWN, confidence=LOW)
 
-- [ ] Task 9: Verify quality gates (AC: #6)
-  - [ ] Run `uv run ruff check src/aiops_triage_pipeline/contracts/` — must pass with zero errors
-  - [ ] Run `uv run pytest tests/unit/contracts/` — all tests must pass
+- [x] Task 9: Verify quality gates (AC: #6)
+  - [x] Run `uv run ruff check src/aiops_triage_pipeline/contracts/` — must pass with zero errors
+  - [x] Run `uv run pytest tests/unit/contracts/` — all tests must pass
 
 ## Dev Notes
 
@@ -515,6 +515,35 @@ claude-sonnet-4-6
 
 ### Debug Log References
 
+- Ruff E501 violations fixed: shortened inline comments in `gate_input.py` (moved to preceding comment line) and split `diagnosis_report.py` docstring to multi-line format
+- Test fix: `Environment.PROD` serializes to `"prod"` (lowercase) per enum definition — test corrected from `'"PROD"'` to `'"prod"'`
+- Test fix: `test_triage_excerpt_peak_defaults_none` referenced undefined `sample_triage_excerpt` fixture — converted to standalone test with inline datetime
+
 ### Completion Notes List
 
+- Implemented all 5 frozen event contract models using Pydantic v2 `frozen=True` pattern
+- Created `contracts/enums.py` with 5 shared enums using `str, Enum` mixin for automatic JSON string serialization
+- `GateInputV1` and `TriageExcerptV1` share `Finding` nested model (imported from `gate_input.py`)
+- `DiagnosisReportV1` includes `EvidencePack` nested model for structured evidence citation
+- All contracts verified: immutable, JSON round-trip, `schema_version="v1"`, enum string serialization
+- 43 unit tests in `tests/unit/contracts/test_frozen_models.py` + fixtures in `conftest.py`
+- `uv run ruff check src/aiops_triage_pipeline/contracts/` → 0 errors
+- `uv run pytest tests/unit/contracts/` → 43/43 passed
+- `uv run pytest tests/unit/` → 44/44 passed (0 regressions)
+- Import boundary rule upheld: `contracts/` imports only stdlib (`enum`, `datetime`, `typing`) and `pydantic`
+
 ### File List
+
+- `src/aiops_triage_pipeline/contracts/__init__.py` (modified — replaced stub with full exports)
+- `src/aiops_triage_pipeline/contracts/enums.py` (new)
+- `src/aiops_triage_pipeline/contracts/gate_input.py` (new)
+- `src/aiops_triage_pipeline/contracts/action_decision.py` (new)
+- `src/aiops_triage_pipeline/contracts/case_header_event.py` (new)
+- `src/aiops_triage_pipeline/contracts/triage_excerpt.py` (new)
+- `src/aiops_triage_pipeline/contracts/diagnosis_report.py` (new)
+- `tests/unit/contracts/conftest.py` (new)
+- `tests/unit/contracts/test_frozen_models.py` (new)
+
+## Change Log
+
+- 2026-02-28: Implemented Story 1.2 — created 5 frozen event contract models, shared enums, nested models (Finding, EvidencePack), updated contracts/__init__.py exports, created 43 unit tests. All ACs satisfied.

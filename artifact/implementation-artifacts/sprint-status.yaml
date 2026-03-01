@@ -46,7 +46,7 @@ development_status:
   # ─────────────────────────────────────────────────────────
   epic-1: in-progress
   1-1-project-initialization-and-repository-structure: done
-  1-2-event-contract-models: ready-for-dev
+  1-2-event-contract-models: review
   1-3-policy-and-operational-contract-models: ready-for-dev
   1-4-configuration-and-environment-management: backlog
   1-5-exposure-denylist-foundation: backlog
