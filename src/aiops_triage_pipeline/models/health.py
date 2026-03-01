@@ -1,9 +1,8 @@
 """Internal health domain models — not part of the frozen contracts package."""
 
-from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel
+from pydantic import AwareDatetime, BaseModel
 
 
 class HealthStatus(str, Enum):
@@ -30,4 +29,4 @@ class ComponentHealth(BaseModel, frozen=True):
     component: str
     status: HealthStatus
     reason: str | None = None
-    updated_at: datetime
+    updated_at: AwareDatetime  # rejects naive datetimes — always UTC-aware

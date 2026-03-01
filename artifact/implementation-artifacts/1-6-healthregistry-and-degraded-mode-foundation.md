@@ -1,6 +1,6 @@
 # Story 1.6: HealthRegistry & Degraded Mode Foundation
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -230,7 +230,7 @@ import asyncio
 import functools
 from datetime import datetime, timezone
 
-from aiops_triage_pipeline.models.events import DegradedModeEvent, TelemetryDegradedEvent
+from aiops_triage_pipeline.health.metrics import record_status
 from aiops_triage_pipeline.models.health import ComponentHealth, HealthStatus
 
 
@@ -273,6 +273,7 @@ class HealthRegistry:
                 reason=reason,
                 updated_at=datetime.now(tz=timezone.utc),
             )
+        record_status(component, status)
 
     def get(self, component: str) -> HealthStatus | None:
         """Get current status for a component (lock-free read).
@@ -806,8 +807,11 @@ No blockers encountered. All stubs replaced in single pass per Dev Notes specifi
 - `src/aiops_triage_pipeline/health/__init__.py`
 - `tests/unit/health/conftest.py`
 - `tests/unit/health/test_registry.py`
+- `tests/unit/health/test_server.py`
 - `artifact/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
 
 - **2026-03-01**: Story 1.6 implemented — HealthRegistry singleton (asyncio-safe), ComponentHealth/HealthStatus domain models, DegradedModeEvent/TelemetryDegradedEvent event models, /health asyncio TCP server, OTLP metrics stub, full exports, 16 unit tests (121/121 suite green, ruff clean).
+- **2026-03-01**: Code review fixes (HIGH/MEDIUM) — 5 issues resolved: (H1) metrics.py delta-based UpDownCounter to correctly represent current status; (H2) server.py try/finally ensures writer always closed on handler exception; (M1) server.py default host changed to 127.0.0.1; (M2) registry.py wires record_status() call after update; (M3) test_server.py added with 5 tests covering AC3 (126/126 suite green, ruff clean).
+- **2026-03-01**: Code review fixes (LOW) — 5 issues resolved: (L1) registry.py get_all() docstring corrected; (L2) models/health.py updated_at uses AwareDatetime to reject naive datetimes; (L3) test_registry.py added test_concurrent_updates_multiple_components for multi-component concurrency; (L4) health/__init__.py exports start_health_server; (L5) Dev Notes registry.py snippet corrected to match actual imports (127/127 suite green, ruff clean).

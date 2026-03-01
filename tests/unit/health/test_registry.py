@@ -2,11 +2,11 @@ import asyncio
 from datetime import datetime, timezone
 
 import pytest
+from pydantic import ValidationError
 
 from aiops_triage_pipeline.health.registry import HealthRegistry
 from aiops_triage_pipeline.models.events import DegradedModeEvent, TelemetryDegradedEvent
 from aiops_triage_pipeline.models.health import ComponentHealth, HealthStatus
-from pydantic import ValidationError
 
 
 async def test_update_sets_healthy_status(registry: HealthRegistry) -> None:
@@ -130,6 +130,21 @@ async def test_update_stores_reason(registry: HealthRegistry) -> None:
     await registry.update("llm", HealthStatus.DEGRADED, reason="Timeout after 30s")
     health = registry.get_all()["llm"]
     assert health.reason == "Timeout after 30s"
+
+
+async def test_concurrent_updates_multiple_components(registry: HealthRegistry) -> None:
+    """Concurrent updates to distinct components all land correctly (no cross-contamination)."""
+    components = ["redis", "prometheus", "llm", "postgres", "kafka"]
+    target_status = HealthStatus.DEGRADED
+
+    async def update_component(name: str) -> None:
+        await registry.update(name, target_status, reason=f"{name}-degraded")
+
+    await asyncio.gather(*[update_component(c) for c in components])
+
+    for c in components:
+        assert registry.get(c) == target_status
+        assert registry.get_all()[c].reason == f"{c}-degraded"
 
 
 async def test_update_overwrites_previous_status(registry: HealthRegistry) -> None:

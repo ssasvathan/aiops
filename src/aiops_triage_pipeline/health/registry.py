@@ -4,6 +4,7 @@ import asyncio
 import functools
 from datetime import datetime, timezone
 
+from aiops_triage_pipeline.health.metrics import record_status
 from aiops_triage_pipeline.models.health import ComponentHealth, HealthStatus
 
 
@@ -46,6 +47,7 @@ class HealthRegistry:
                 reason=reason,
                 updated_at=datetime.now(tz=timezone.utc),
             )
+        record_status(component, status)
 
     def get(self, component: str) -> HealthStatus | None:
         """Get current status for a component (lock-free read).
@@ -60,8 +62,9 @@ class HealthRegistry:
     def get_all(self) -> dict[str, ComponentHealth]:
         """Return a shallow copy snapshot of all component health records (lock-free read).
 
-        Returns a dict keyed by component name. Safe to iterate — the underlying
-        dict is replaced on update, not mutated in place.
+        Returns a dict keyed by component name. Safe to iterate because
+        dict() creates a shallow copy at call time — callers iterate the
+        snapshot, not the live registry dict that update() mutates.
         """
         return dict(self._components)
 

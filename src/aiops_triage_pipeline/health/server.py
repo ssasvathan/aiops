@@ -11,38 +11,40 @@ async def _handle_health_request(
     writer: asyncio.StreamWriter,
 ) -> None:
     """Handle a single HTTP GET /health request."""
-    # Read and discard HTTP request headers (we don't inspect method or path)
-    while True:
-        line = await reader.readline()
-        if line in (b"\r\n", b"\n", b""):
-            break
+    try:
+        # Read and discard HTTP request headers (we don't inspect method or path)
+        while True:
+            line = await reader.readline()
+            if line in (b"\r\n", b"\n", b""):
+                break
 
-    registry = get_health_registry()
-    statuses = {
-        name: health.model_dump(mode="json")
-        for name, health in registry.get_all().items()
-    }
-    body = json.dumps(statuses, default=str).encode("utf-8")
+        registry = get_health_registry()
+        statuses = {
+            name: health.model_dump(mode="json")
+            for name, health in registry.get_all().items()
+        }
+        body = json.dumps(statuses, default=str).encode("utf-8")
 
-    response = (
-        b"HTTP/1.1 200 OK\r\n"
-        b"Content-Type: application/json\r\n"
-        b"Content-Length: " + str(len(body)).encode() + b"\r\n"
-        b"Connection: close\r\n"
-        b"\r\n"
-        + body
-    )
-    writer.write(response)
-    await writer.drain()
-    writer.close()
-    await writer.wait_closed()
+        response = (
+            b"HTTP/1.1 200 OK\r\n"
+            b"Content-Type: application/json\r\n"
+            b"Content-Length: " + str(len(body)).encode() + b"\r\n"
+            b"Connection: close\r\n"
+            b"\r\n"
+            + body
+        )
+        writer.write(response)
+        await writer.drain()
+    finally:
+        writer.close()
+        await writer.wait_closed()
 
 
-async def start_health_server(host: str = "0.0.0.0", port: int = 8080) -> asyncio.Server:
+async def start_health_server(host: str = "127.0.0.1", port: int = 8080) -> asyncio.Server:
     """Start the asyncio-based /health HTTP endpoint server.
 
     Args:
-        host: Bind address (default 0.0.0.0 — all interfaces)
+        host: Bind address (default 127.0.0.1 — loopback only; pass "0.0.0.0" for all interfaces)
         port: Port to listen on (default 8080)
 
     Returns:
