@@ -1,6 +1,6 @@
 # Story 1.5: Exposure Denylist Foundation
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -33,49 +33,49 @@ so that sensitive fields are consistently redacted at all 4 output boundaries (T
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Define `DenylistV1` frozen Pydantic model (AC: #1, #4, #5)
-  - [ ] In `src/aiops_triage_pipeline/denylist/loader.py`, define `DenylistV1(BaseModel, frozen=True)` with fields:
+- [x] Task 1: Define `DenylistV1` frozen Pydantic model (AC: #1, #4, #5)
+  - [x] In `src/aiops_triage_pipeline/denylist/loader.py`, define `DenylistV1(BaseModel, frozen=True)` with fields:
     - `schema_version: Literal["v1"] = "v1"`
     - `denylist_version: str` — e.g., `"v1.0.0"` — stamped into CaseFiles
     - `denied_field_names: tuple[str, ...]` — case-insensitive exact field name matches
     - `denied_value_patterns: tuple[str, ...] = ()` — regex patterns for field values
     - `description: str = ""`
-  - [ ] Confirm `DenylistV1` is NOT in `contracts/` — it belongs in `denylist/loader.py` (architecture decision)
+  - [x] Confirm `DenylistV1` is NOT in `contracts/` — it belongs in `denylist/loader.py` (architecture decision)
 
-- [ ] Task 2: Implement `load_denylist(path: Path) -> DenylistV1` (AC: #1)
-  - [ ] In `src/aiops_triage_pipeline/denylist/loader.py`, implement `load_denylist(path: Path) -> DenylistV1`
-  - [ ] Use `yaml.safe_load(path.read_text())` + `DenylistV1.model_validate(raw)` — same pattern as `load_policy_yaml` from Story 1.4
-  - [ ] Let `model_validate` raise `ValidationError` for malformed YAML — no manual try/except needed at this layer
-  - [ ] Note: `pyyaml` must be in `pyproject.toml` (added by Story 1.4 — if Story 1.4 is not complete, add `"pyyaml~=6.0"` here)
+- [x] Task 2: Implement `load_denylist(path: Path) -> DenylistV1` (AC: #1)
+  - [x] In `src/aiops_triage_pipeline/denylist/loader.py`, implement `load_denylist(path: Path) -> DenylistV1`
+  - [x] Use `yaml.safe_load(path.read_text())` + `DenylistV1.model_validate(raw)` — same pattern as `load_policy_yaml` from Story 1.4
+  - [x] Let `model_validate` raise `ValidationError` for malformed YAML — no manual try/except needed at this layer
+  - [x] Note: `pyyaml` must be in `pyproject.toml` (added by Story 1.4 — if Story 1.4 is not complete, add `"pyyaml~=6.0"` here)
 
-- [ ] Task 3: Implement `apply_denylist(fields: dict, denylist: DenylistV1) -> dict` (AC: #2, #3, #6)
-  - [ ] In `src/aiops_triage_pipeline/denylist/enforcement.py`, implement `apply_denylist`
-  - [ ] Compile `denylist.denied_value_patterns` to regex once per call using `re.compile`
-  - [ ] Build `denied_names_lower: frozenset[str]` = `frozenset(n.lower() for n in denylist.denied_field_names)`
-  - [ ] For each `(key, value)` in `fields.items()`:
+- [x] Task 3: Implement `apply_denylist(fields: dict, denylist: DenylistV1) -> dict` (AC: #2, #3, #6)
+  - [x] In `src/aiops_triage_pipeline/denylist/enforcement.py`, implement `apply_denylist`
+  - [x] Compile `denylist.denied_value_patterns` to regex once per call using `re.compile`
+  - [x] Build `denied_names_lower: frozenset[str]` = `frozenset(n.lower() for n in denylist.denied_field_names)`
+  - [x] For each `(key, value)` in `fields.items()`:
     - If `key.lower() in denied_names_lower` → skip (deny by name)
     - Elif value is `str` and any compiled pattern matches → skip (deny by value pattern)
     - Else → include in result
-  - [ ] Return `dict` of surviving fields (order preserved)
-  - [ ] Handles flat dicts only — nested field enforcement is deferred to Story 4.6
+  - [x] Return `dict` of surviving fields (order preserved)
+  - [x] Handles flat dicts only — nested field enforcement is deferred to Story 4.6
 
-- [ ] Task 4: Update `config/denylist.yaml` with real content (AC: #5)
-  - [ ] Replace the current stub (`denied_fields: []`) with a real denylist (see Dev Notes for full YAML)
-  - [ ] Set `denylist_version: "v1.0.0"`
-  - [ ] Include `denied_field_names` for: credentials (password, secret, api_key, token…), sink endpoints (slack_webhook_url, pd_api_key, sn_password…), kerberos artifacts, connection strings
-  - [ ] Include `denied_value_patterns` for: embedded passwords in URLs, bearer tokens, Ranger access group names
+- [x] Task 4: Update `config/denylist.yaml` with real content (AC: #5)
+  - [x] Replace the current stub (`denied_fields: []`) with a real denylist (see Dev Notes for full YAML)
+  - [x] Set `denylist_version: "v1.0.0"`
+  - [x] Include `denied_field_names` for: credentials (password, secret, api_key, token…), sink endpoints (slack_webhook_url, pd_api_key, sn_password…), kerberos artifacts, connection strings
+  - [x] Include `denied_value_patterns` for: embedded passwords in URLs, bearer tokens, Ranger access group names
 
-- [ ] Task 5: Update `denylist/__init__.py` exports
-  - [ ] Export: `DenylistV1`, `load_denylist`, `apply_denylist`
-  - [ ] Currently a 1-line stub — replace completely
+- [x] Task 5: Update `denylist/__init__.py` exports
+  - [x] Export: `DenylistV1`, `load_denylist`, `apply_denylist`
+  - [x] Currently a 1-line stub — replace completely
 
-- [ ] Task 6: Create unit tests (AC: #6)
-  - [ ] Create `tests/unit/denylist/test_loader.py`:
+- [x] Task 6: Create unit tests (AC: #6)
+  - [x] Create `tests/unit/denylist/test_loader.py`:
     - Test `load_denylist` with a valid YAML file → returns `DenylistV1`
     - Test `denylist.denylist_version` equals YAML value
     - Test malformed YAML raises `ValidationError` or `yaml.YAMLError`
     - Test missing required field (`denylist_version` absent) raises `ValidationError`
-  - [ ] Create `tests/unit/denylist/test_enforcement.py`:
+  - [x] Create `tests/unit/denylist/test_enforcement.py`:
     - Test denied field (exact name) is absent from output
     - Test non-denied field passes through
     - Test `{}` input → `{}` output
@@ -84,12 +84,12 @@ so that sensitive fields are consistently redacted at all 4 output boundaries (T
     - Test non-matching value passes through even if name is not in denied list
     - Test multiple denied fields in one call — all removed
     - Test `denied_value_patterns=()` (empty) → only name-based denial applies
-  - [ ] Place shared fixtures (minimal `DenylistV1` instances) in `tests/unit/denylist/conftest.py`
-  - [ ] Verify `tests/unit/denylist/__init__.py` exists (it does — from Story 1.1)
+  - [x] Place shared fixtures (minimal `DenylistV1` instances) in `tests/unit/denylist/conftest.py`
+  - [x] Verify `tests/unit/denylist/__init__.py` exists (it does — from Story 1.1)
 
-- [ ] Task 7: Verify quality gates
-  - [ ] Run `uv run ruff check src/aiops_triage_pipeline/denylist/` — zero errors
-  - [ ] Run `uv run pytest tests/unit/denylist/ -v` — all tests pass
+- [x] Task 7: Verify quality gates
+  - [x] Run `uv run ruff check src/aiops_triage_pipeline/denylist/` — zero errors
+  - [x] Run `uv run pytest tests/unit/denylist/ -v` — all tests pass
 
 ## Dev Notes
 
@@ -610,6 +610,30 @@ claude-sonnet-4-6
 
 ### Debug Log References
 
+_No debug issues encountered._
+
 ### Completion Notes List
 
+- Implemented `DenylistV1` frozen Pydantic model in `denylist/loader.py` with all required fields: `schema_version`, `denylist_version`, `denied_field_names`, `denied_value_patterns`, `description`.
+- Implemented `load_denylist(path)` using lazy `yaml` import + `model_validate` pattern (consistent with Story 1.4).
+- Implemented `apply_denylist(fields, denylist)` in `denylist/enforcement.py` with `frozenset` for O(1) name lookups and compiled regex patterns for value matching.
+- Replaced `config/denylist.yaml` stub with full v1.0.0 denylist covering credentials, Kerberos artifacts, sink endpoint secrets, connection strings, and 4 regex value patterns.
+- Updated `denylist/__init__.py` to export `DenylistV1`, `load_denylist`, `apply_denylist`.
+- Created 15 unit tests across `test_loader.py` (6 tests) and `test_enforcement.py` (9 tests) with shared fixtures in `conftest.py`.
+- All 102 unit tests pass; ruff reports zero errors; no regressions.
+- Code review fixes applied: added `@field_validator` to `DenylistV1` to validate regex patterns at load time (H1); added `test_empty_patterns_name_denial_still_fires` for isolated pattern/name denial test (M1); fixed fragile CWD-relative path in `test_load_real_denylist_yaml` (M2); added `test_load_denylist_malformed_yaml_raises` and `test_denylist_invalid_regex_pattern_raises` for `yaml.YAMLError` and invalid-regex paths (M3/H1 test). Test count: 18 denylist unit tests, 105 total. All ruff checks pass.
+
 ### File List
+
+- `src/aiops_triage_pipeline/denylist/__init__.py` (modified)
+- `src/aiops_triage_pipeline/denylist/loader.py` (implemented)
+- `src/aiops_triage_pipeline/denylist/enforcement.py` (implemented)
+- `config/denylist.yaml` (replaced stub with v1.0.0)
+- `tests/unit/denylist/conftest.py` (created)
+- `tests/unit/denylist/test_loader.py` (created)
+- `tests/unit/denylist/test_enforcement.py` (created)
+
+## Change Log
+
+- 2026-03-01: Story 1.5 implemented — DenylistV1 model, load_denylist, apply_denylist, real config/denylist.yaml v1.0.0, 15 unit tests (all pass). Story status → review.
+- 2026-03-01: Code review fixes — H1 regex validation at load time, M1 isolated empty-patterns test, M2 absolute path fix, M3 malformed YAML + invalid regex tests. 18 denylist tests, 105 total. Story status → done.

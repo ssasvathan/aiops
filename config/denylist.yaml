@@ -1,4 +1,75 @@
-# Exposure denylist - versioned YAML
-# Full implementation in Story 1.5
-denylist_version: "v1.0.0-stub"
-denied_fields: []
+# Exposure Denylist v1.0.0 — aiOps Triage Pipeline
+# Version: v1.0.0
+# Status: ACTIVE
+#
+# Purpose: Prevent sensitive data from appearing at the 4 output boundaries:
+#   1. TriageExcerpt (Kafka hot-path event)
+#   2. Slack notification payloads
+#   3. ServiceNow description/work notes
+#   4. LLM narrative inputs/outputs
+#
+# Change management: This file is git-tracked. Changes require explicit security review.
+# All denied_value_patterns are Python re-compatible regex strings.
+
+schema_version: "v1"
+denylist_version: "v1.0.0"
+description: >
+  Initial exposure denylist for aiOps pipeline v1.
+  Covers credential field names, sink endpoint secrets,
+  Kerberos auth artifacts, connection strings, and Ranger access groups.
+
+# Exact field names to deny (case-insensitive, flat-key match).
+# Any field with a name matching one of these (regardless of value) is removed.
+denied_field_names:
+  # --- Credentials & secrets ---
+  - password
+  - passwd
+  - secret
+  - secret_key
+  - api_key
+  - apikey
+  - access_key
+  - token
+  - bearer_token
+  - auth_token
+  - credential
+  - credentials
+  - private_key
+  - private_key_id
+  - client_secret
+  # --- Kerberos / auth artifacts ---
+  - keytab_path
+  - kerberos_keytab
+  - kerberos_principal
+  - krb5_conf_path
+  - sasl_password
+  - kafka_sasl_password
+  # --- Sink endpoint secrets ---
+  - slack_webhook_url
+  - slack_bot_token
+  - pd_api_key
+  - pagerduty_api_key
+  - sn_password
+  - servicenow_password
+  - llm_api_key
+  - llm_bearer_token
+  # --- Connection / DSN strings (often embed passwords) ---
+  - database_url
+  - db_url
+  - connection_string
+  - dsn
+  - redis_url
+  - s3_secret_key
+
+# Regex patterns for field VALUES.
+# Any field whose string value matches one of these patterns (re.search) is removed,
+# regardless of its field name. Useful for catching credentials in unexpected fields.
+denied_value_patterns:
+  # Bearer tokens in values (e.g., Authorization header values)
+  - "(?i)bearer\\s+[A-Za-z0-9._+/=\\-]{10,}"
+  # Passwords embedded in URLs (e.g., postgresql://user:pass@host)
+  - "(?i)://[^:@/]+:[^@/]{3,}@"
+  # Apache Ranger access group names (common bank naming convention)
+  - "(?i)\\bRANGER_[A-Z][A-Z0-9_]{2,}\\b"
+  # Ranger-managed group prefixes
+  - "(?i)\\b(rm|grp|acl)_[a-z][a-z0-9_]{2,}\\b"
