@@ -146,6 +146,23 @@ services:
       - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
 
+  harness:
+    build:
+      context: harness
+    ports:
+      - "8000:8000"
+    environment:
+      HARNESS_PATTERN: all
+      HARNESS_CYCLE_SECONDS: "60"
+      HARNESS_INTENSITY: "0.5"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/metrics"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
   # app: __main__.py currently prints mode and exits — full pipeline wiring is Story 2.1+.
   # The service is defined here so `docker compose up` exercises the Dockerfile build and
   # confirms the container can start against real infrastructure. It will show as Exited(0)

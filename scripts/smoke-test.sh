@@ -61,6 +61,14 @@ echo "--- Prometheus ---"
 check "Health endpoint (/-/healthy)" \
   curl -sf http://localhost:9090/-/healthy
 
+echo "--- Harness ---"
+check "Metrics endpoint (/metrics)" \
+  curl -sf http://localhost:8000/metrics
+check "Canonical metric present (messagesinpersec)" \
+  bash -c "curl -sf http://localhost:8000/metrics | grep -q 'kafka_server_brokertopicmetrics_messagesinpersec'"
+check "Harness label namespace (env=harness)" \
+  bash -c "for i in 1 2 3; do curl -sf http://localhost:8000/metrics | grep -q 'env=\"harness\"' && exit 0; sleep 1; done; exit 1"
+
 echo ""
 if [ "$ERRORS" -eq 0 ]; then
   echo "All checks passed!"
