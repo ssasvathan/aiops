@@ -5,16 +5,29 @@
 
 set -euo pipefail
 
+# Preflight: abort early with a clear message if the stack is not running.
+# Without this check, `docker compose exec` errors are readable but the MinIO
+# bucket check (which uses `docker compose run --no-deps`) creates a fresh
+# network and produces a confusing DNS-resolution failure.
+running=$(docker compose ps --services --filter status=running 2>/dev/null || true)
+if [ -z "$running" ]; then
+  echo "ERROR: No services are running. Start the stack first:" >&2
+  echo "  docker compose up --detach --wait" >&2
+  exit 1
+fi
+
 ERRORS=0
 
 check() {
   local name="$1"
   shift
   printf "%-50s" "  Checking $name..."
-  if "$@" > /dev/null 2>&1; then
+  local output
+  if output=$("$@" 2>&1); then
     echo "OK"
   else
     echo "FAILED"
+    echo "    ↳ $output" >&2
     ERRORS=$((ERRORS + 1))
   fi
 }

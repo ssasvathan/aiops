@@ -4,12 +4,16 @@ services:
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
+      # Explicitly whitelist 4-letter commands used by the health check;
+      # newer ZooKeeper versions restrict these by default.
+      ZOOKEEPER_4LW_COMMANDS_WHITELIST: "srvr,ruok,mntr"
     healthcheck:
       test: ["CMD", "bash", "-c", "echo srvr | nc localhost 2181 | grep -q 'Mode:'"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 15s
+    restart: unless-stopped
     volumes:
       - zookeeper-data:/var/lib/zookeeper/data
       - zookeeper-log:/var/lib/zookeeper/log
@@ -35,6 +39,7 @@ services:
       timeout: 10s
       retries: 10
       start_period: 30s
+    restart: unless-stopped
     volumes:
       - kafka-data:/var/lib/kafka/data
 
@@ -73,6 +78,7 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    restart: unless-stopped
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
@@ -86,6 +92,7 @@ services:
       timeout: 3s
       retries: 5
       start_period: 5s
+    restart: unless-stopped
     volumes:
       - redis-data:/data
 
@@ -104,10 +111,14 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+    restart: unless-stopped
     volumes:
       - minio-data:/data
 
   minio-init:
+    # mc client pinned to RELEASE.2025-01-17T23-25-50Z (3 days before server
+    # RELEASE.2025-01-20T14-49-07Z) — the 2025-01-20 mc tag does not exist on
+    # Docker Hub; this nearest prior release is API-compatible for mb/alias ops.
     image: minio/mc:RELEASE.2025-01-17T23-25-50Z
     depends_on:
       minio:
@@ -130,10 +141,15 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+    restart: unless-stopped
     volumes:
       - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
 
+  # app: __main__.py currently prints mode and exits — full pipeline wiring is Story 2.1+.
+  # The service is defined here so `docker compose up` exercises the Dockerfile build and
+  # confirms the container can start against real infrastructure. It will show as Exited(0)
+  # which is expected at this stage of development.
   app:
     build: .
     env_file: config/.env.docker
