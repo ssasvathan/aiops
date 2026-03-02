@@ -53,8 +53,8 @@ development_status:
   1-6-healthregistry-and-degraded-mode-foundation: done
   1-7-structured-logging-foundation: done
   1-8-local-development-environment-docker-compose: done
-  1-9-harness-traffic-generation: backlog
-  epic-1-retrospective: optional
+  1-9-harness-traffic-generation: done
+  epic-1-retrospective: done
 
   # ─────────────────────────────────────────────────────────
   # Epic 2: Evidence Collection & Signal Validation
