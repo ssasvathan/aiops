@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Mapping
+from typing import Mapping, Sequence
 
 from aiops_triage_pipeline.integrations.prometheus import (
     MetricQueryDefinition,
@@ -10,10 +10,12 @@ from aiops_triage_pipeline.integrations.prometheus import (
 )
 from aiops_triage_pipeline.logging.setup import get_logger
 from aiops_triage_pipeline.models.evidence import EvidenceStageOutput
+from aiops_triage_pipeline.models.peak import PeakScope, PeakStageOutput
 from aiops_triage_pipeline.pipeline.stages.evidence import (
     collect_evidence_stage_output,
     collect_prometheus_samples,
 )
+from aiops_triage_pipeline.pipeline.stages.peak import collect_peak_stage_output
 
 
 @dataclass(frozen=True)
@@ -98,3 +100,17 @@ async def run_evidence_stage_cycle(
         evaluation_time=evaluation_time,
     )
     return collect_evidence_stage_output(samples_by_metric)
+
+
+def run_peak_stage_cycle(
+    *,
+    evidence_output: EvidenceStageOutput,
+    historical_windows_by_scope: Mapping[PeakScope, Sequence[float]],
+    evaluation_time: datetime,
+) -> PeakStageOutput:
+    """Run Stage 2 peak classification from Stage 1 normalized rows."""
+    return collect_peak_stage_output(
+        rows=evidence_output.rows,
+        historical_windows_by_scope=historical_windows_by_scope,
+        evaluation_time=evaluation_time,
+    )

@@ -9,7 +9,9 @@ from aiops_triage_pipeline.pipeline.scheduler import (
     floor_to_interval_boundary,
     next_interval_boundary,
     run_evidence_stage_cycle,
+    run_peak_stage_cycle,
 )
+from aiops_triage_pipeline.pipeline.stages.evidence import collect_evidence_stage_output
 
 
 def _parse_logs(stream: io.StringIO) -> list[dict]:
@@ -155,3 +157,25 @@ async def test_run_evidence_stage_cycle_wires_collection_to_anomaly_output() -> 
 
     assert output.rows
     assert ("prod", "cluster-a", "orders") in output.gate_findings_by_scope
+
+
+def test_run_peak_stage_cycle_wires_stage1_rows_to_peak_output() -> None:
+    samples = {
+        "topic_messages_in_per_sec": [
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 18.0,
+            }
+        ]
+    }
+    evidence_output = collect_evidence_stage_output(samples)
+    scope = ("prod", "cluster-a", "orders")
+
+    peak_output = run_peak_stage_cycle(
+        evidence_output=evidence_output,
+        historical_windows_by_scope={scope: [float(x) for x in range(1, 21)]},
+        evaluation_time=datetime(2026, 3, 2, 12, 5, tzinfo=UTC),
+    )
+
+    assert scope in peak_output.classifications_by_scope
+    assert scope in peak_output.peak_context_by_scope
