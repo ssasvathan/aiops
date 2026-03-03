@@ -36,14 +36,15 @@ class AnomalyDetectionResult(BaseModel, frozen=True):
     """Anomaly detection result keyed by normalized identity scope."""
 
     findings: tuple[AnomalyFinding, ...]
-    findings_by_scope: Mapping[tuple[str, ...], tuple[AnomalyFinding, ...]]
+    # Always derived from `findings` by the model validator; any caller-supplied value is
+    # overwritten. Declared with a default so callers only need to pass `findings`.
+    findings_by_scope: Mapping[tuple[str, ...], tuple[AnomalyFinding, ...]] = {}
 
     @model_validator(mode="after")
-    def _freeze_findings_by_scope(
+    def _derive_and_freeze_findings_by_scope(
         self,
     ) -> "AnomalyDetectionResult":
-        # Freeze nested mapping so "frozen=True" cannot be bypassed through mutable dict APIs.
-        object.__setattr__(
-            self, "findings_by_scope", MappingProxyType(dict(self.findings_by_scope))
-        )
+        # Always derive from `findings` to guarantee consistency; never trust caller-supplied map.
+        derived = group_findings_by_scope(self.findings)
+        object.__setattr__(self, "findings_by_scope", MappingProxyType(derived))
         return self

@@ -6,7 +6,6 @@ from aiops_triage_pipeline.contracts.gate_input import Finding
 from aiops_triage_pipeline.models.anomaly import (
     AnomalyDetectionResult,
     AnomalyFinding,
-    group_findings_by_scope,
 )
 from aiops_triage_pipeline.models.evidence import EvidenceRow
 
@@ -19,7 +18,6 @@ _THROUGHPUT_MIN_TOTAL_PRODUCE_REQUESTS_PER_SEC = 100.0
 _THROUGHPUT_FAILURE_RATIO_MIN = 0.05
 _VOLUME_DROP_MAX_CURRENT_MESSAGES_IN_PER_SEC = 1.0
 _VOLUME_DROP_MIN_BASELINE_MESSAGES_IN_PER_SEC = 50.0
-_VOLUME_DROP_MAX_CURRENT_TO_BASELINE_RATIO = 0.1
 _VOLUME_DROP_MIN_EXPECTED_REQUESTS_PER_SEC = 150.0
 
 
@@ -48,10 +46,8 @@ def detect_anomaly_findings(rows: list[EvidenceRow]) -> AnomalyDetectionResult:
             findings.append(volume_drop_finding)
 
     finding_tuple = tuple(findings)
-    return AnomalyDetectionResult(
-        findings=finding_tuple,
-        findings_by_scope=group_findings_by_scope(finding_tuple),
-    )
+    # findings_by_scope is auto-derived from findings by AnomalyDetectionResult's model_validator.
+    return AnomalyDetectionResult(findings=finding_tuple)
 
 
 def build_gate_findings_by_scope(
@@ -74,9 +70,12 @@ def _detect_consumer_lag_buildup(
     if len(lag_values) < 2 or len(offset_values) < 2:
         return None
 
+    # lag_growth is computed as last-minus-first to preserve temporal direction:
+    # negative growth (decreasing lag) must not trigger detection.
     lag_growth = lag_values[-1] - lag_values[0]
-    offset_progress = offset_values[-1] - offset_values[0]
-    lag_end = lag_values[-1]
+    # Use max-min spread for offset progress to be independent of sample list ordering.
+    offset_progress = max(offset_values) - min(offset_values)
+    lag_end = max(lag_values)
     if lag_end < _LAG_BUILDUP_MIN_LAG:
         return None
     if lag_growth < _LAG_BUILDUP_MIN_GROWTH:
@@ -154,23 +153,18 @@ def _detect_volume_drop(
     total_produce_values = scope_metrics.get("total_produce_requests_per_sec")
     if not messages_in_values or not total_produce_values:
         return None
-    if len(messages_in_values) < 2:
-        return None
 
-    baseline_messages_in = max(messages_in_values[:-1])
-    current_messages_in = messages_in_values[-1]
+    # Use max as baseline and min as current to be independent of sample list ordering.
+    # Detects: peak throughput is high but the lowest observed value for the scope is near zero,
+    # indicating a drop regardless of whether samples are temporal or cross-broker.
+    baseline_messages_in = max(messages_in_values)
+    current_messages_in = min(messages_in_values)
     expected_requests = max(total_produce_values)
     if baseline_messages_in < _VOLUME_DROP_MIN_BASELINE_MESSAGES_IN_PER_SEC:
         return None
     if expected_requests < _VOLUME_DROP_MIN_EXPECTED_REQUESTS_PER_SEC:
         return None
     if current_messages_in > _VOLUME_DROP_MAX_CURRENT_MESSAGES_IN_PER_SEC:
-        return None
-    if baseline_messages_in <= 0:
-        return None
-
-    current_to_baseline_ratio = current_messages_in / baseline_messages_in
-    if current_to_baseline_ratio > _VOLUME_DROP_MAX_CURRENT_TO_BASELINE_RATIO:
         return None
 
     scope_key = "|".join(scope)

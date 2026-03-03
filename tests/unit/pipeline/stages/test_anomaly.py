@@ -65,10 +65,8 @@ def test_detection_result_keeps_findings_and_scope_map() -> None:
         evidence_required=("consumer_group_lag", "consumer_group_offset"),
     )
 
-    result = AnomalyDetectionResult(
-        findings=(finding,),
-        findings_by_scope=group_findings_by_scope((finding,)),
-    )
+    # findings_by_scope is auto-derived; only findings needs to be supplied.
+    result = AnomalyDetectionResult(findings=(finding,))
 
     assert len(result.findings) == 1
     assert (
@@ -86,13 +84,32 @@ def test_detection_result_scope_map_is_immutable() -> None:
         reason_codes=("LAG_BUILDUP_DETECTED",),
         evidence_required=("consumer_group_lag", "consumer_group_offset"),
     )
-    result = AnomalyDetectionResult(
-        findings=(finding,),
-        findings_by_scope=group_findings_by_scope((finding,)),
-    )
+    result = AnomalyDetectionResult(findings=(finding,))
 
     with pytest.raises(TypeError):
         result.findings_by_scope[("dev", "cluster-9", "group-x", "topic-z")] = ()
+
+
+def test_detection_result_derives_scope_map_from_findings_ignoring_caller_value() -> None:
+    """AnomalyDetectionResult must always derive findings_by_scope from findings.
+
+    Passing an inconsistent or empty findings_by_scope must be silently corrected so callers
+    cannot construct a logically broken result.
+    """
+    finding = AnomalyFinding(
+        finding_id="f-5",
+        anomaly_family="VOLUME_DROP",
+        scope=("prod", "cluster-1", "topic-x"),
+        severity="MEDIUM",
+        reason_codes=("VOLUME_DROP_VS_BASELINE",),
+        evidence_required=("topic_messages_in_per_sec", "total_produce_requests_per_sec"),
+    )
+
+    # Pass a deliberately empty/inconsistent findings_by_scope — it must be overwritten.
+    result = AnomalyDetectionResult(findings=(finding,), findings_by_scope={})
+
+    assert ("prod", "cluster-1", "topic-x") in result.findings_by_scope
+    assert result.findings_by_scope[("prod", "cluster-1", "topic-x")][0].finding_id == "f-5"
 
 
 def test_detect_consumer_lag_buildup_positive() -> None:

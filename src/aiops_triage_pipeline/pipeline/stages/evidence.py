@@ -61,17 +61,18 @@ def collect_evidence_rows(
     for metric_key, samples in samples_by_metric.items():
         for sample in samples:
             try:
+                # Normalize once and reuse for both the stored labels dict and scope key
+                # to avoid a redundant dict allocation per sample.
+                normalized_raw = normalize_labels(sample["labels"])
                 labels = {
-                    k: v
-                    for k, v in normalize_labels(sample["labels"]).items()
-                    if k not in _IDENTITY_IGNORE_LABELS
+                    k: v for k, v in normalized_raw.items() if k not in _IDENTITY_IGNORE_LABELS
                 }
                 rows.append(
                     EvidenceRow(
                         metric_key=metric_key,
                         value=float(sample["value"]),
                         labels=labels,
-                        scope=build_evidence_scope_key(sample["labels"], metric_key=metric_key),
+                        scope=build_evidence_scope_key(normalized_raw, metric_key=metric_key),
                     )
                 )
             except (ValueError, KeyError) as exc:

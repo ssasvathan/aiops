@@ -2,8 +2,6 @@ import io
 import json
 from datetime import UTC, datetime
 
-import pytest
-
 from aiops_triage_pipeline.integrations.prometheus import MetricQueryDefinition
 from aiops_triage_pipeline.pipeline.scheduler import (
     SchedulerTick,
@@ -95,7 +93,6 @@ def test_evaluate_scheduler_tick_warns_for_missed_intervals(
     assert warning_events[0]["expected_boundary"] == "2026-03-02T12:15:00+00:00"
 
 
-@pytest.mark.asyncio
 async def test_run_evidence_stage_cycle_wires_collection_to_anomaly_output() -> None:
     class _Client:
         def query_instant(self, metric_name: str, at_time: datetime) -> list[dict]:  # noqa: ARG002
