@@ -1,5 +1,9 @@
 """Pipeline stages."""
 
+from aiops_triage_pipeline.pipeline.stages.gating import (
+    GateInputContext,
+    collect_gate_inputs_by_scope,
+)
 from aiops_triage_pipeline.pipeline.stages.peak import (
     build_sustained_window_state_by_key,
     collect_peak_stage_output,
@@ -10,6 +14,8 @@ from aiops_triage_pipeline.pipeline.stages.peak import (
 )
 
 __all__ = [
+    "GateInputContext",
+    "collect_gate_inputs_by_scope",
     "build_sustained_window_state_by_key",
     "collect_peak_stage_output",
     "compute_sustained_status_by_key",

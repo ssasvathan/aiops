@@ -3,10 +3,15 @@ from urllib.error import URLError
 
 import pytest
 
+from aiops_triage_pipeline.contracts.enums import Action, CriticalityTier, EvidenceStatus
 from aiops_triage_pipeline.integrations.prometheus import PrometheusHTTPClient, build_metric_queries
 from aiops_triage_pipeline.pipeline.stages.evidence import (
     collect_evidence_stage_output,
     collect_prometheus_samples,
+)
+from aiops_triage_pipeline.pipeline.stages.gating import (
+    GateInputContext,
+    collect_gate_inputs_by_scope,
 )
 from aiops_triage_pipeline.pipeline.stages.peak import (
     build_sustained_window_state_by_key,
@@ -62,10 +67,12 @@ def test_stage1_output_feeds_stage2_peak_classification_shape() -> None:
         rows=evidence_output.rows,
         historical_windows_by_scope={scope: [float(x) for x in range(1, 21)]},
         evaluation_time=datetime(2026, 3, 2, 12, 0, tzinfo=UTC),
+        evidence_status_map_by_scope=evidence_output.evidence_status_map_by_scope,
     )
 
     assert scope in peak_output.classifications_by_scope
     assert scope in peak_output.peak_context_by_scope
+    assert peak_output.evidence_status_map_by_scope == evidence_output.evidence_status_map_by_scope
     # value=18.0, history=[1..20]: near_peak_threshold=p90=18, peak_threshold=p95=19
     # 18 >= near_peak_threshold(18) and < peak_threshold(19) → NEAR_PEAK
     assert peak_output.peak_context_by_scope[scope].classification == "NEAR_PEAK"
@@ -117,3 +124,57 @@ def test_stage1_stage2_sustained_context_flows_across_pipeline_cycles() -> None:
     assert peak_output.sustained_by_key[key].consecutive_anomalous_buckets == 5
     assert peak_output.sustained_by_key[key].is_sustained is True
 
+
+def test_stage1_stage2_gate_input_flow_preserves_unknown() -> None:
+    samples = {
+        "topic_messages_in_per_sec": [
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 180.0,
+            },
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 0.4,
+            },
+        ],
+        "total_produce_requests_per_sec": [
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 220.0,
+            }
+        ],
+        "failed_produce_requests_per_sec": [],
+    }
+    evidence_output = collect_evidence_stage_output(samples)
+    scope = ("prod", "cluster-a", "orders")
+    peak_output = collect_peak_stage_output(
+        rows=evidence_output.rows,
+        historical_windows_by_scope={scope: [float(x) for x in range(1, 21)]},
+        anomaly_findings=evidence_output.anomaly_result.findings,
+        evaluation_time=datetime(2026, 3, 2, 12, 0, tzinfo=UTC),
+        evidence_status_map_by_scope=evidence_output.evidence_status_map_by_scope,
+    )
+
+    gate_inputs_by_scope = collect_gate_inputs_by_scope(
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        context_by_scope={
+            scope: GateInputContext(
+                stream_id="stream-orders",
+                topic_role="SOURCE_TOPIC",
+                criticality_tier=CriticalityTier.TIER_0,
+                proposed_action=Action.PAGE,
+                diagnosis_confidence=0.7,
+            )
+        },
+    )
+
+    assert scope in gate_inputs_by_scope
+    gate_input = gate_inputs_by_scope[scope][0]
+    assert gate_input.evidence_status_map == dict(
+        evidence_output.evidence_status_map_by_scope[scope]
+    )
+    assert (
+        gate_input.evidence_status_map["failed_produce_requests_per_sec"]
+        == EvidenceStatus.UNKNOWN
+    )

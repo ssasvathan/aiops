@@ -2,6 +2,7 @@ import io
 import json
 from datetime import UTC, datetime, timedelta
 
+from aiops_triage_pipeline.contracts.enums import Action, CriticalityTier, EvidenceStatus
 from aiops_triage_pipeline.contracts.peak_policy import PeakPolicyV1, PeakThresholdPolicy
 from aiops_triage_pipeline.integrations.prometheus import MetricQueryDefinition
 from aiops_triage_pipeline.pipeline.scheduler import (
@@ -10,9 +11,11 @@ from aiops_triage_pipeline.pipeline.scheduler import (
     floor_to_interval_boundary,
     next_interval_boundary,
     run_evidence_stage_cycle,
+    run_gate_input_stage_cycle,
     run_peak_stage_cycle,
 )
 from aiops_triage_pipeline.pipeline.stages.evidence import collect_evidence_stage_output
+from aiops_triage_pipeline.pipeline.stages.gating import GateInputContext
 from aiops_triage_pipeline.pipeline.stages.peak import (
     build_sustained_window_state_by_key,
     load_rulebook_policy,
@@ -185,7 +188,8 @@ def test_run_peak_stage_cycle_wires_stage1_rows_to_peak_output() -> None:
                 "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
                 "value": 18.0,
             }
-        ]
+        ],
+        "total_produce_requests_per_sec": [],
     }
     evidence_output = collect_evidence_stage_output(samples)
     scope = ("prod", "cluster-a", "orders")
@@ -199,6 +203,11 @@ def test_run_peak_stage_cycle_wires_stage1_rows_to_peak_output() -> None:
 
     assert scope in peak_output.classifications_by_scope
     assert scope in peak_output.peak_context_by_scope
+    assert (
+        evidence_output.evidence_status_map_by_scope[scope]["total_produce_requests_per_sec"]
+        == EvidenceStatus.UNKNOWN
+    )
+    assert peak_output.evidence_status_map_by_scope == evidence_output.evidence_status_map_by_scope
     # value=18.0, history=[1..20]: near_peak_threshold=p90=18, peak_threshold=p95=19
     # 18 >= near_peak_threshold(18) and < peak_threshold(19) → NEAR_PEAK
     assert peak_output.peak_context_by_scope[scope].classification == "NEAR_PEAK"
@@ -244,3 +253,53 @@ def test_run_peak_stage_cycle_tracks_sustained_history_across_cycles() -> None:
     assert peak_output is not None
     assert peak_output.sustained_by_key[key].consecutive_anomalous_buckets == 5
     assert peak_output.sustained_by_key[key].is_sustained is True
+
+
+def test_run_gate_input_stage_cycle_preserves_unknown_evidence_status() -> None:
+    samples = {
+        "topic_messages_in_per_sec": [
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 180.0,
+            },
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 0.4,
+            },
+        ],
+        "total_produce_requests_per_sec": [
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 220.0,
+            }
+        ],
+        "failed_produce_requests_per_sec": [],
+    }
+    evidence_output = collect_evidence_stage_output(samples)
+    scope = ("prod", "cluster-a", "orders")
+    peak_output = run_peak_stage_cycle(
+        evidence_output=evidence_output,
+        historical_windows_by_scope={scope: [float(x) for x in range(1, 21)]},
+        evaluation_time=datetime(2026, 3, 2, 12, 5, tzinfo=UTC),
+        peak_policy=_peak_policy_for_tests(),
+    )
+    gate_inputs_by_scope = run_gate_input_stage_cycle(
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        context_by_scope={
+            scope: GateInputContext(
+                stream_id="stream-orders",
+                topic_role="SOURCE_TOPIC",
+                criticality_tier=CriticalityTier.TIER_0,
+                proposed_action=Action.PAGE,
+                diagnosis_confidence=0.7,
+            )
+        },
+    )
+
+    assert scope in gate_inputs_by_scope
+    gate_input = gate_inputs_by_scope[scope][0]
+    assert (
+        gate_input.evidence_status_map["failed_produce_requests_per_sec"]
+        == EvidenceStatus.UNKNOWN
+    )

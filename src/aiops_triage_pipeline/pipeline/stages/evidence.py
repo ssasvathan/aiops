@@ -1,10 +1,12 @@
 """Evidence-stage helpers for scope key construction and sample normalization."""
 
 import asyncio
+from collections import defaultdict
 from datetime import datetime
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 from urllib.error import URLError
 
+from aiops_triage_pipeline.contracts.enums import EvidenceStatus
 from aiops_triage_pipeline.integrations.prometheus import (
     MetricQueryDefinition,
     PrometheusClientProtocol,
@@ -85,16 +87,46 @@ def collect_evidence_rows(
     return rows
 
 
+def build_evidence_status_map_by_scope(
+    *,
+    metric_keys: Sequence[str],
+    rows: Sequence[EvidenceRow],
+) -> dict[tuple[str, ...], dict[str, EvidenceStatus]]:
+    """Build per-scope evidence status maps with UNKNOWN for missing metric series."""
+    present_metrics_by_scope: dict[tuple[str, ...], set[str]] = defaultdict(set)
+    for row in rows:
+        present_metrics_by_scope[row.scope].add(row.metric_key)
+
+    evidence_status_map_by_scope: dict[tuple[str, ...], dict[str, EvidenceStatus]] = {}
+    for scope in sorted(present_metrics_by_scope):
+        present_metric_keys = present_metrics_by_scope[scope]
+        evidence_status_map_by_scope[scope] = {
+            metric_key: (
+                EvidenceStatus.PRESENT
+                if metric_key in present_metric_keys
+                else EvidenceStatus.UNKNOWN
+            )
+            for metric_key in metric_keys
+        }
+
+    return evidence_status_map_by_scope
+
+
 def collect_evidence_stage_output(
     samples_by_metric: Mapping[str, list[Mapping[str, Any]]],
 ) -> EvidenceStageOutput:
     """Collect normalized evidence rows and derive anomaly findings for downstream stages."""
     rows = collect_evidence_rows(samples_by_metric)
     anomaly_result = detect_anomaly_findings(rows)
+    evidence_status_map_by_scope = build_evidence_status_map_by_scope(
+        metric_keys=tuple(samples_by_metric.keys()),
+        rows=rows,
+    )
     return EvidenceStageOutput(
         rows=tuple(rows),
         anomaly_result=anomaly_result,
         gate_findings_by_scope=build_gate_findings_by_scope(anomaly_result),
+        evidence_status_map_by_scope=evidence_status_map_by_scope,
     )
 
 

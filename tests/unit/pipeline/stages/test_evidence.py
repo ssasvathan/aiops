@@ -5,6 +5,7 @@ from urllib.error import URLError
 
 import pytest
 
+from aiops_triage_pipeline.contracts.enums import EvidenceStatus
 from aiops_triage_pipeline.integrations.prometheus import MetricQueryDefinition
 from aiops_triage_pipeline.models.evidence import EvidenceRow
 from aiops_triage_pipeline.pipeline.stages.evidence import (
@@ -315,3 +316,51 @@ def test_collect_evidence_stage_output_preserves_unknown_not_zero_semantics() ->
 
     assert output.anomaly_result.findings == ()
     assert output.gate_findings_by_scope == {}
+
+
+def test_collect_evidence_stage_output_builds_evidence_status_map_by_scope() -> None:
+    samples = {
+        "topic_messages_in_per_sec": [
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 18.0,
+            }
+        ],
+        "total_produce_requests_per_sec": [],
+        "failed_produce_requests_per_sec": [
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 4.0,
+            }
+        ],
+    }
+
+    output = collect_evidence_stage_output(samples)
+    scope = ("prod", "cluster-a", "orders")
+
+    assert output.evidence_status_map_by_scope[scope] == {
+        "topic_messages_in_per_sec": EvidenceStatus.PRESENT,
+        "total_produce_requests_per_sec": EvidenceStatus.UNKNOWN,
+        "failed_produce_requests_per_sec": EvidenceStatus.PRESENT,
+    }
+
+
+def test_evidence_stage_output_evidence_status_map_is_immutable() -> None:
+    samples = {
+        "topic_messages_in_per_sec": [
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 18.0,
+            }
+        ],
+        "total_produce_requests_per_sec": [],
+    }
+    output = collect_evidence_stage_output(samples)
+    scope = ("prod", "cluster-a", "orders")
+
+    with pytest.raises(TypeError):
+        output.evidence_status_map_by_scope[scope] = {}
+    with pytest.raises(TypeError):
+        output.evidence_status_map_by_scope[scope]["total_produce_requests_per_sec"] = (
+            EvidenceStatus.PRESENT
+        )

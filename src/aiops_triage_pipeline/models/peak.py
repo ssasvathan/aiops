@@ -6,6 +6,8 @@ from typing import Literal, Mapping
 
 from pydantic import BaseModel, model_validator
 
+from aiops_triage_pipeline.contracts.enums import EvidenceStatus
+
 PeakState = Literal["PEAK", "NEAR_PEAK", "OFF_PEAK", "UNKNOWN"]
 PeakScope = tuple[str, str, str]
 SustainedIdentityKey = tuple[str, str, str, str]
@@ -75,6 +77,7 @@ class PeakStageOutput(BaseModel, frozen=True):
     profiles_by_scope: Mapping[PeakScope, PeakProfile]
     classifications_by_scope: Mapping[PeakScope, PeakClassification]
     peak_context_by_scope: Mapping[PeakScope, PeakWindowContext]
+    evidence_status_map_by_scope: Mapping[tuple[str, ...], Mapping[str, EvidenceStatus]] = {}
     sustained_by_key: Mapping[SustainedIdentityKey, SustainedStatus] = {}
 
     @model_validator(mode="after")
@@ -93,6 +96,15 @@ class PeakStageOutput(BaseModel, frozen=True):
             self,
             "peak_context_by_scope",
             MappingProxyType(dict(self.peak_context_by_scope)),
+        )
+        frozen_evidence_status_map_by_scope = {
+            scope: MappingProxyType(dict(status_by_metric))
+            for scope, status_by_metric in self.evidence_status_map_by_scope.items()
+        }
+        object.__setattr__(
+            self,
+            "evidence_status_map_by_scope",
+            MappingProxyType(frozen_evidence_status_map_by_scope),
         )
         object.__setattr__(
             self,

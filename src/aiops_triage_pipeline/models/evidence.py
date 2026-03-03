@@ -5,6 +5,7 @@ from typing import Mapping
 
 from pydantic import BaseModel, model_validator
 
+from aiops_triage_pipeline.contracts.enums import EvidenceStatus
 from aiops_triage_pipeline.contracts.gate_input import Finding
 from aiops_triage_pipeline.models.anomaly import AnomalyDetectionResult
 
@@ -30,13 +31,23 @@ class EvidenceStageOutput(BaseModel, frozen=True):
     rows: tuple[EvidenceRow, ...]
     anomaly_result: AnomalyDetectionResult
     gate_findings_by_scope: Mapping[tuple[str, ...], tuple[Finding, ...]]
+    evidence_status_map_by_scope: Mapping[tuple[str, ...], Mapping[str, EvidenceStatus]] = {}
 
     @model_validator(mode="after")
-    def _freeze_gate_findings(
+    def _freeze_nested_mappings(
         self,
     ) -> "EvidenceStageOutput":
         # Freeze nested mapping so stage output cannot be mutated after creation.
         object.__setattr__(
             self, "gate_findings_by_scope", MappingProxyType(dict(self.gate_findings_by_scope))
+        )
+        frozen_evidence_status_map_by_scope = {
+            scope: MappingProxyType(dict(status_by_metric))
+            for scope, status_by_metric in self.evidence_status_map_by_scope.items()
+        }
+        object.__setattr__(
+            self,
+            "evidence_status_map_by_scope",
+            MappingProxyType(frozen_evidence_status_map_by_scope),
         )
         return self

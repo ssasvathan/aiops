@@ -6,6 +6,7 @@ from typing import Literal
 import pytest
 from pydantic import ValidationError
 
+from aiops_triage_pipeline.contracts.enums import EvidenceStatus
 from aiops_triage_pipeline.contracts.peak_policy import PeakPolicyV1, PeakThresholdPolicy
 from aiops_triage_pipeline.contracts.rulebook import (
     GateCheck,
@@ -276,6 +277,188 @@ def test_collect_peak_stage_output_preserves_unknown_for_missing_required_series
     assert classification.state == "UNKNOWN"
     assert classification.current_value is None
     assert "MISSING_REQUIRED_SERIES" in classification.reason_codes
+
+
+def test_collect_peak_stage_output_uses_evidence_status_map_for_unknown_reason_codes() -> None:
+    policy = _peak_policy_for_tests()
+    scope = ("prod", "cluster-z", "payments")
+
+    output = collect_peak_stage_output(
+        rows=[],
+        historical_windows_by_scope={scope: [100.0, 101.0, 102.0, 103.0]},
+        peak_policy=policy,
+        evaluation_time=datetime(2026, 3, 2, 12, 0, tzinfo=UTC),
+        evidence_status_map_by_scope={
+            scope: {
+                "topic_messages_in_per_sec": EvidenceStatus.UNKNOWN,
+            }
+        },
+    )
+
+    classification = output.classifications_by_scope[scope]
+    assert classification.state == "UNKNOWN"
+    assert "REQUIRED_EVIDENCE_UNKNOWN" in classification.reason_codes
+
+
+def test_collect_peak_stage_output_holds_sustained_streak_when_evidence_is_unknown() -> None:
+    policy = _peak_policy_for_tests()
+    rulebook = _rulebook_policy_for_tests(required=3)
+    scope = ("prod", "cluster-a", "orders")
+    finding = _finding(scope=scope, anomaly_family="VOLUME_DROP")
+    key = ("prod", "cluster-a", "topic:orders", "VOLUME_DROP")
+
+    cycle1 = collect_peak_stage_output(
+        rows=[],
+        historical_windows_by_scope={},
+        anomaly_findings=[finding],
+        prior_sustained_window_state_by_key={},
+        peak_policy=policy,
+        rulebook_policy=rulebook,
+        evaluation_time=datetime(2026, 3, 2, 12, 0, tzinfo=UTC),
+        evidence_status_map_by_scope={
+            scope: {
+                "topic_messages_in_per_sec": EvidenceStatus.PRESENT,
+                "total_produce_requests_per_sec": EvidenceStatus.PRESENT,
+            }
+        },
+    )
+
+    cycle2 = collect_peak_stage_output(
+        rows=[],
+        historical_windows_by_scope={},
+        anomaly_findings=[],
+        prior_sustained_window_state_by_key=_to_window_state_map(dict(cycle1.sustained_by_key)),
+        peak_policy=policy,
+        rulebook_policy=rulebook,
+        evaluation_time=datetime(2026, 3, 2, 12, 5, tzinfo=UTC),
+        evidence_status_map_by_scope={
+            scope: {
+                "topic_messages_in_per_sec": EvidenceStatus.UNKNOWN,
+                "total_produce_requests_per_sec": EvidenceStatus.UNKNOWN,
+            }
+        },
+    )
+
+    assert cycle1.sustained_by_key[key].consecutive_anomalous_buckets == 1
+    assert cycle2.sustained_by_key[key].consecutive_anomalous_buckets == 1
+    assert cycle2.sustained_by_key[key].is_sustained is False
+    assert "INSUFFICIENT_EVIDENCE" in cycle2.sustained_by_key[key].reason_codes
+
+
+def test_collect_peak_stage_output_keeps_streak_when_anomalous_but_insufficient() -> None:
+    policy = _peak_policy_for_tests()
+    rulebook = _rulebook_policy_for_tests(required=3)
+    scope = ("prod", "cluster-a", "orders")
+    finding = _finding(scope=scope, anomaly_family="VOLUME_DROP")
+    key = ("prod", "cluster-a", "topic:orders", "VOLUME_DROP")
+
+    cycle1 = collect_peak_stage_output(
+        rows=[],
+        historical_windows_by_scope={},
+        anomaly_findings=[finding],
+        prior_sustained_window_state_by_key={},
+        peak_policy=policy,
+        rulebook_policy=rulebook,
+        evaluation_time=datetime(2026, 3, 2, 12, 0, tzinfo=UTC),
+        evidence_status_map_by_scope={
+            scope: {
+                "topic_messages_in_per_sec": EvidenceStatus.PRESENT,
+                "total_produce_requests_per_sec": EvidenceStatus.PRESENT,
+            }
+        },
+    )
+    cycle2 = collect_peak_stage_output(
+        rows=[],
+        historical_windows_by_scope={},
+        anomaly_findings=[finding],
+        prior_sustained_window_state_by_key=_to_window_state_map(dict(cycle1.sustained_by_key)),
+        peak_policy=policy,
+        rulebook_policy=rulebook,
+        evaluation_time=datetime(2026, 3, 2, 12, 5, tzinfo=UTC),
+        evidence_status_map_by_scope={
+            scope: {
+                "topic_messages_in_per_sec": EvidenceStatus.PRESENT,
+                "total_produce_requests_per_sec": EvidenceStatus.UNKNOWN,
+            }
+        },
+    )
+
+    assert cycle1.sustained_by_key[key].consecutive_anomalous_buckets == 1
+    assert cycle2.sustained_by_key[key].consecutive_anomalous_buckets == 1
+    assert "STREAK_HELD" in cycle2.sustained_by_key[key].reason_codes
+
+
+def test_collect_peak_stage_output_resets_unknown_streak_after_interval_gap() -> None:
+    policy = _peak_policy_for_tests()
+    rulebook = _rulebook_policy_for_tests(required=5)
+    key = ("prod", "cluster-a", "topic:orders", "VOLUME_DROP")
+    prior = {
+        key: SustainedWindowState(
+            identity_key=key,
+            consecutive_anomalous_buckets=4,
+            last_evaluated_at=datetime(2026, 3, 2, 12, 0, tzinfo=UTC),
+        )
+    }
+    scope = ("prod", "cluster-a", "orders")
+
+    output = collect_peak_stage_output(
+        rows=[],
+        historical_windows_by_scope={},
+        anomaly_findings=[],
+        prior_sustained_window_state_by_key=prior,
+        peak_policy=policy,
+        rulebook_policy=rulebook,
+        evaluation_time=datetime(2026, 3, 2, 13, 0, tzinfo=UTC),
+        evidence_status_map_by_scope={
+            scope: {
+                "topic_messages_in_per_sec": EvidenceStatus.UNKNOWN,
+                "total_produce_requests_per_sec": EvidenceStatus.UNKNOWN,
+            }
+        },
+    )
+
+    assert output.sustained_by_key[key].consecutive_anomalous_buckets == 0
+    assert "STREAK_RESET_GAP" in output.sustained_by_key[key].reason_codes
+
+
+def test_collect_peak_stage_output_group_scope_ignores_other_topic_unknown_status() -> None:
+    policy = _peak_policy_for_tests()
+    rulebook = _rulebook_policy_for_tests(required=3)
+    key = ("prod", "cluster-a", "group:payments-worker", "CONSUMER_LAG")
+    finding = _finding(
+        scope=("prod", "cluster-a", "payments-worker", "orders"),
+        anomaly_family="CONSUMER_LAG",
+    )
+    prior = {
+        key: SustainedWindowState(
+            identity_key=key,
+            consecutive_anomalous_buckets=1,
+            last_evaluated_at=datetime(2026, 3, 2, 12, 0, tzinfo=UTC),
+        )
+    }
+
+    output = collect_peak_stage_output(
+        rows=[],
+        historical_windows_by_scope={},
+        anomaly_findings=[finding],
+        prior_sustained_window_state_by_key=prior,
+        peak_policy=policy,
+        rulebook_policy=rulebook,
+        evaluation_time=datetime(2026, 3, 2, 12, 5, tzinfo=UTC),
+        evidence_status_map_by_scope={
+            ("prod", "cluster-a", "payments-worker", "orders"): {
+                "consumer_group_lag": EvidenceStatus.PRESENT,
+                "consumer_group_offset": EvidenceStatus.PRESENT,
+            },
+            ("prod", "cluster-a", "payments-worker", "payments"): {
+                "consumer_group_lag": EvidenceStatus.PRESENT,
+                "consumer_group_offset": EvidenceStatus.UNKNOWN,
+            },
+        },
+    )
+
+    assert output.sustained_by_key[key].consecutive_anomalous_buckets == 2
+    assert "INSUFFICIENT_EVIDENCE" not in output.sustained_by_key[key].reason_codes
 
 
 def test_collect_peak_stage_output_is_deterministic_for_identical_inputs() -> None:

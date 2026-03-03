@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Mapping, Sequence
 
 from aiops_triage_pipeline.config.settings import load_policy_yaml
+from aiops_triage_pipeline.contracts.enums import EvidenceStatus
 from aiops_triage_pipeline.contracts.peak_policy import PeakPolicyV1
 from aiops_triage_pipeline.contracts.redis_ttl_policy import RedisTtlPolicyV1
 from aiops_triage_pipeline.contracts.rulebook import RulebookV1
@@ -34,6 +35,15 @@ DEFAULT_RULEBOOK_POLICY_PATH = (
     Path(__file__).resolve().parents[4] / "config/policies/rulebook-v1.yaml"
 )
 _TOPIC_MESSAGES_METRIC_KEY = "topic_messages_in_per_sec"
+_REQUIRED_METRICS_BY_ANOMALY_FAMILY: dict[str, tuple[str, ...]] = {
+    "CONSUMER_LAG": ("consumer_group_lag", "consumer_group_offset"),
+    "VOLUME_DROP": ("topic_messages_in_per_sec", "total_produce_requests_per_sec"),
+    "THROUGHPUT_CONSTRAINED_PROXY": (
+        "topic_messages_in_per_sec",
+        "total_produce_requests_per_sec",
+        "failed_produce_requests_per_sec",
+    ),
+}
 
 
 def load_peak_policy(path: Path = DEFAULT_PEAK_POLICY_PATH) -> PeakPolicyV1:
@@ -55,6 +65,9 @@ def collect_peak_stage_output(
     *,
     rows: Sequence[EvidenceRow],
     historical_windows_by_scope: Mapping[PeakScope, Sequence[float]],
+    evidence_status_map_by_scope: (
+        Mapping[tuple[str, ...], Mapping[str, EvidenceStatus]] | None
+    ) = None,
     anomaly_findings: Sequence[AnomalyFinding] = (),
     prior_sustained_window_state_by_key: (
         Mapping[SustainedIdentityKey, SustainedWindowState] | None
@@ -111,7 +124,16 @@ def collect_peak_stage_output(
         # Conservative aggregation: use the maximum observed value for the current interval.
         # A brief spike during the window should still trigger PEAK/NEAR_PEAK classification.
         current_value = max(current_values_by_scope.get(scope, ()), default=None)
-        classification = _classify_scope(scope=scope, current_value=current_value, profile=profile)
+        required_series_status = _required_metric_status_for_peak_scope(
+            scope=scope,
+            evidence_status_map_by_scope=evidence_status_map_by_scope,
+        )
+        classification = _classify_scope(
+            scope=scope,
+            current_value=current_value,
+            profile=profile,
+            required_series_status=required_series_status,
+        )
         classifications_by_scope[scope] = classification
         peak_context_by_scope[scope] = PeakWindowContext(
             classification=classification.state,
@@ -127,6 +149,7 @@ def collect_peak_stage_output(
         required_buckets=rulebook.sustained_intervals_required,
         evaluation_interval_minutes=rulebook.evaluation_interval_minutes,
         evaluation_time=effective_time,
+        evidence_status_map_by_scope=evidence_status_map_by_scope,
         logger=logger,
     )
 
@@ -134,6 +157,7 @@ def collect_peak_stage_output(
         profiles_by_scope=profiles_by_scope,
         classifications_by_scope=classifications_by_scope,
         peak_context_by_scope=peak_context_by_scope,
+        evidence_status_map_by_scope=evidence_status_map_by_scope or {},
         sustained_by_key=sustained_by_key,
     )
 
@@ -159,6 +183,7 @@ def compute_sustained_status_by_key(
     required_buckets: int,
     evaluation_interval_minutes: int,
     evaluation_time: datetime,
+    evidence_status_map_by_scope: Mapping[tuple[str, ...], Mapping[str, EvidenceStatus]] | None,
     logger,
 ) -> dict[SustainedIdentityKey, SustainedStatus]:
     """Compute sustained streak state per (env, cluster, topic/group, anomaly_family)."""
@@ -169,16 +194,26 @@ def compute_sustained_status_by_key(
             current_anomalous_keys.add(key)
 
     keys_to_evaluate = sorted(set(prior_window_state_by_key.keys()) | current_anomalous_keys)
+    insufficient_evidence_by_key: set[SustainedIdentityKey] = set()
+    for key in keys_to_evaluate:
+        if _has_insufficient_evidence_for_sustained_key(
+            key=key,
+            evidence_status_map_by_scope=evidence_status_map_by_scope,
+        ):
+            insufficient_evidence_by_key.add(key)
+
     sustained_by_key: dict[SustainedIdentityKey, SustainedStatus] = {}
     for key in keys_to_evaluate:
         prior_state = prior_window_state_by_key.get(key)
+        evidence_insufficient = key in insufficient_evidence_by_key
         streak = _next_streak_count(
             prior_state=prior_state,
             current_key_is_anomalous=key in current_anomalous_keys,
+            evidence_insufficient=evidence_insufficient,
             evaluation_time=evaluation_time,
             evaluation_interval_minutes=evaluation_interval_minutes,
         )
-        is_sustained = streak >= required_buckets
+        is_sustained = streak >= required_buckets and not evidence_insufficient
         sustained_by_key[key] = SustainedStatus(
             identity_key=key,
             is_sustained=is_sustained,
@@ -190,11 +225,77 @@ def compute_sustained_status_by_key(
                 streak=streak,
                 is_sustained=is_sustained,
                 is_anomalous=key in current_anomalous_keys,
+                evidence_insufficient=evidence_insufficient,
                 evaluation_time=evaluation_time,
                 evaluation_interval_minutes=evaluation_interval_minutes,
             ),
         )
     return sustained_by_key
+
+
+def _required_metric_status_for_peak_scope(
+    *,
+    scope: PeakScope,
+    evidence_status_map_by_scope: Mapping[tuple[str, ...], Mapping[str, EvidenceStatus]] | None,
+) -> EvidenceStatus | None:
+    if evidence_status_map_by_scope is None:
+        return None
+    scope_status_map = evidence_status_map_by_scope.get(scope)
+    if scope_status_map is None:
+        return EvidenceStatus.UNKNOWN
+    return scope_status_map.get(_TOPIC_MESSAGES_METRIC_KEY, EvidenceStatus.UNKNOWN)
+
+
+def _has_insufficient_evidence_for_sustained_key(
+    *,
+    key: SustainedIdentityKey,
+    evidence_status_map_by_scope: Mapping[tuple[str, ...], Mapping[str, EvidenceStatus]] | None,
+) -> bool:
+    if evidence_status_map_by_scope is None:
+        return False
+
+    required_metrics = _REQUIRED_METRICS_BY_ANOMALY_FAMILY.get(key[3])
+    if required_metrics is None:
+        return False
+
+    candidate_scope_status_maps = _candidate_scope_status_maps_for_sustained_key(
+        key=key,
+        evidence_status_map_by_scope=evidence_status_map_by_scope,
+    )
+    if not candidate_scope_status_maps:
+        return True
+
+    for scope_status_map in candidate_scope_status_maps:
+        if all(
+            scope_status_map.get(required_metric, EvidenceStatus.UNKNOWN)
+            == EvidenceStatus.PRESENT
+            for required_metric in required_metrics
+        ):
+            return False
+
+    return True
+
+
+def _candidate_scope_status_maps_for_sustained_key(
+    *,
+    key: SustainedIdentityKey,
+    evidence_status_map_by_scope: Mapping[tuple[str, ...], Mapping[str, EvidenceStatus]],
+) -> list[Mapping[str, EvidenceStatus]]:
+    env, cluster_id, topic_or_group, _ = key
+    if topic_or_group.startswith("topic:"):
+        topic = topic_or_group.split("topic:", maxsplit=1)[1]
+        status_map = evidence_status_map_by_scope.get((env, cluster_id, topic))
+        return [status_map] if status_map is not None else []
+
+    if topic_or_group.startswith("group:"):
+        group = topic_or_group.split("group:", maxsplit=1)[1]
+        return [
+            status_map
+            for scope, status_map in evidence_status_map_by_scope.items()
+            if len(scope) == 4 and scope[0] == env and scope[1] == cluster_id and scope[2] == group
+        ]
+
+    return []
 
 
 def _to_sustained_identity_key(
@@ -222,9 +323,20 @@ def _next_streak_count(
     *,
     prior_state: SustainedWindowState | None,
     current_key_is_anomalous: bool,
+    evidence_insufficient: bool,
     evaluation_time: datetime,
     evaluation_interval_minutes: int,
 ) -> int:
+    if evidence_insufficient:
+        if prior_state is None:
+            return 0
+        if not _is_consecutive_interval(
+            previous_evaluation=prior_state.last_evaluated_at,
+            current_evaluation=evaluation_time,
+            evaluation_interval_minutes=evaluation_interval_minutes,
+        ):
+            return 0
+        return prior_state.consecutive_anomalous_buckets
     if not current_key_is_anomalous:
         return 0
     if prior_state is None:
@@ -244,10 +356,25 @@ def _reason_codes(
     streak: int,
     is_sustained: bool,
     is_anomalous: bool,
+    evidence_insufficient: bool,
     evaluation_time: datetime,
     evaluation_interval_minutes: int,
 ) -> tuple[str, ...]:
-    if not is_anomalous:
+    if evidence_insufficient:
+        if prior_state is None:
+            base = ("INSUFFICIENT_EVIDENCE",)
+        elif _is_consecutive_interval(
+            previous_evaluation=prior_state.last_evaluated_at,
+            current_evaluation=evaluation_time,
+            evaluation_interval_minutes=evaluation_interval_minutes,
+        ):
+            if prior_state.consecutive_anomalous_buckets > 0:
+                base = ("INSUFFICIENT_EVIDENCE", "STREAK_HELD")
+            else:
+                base = ("INSUFFICIENT_EVIDENCE", "STREAK_INACTIVE")
+        else:
+            base = ("INSUFFICIENT_EVIDENCE", "STREAK_RESET_GAP")
+    elif not is_anomalous:
         if prior_state is not None and prior_state.consecutive_anomalous_buckets > 0:
             base = ("NON_ANOMALOUS_INTERVAL", "STREAK_RESET")
         else:
@@ -267,6 +394,8 @@ def _reason_codes(
     else:
         base = ("ANOMALOUS_INTERVAL", "STREAK_RESET_GAP")
 
+    if evidence_insufficient:
+        return (*base, "SUSTAINED_UNCERTAIN")
     if is_sustained:
         return (*base, "SUSTAINED_THRESHOLD_MET")
     if streak == 0:
@@ -334,14 +463,23 @@ def _classify_scope(
     scope: PeakScope,
     current_value: float | None,
     profile: PeakProfile | None,
+    required_series_status: EvidenceStatus | None = None,
 ) -> PeakClassification:
     if current_value is None:
+        if required_series_status == EvidenceStatus.UNKNOWN:
+            reason_codes = ("REQUIRED_EVIDENCE_UNKNOWN",)
+        elif required_series_status == EvidenceStatus.ABSENT:
+            reason_codes = ("REQUIRED_EVIDENCE_ABSENT",)
+        elif required_series_status == EvidenceStatus.STALE:
+            reason_codes = ("REQUIRED_EVIDENCE_STALE",)
+        else:
+            reason_codes = ("MISSING_REQUIRED_SERIES",)
         return PeakClassification(
             scope=profile.scope if profile else scope,
             state="UNKNOWN",
             current_value=None,
             confidence=0.0,
-            reason_codes=("MISSING_REQUIRED_SERIES",),
+            reason_codes=reason_codes,
             is_peak_window=False,
             is_near_peak_window=False,
             peak_threshold_value=profile.peak_threshold_value if profile else None,

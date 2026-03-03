@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Mapping, Sequence
 
+from aiops_triage_pipeline.contracts.gate_input import GateInputV1
 from aiops_triage_pipeline.contracts.peak_policy import PeakPolicyV1
 from aiops_triage_pipeline.contracts.rulebook import RulebookV1
 from aiops_triage_pipeline.integrations.prometheus import (
@@ -21,6 +22,10 @@ from aiops_triage_pipeline.models.peak import (
 from aiops_triage_pipeline.pipeline.stages.evidence import (
     collect_evidence_stage_output,
     collect_prometheus_samples,
+)
+from aiops_triage_pipeline.pipeline.stages.gating import (
+    GateInputContext,
+    collect_gate_inputs_by_scope,
 )
 from aiops_triage_pipeline.pipeline.stages.peak import collect_peak_stage_output
 
@@ -128,9 +133,24 @@ def run_peak_stage_cycle(
     return collect_peak_stage_output(
         rows=evidence_output.rows,
         historical_windows_by_scope=historical_windows_by_scope,
+        evidence_status_map_by_scope=evidence_output.evidence_status_map_by_scope,
         anomaly_findings=evidence_output.anomaly_result.findings,
         prior_sustained_window_state_by_key=prior_sustained_window_state_by_key,
         evaluation_time=evaluation_time,
         peak_policy=peak_policy,
         rulebook_policy=rulebook_policy,
+    )
+
+
+def run_gate_input_stage_cycle(
+    *,
+    evidence_output: EvidenceStageOutput,
+    peak_output: PeakStageOutput,
+    context_by_scope: Mapping[tuple[str, ...], GateInputContext],
+) -> dict[tuple[str, ...], tuple[GateInputV1, ...]]:
+    """Run Stage 6 gate-input assembly from Stage 1 and Stage 2 outputs."""
+    return collect_gate_inputs_by_scope(
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        context_by_scope=context_by_scope,
     )

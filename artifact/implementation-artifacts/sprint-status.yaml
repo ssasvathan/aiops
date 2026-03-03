@@ -65,7 +65,7 @@ development_status:
   2-2-anomaly-pattern-detection: done
   2-3-peak-near-peak-classification: done
   2-4-sustained-status-computation: done
-  2-5-unknown-evidence-propagation: backlog
+  2-5-unknown-evidence-propagation: done
   2-6-redis-evidence-caching: backlog
   2-7-prometheus-unavailability-and-telemetrydegradedevent: backlog
   epic-2-retrospective: optional
