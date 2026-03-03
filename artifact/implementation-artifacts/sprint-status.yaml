@@ -60,9 +60,9 @@ development_status:
   # Epic 2: Evidence Collection & Signal Validation
   # Phase: Phase 0 signal validation | FRs: FR1-FR8, FR67a
   # ─────────────────────────────────────────────────────────
-  epic-2: backlog
-  2-1-prometheus-metric-collection-and-evaluation-cadence: backlog
-  2-2-anomaly-pattern-detection: backlog
+  epic-2: in-progress
+  2-1-prometheus-metric-collection-and-evaluation-cadence: done
+  2-2-anomaly-pattern-detection: done
   2-3-peak-near-peak-classification: backlog
   2-4-sustained-status-computation: backlog
   2-5-unknown-evidence-propagation: backlog

@@ -1,9 +1,6 @@
 import asyncio
 import io
 import json
-import logging
-
-import structlog
 
 from aiops_triage_pipeline.logging.setup import (
     bind_correlation_id,
