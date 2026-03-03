@@ -4,6 +4,7 @@ import json
 from typing import Callable, Protocol
 
 from aiops_triage_pipeline.contracts.redis_ttl_policy import RedisTtlPolicyV1
+from aiops_triage_pipeline.logging.setup import get_logger
 from aiops_triage_pipeline.models.peak import PeakProfile, PeakScope
 
 
@@ -23,8 +24,22 @@ def build_peak_cache_key(scope: PeakScope) -> str:
 
 
 def peak_profile_ttl_seconds(*, env: str, redis_ttl_policy: RedisTtlPolicyV1) -> int:
-    """Read env-specific peak profile TTL from redis-ttl-policy-v1."""
-    return redis_ttl_policy.ttls_by_env[env].peak_profile_seconds
+    """Read env-specific peak profile TTL from redis-ttl-policy-v1.
+
+    Falls back to the minimum configured TTL when ``env`` has no entry, to
+    avoid stale data in unexpected environments.
+    """
+    env_ttls = redis_ttl_policy.ttls_by_env.get(env)
+    if env_ttls is None:
+        fallback = min(v.peak_profile_seconds for v in redis_ttl_policy.ttls_by_env.values())
+        get_logger("cache.peak_cache").warning(
+            "peak_ttl_env_not_found",
+            event_type="cache.peak_profile_ttl_warning",
+            env=env,
+            fallback_ttl_seconds=fallback,
+        )
+        return fallback
+    return env_ttls.peak_profile_seconds
 
 
 def get_peak_profile(
@@ -50,11 +65,10 @@ def set_peak_profile(
     env: str,
     profile: PeakProfile,
     redis_ttl_policy: RedisTtlPolicyV1,
-) -> int:
+) -> None:
     """Store one peak profile under required namespace with env-specific TTL."""
     ttl = peak_profile_ttl_seconds(env=env, redis_ttl_policy=redis_ttl_policy)
     redis_client.setex(build_peak_cache_key(scope), ttl, _serialize_profile(profile))
-    return ttl
 
 
 def get_or_compute_peak_profile(
@@ -73,13 +87,21 @@ def get_or_compute_peak_profile(
     computed = compute_profile()
     if computed is None:
         return None
-    set_peak_profile(
-        redis_client=redis_client,
-        scope=scope,
-        env=env,
-        profile=computed,
-        redis_ttl_policy=redis_ttl_policy,
-    )
+    try:
+        set_peak_profile(
+            redis_client=redis_client,
+            scope=scope,
+            env=env,
+            profile=computed,
+            redis_ttl_policy=redis_ttl_policy,
+        )
+    except Exception:
+        # Cache write failure must not prevent returning the computed profile.
+        get_logger("cache.peak_cache").warning(
+            "peak_cache_write_failed",
+            event_type="cache.peak_cache_write_warning",
+            scope=scope,
+        )
     return computed
 
 

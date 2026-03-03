@@ -1,3 +1,5 @@
+import io
+import json
 from datetime import UTC, datetime
 
 import pytest
@@ -117,6 +119,9 @@ def test_collect_peak_stage_output_classifies_peak_near_peak_off_peak_boundaries
         _row(scope, "topic_messages_in_per_sec", 19.0),
         _row(("prod", "cluster-a", "consumer-a", "orders"), "consumer_group_lag", 10.0),
     ]
+    # history = [1.0 .. 20.0] (20 samples)
+    # peak_threshold     = p95([1..20]) = nearest_rank(0.95*20=19) = values[18] = 19
+    # near_peak_threshold = p90([1..20]) = nearest_rank(0.90*20=18) = values[17] = 18
     history = {scope: [float(x) for x in range(1, 21)]}
 
     peak_output = collect_peak_stage_output(
@@ -212,4 +217,35 @@ def test_collect_peak_stage_output_is_deterministic_for_identical_inputs() -> No
 
     assert output_a == output_b
     context = output_a.peak_context_by_scope[scope]
-    assert context.classification in {"PEAK", "NEAR_PEAK", "OFF_PEAK", "UNKNOWN"}
+    # max(18.0, 17.0) = 18; p90([1..20]) = 18 (near_peak), p95([1..20]) = 19 (peak)
+    # 18 >= near_peak(18) and 18 < peak(19) → NEAR_PEAK
+    assert context.classification == "NEAR_PEAK"
+
+
+def _parse_logs(stream: io.StringIO) -> list[dict]:
+    lines = [line for line in stream.getvalue().splitlines() if line.strip()]
+    return [json.loads(line) for line in lines]
+
+
+def test_collect_peak_stage_output_warns_for_malformed_scope(
+    log_stream: io.StringIO,
+) -> None:
+    policy = _peak_policy_for_tests()
+    # 2-element scope: _to_topic_scope returns None → warning + skip
+    malformed_scope = ("prod", "cluster-a")
+
+    output = collect_peak_stage_output(
+        rows=[_row(malformed_scope, "topic_messages_in_per_sec", 18.0)],
+        historical_windows_by_scope={},
+        peak_policy=policy,
+        evaluation_time=datetime(2026, 3, 2, 12, 0, tzinfo=UTC),
+    )
+
+    assert dict(output.classifications_by_scope) == {}
+    warning_events = [
+        entry
+        for entry in _parse_logs(log_stream)
+        if entry.get("event") == "peak_scope_normalization_failed"
+    ]
+    assert len(warning_events) == 1
+    assert warning_events[0]["event_type"] == "peak.scope_normalization_warning"

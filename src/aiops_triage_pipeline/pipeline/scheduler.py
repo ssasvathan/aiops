@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Mapping, Sequence
 
+from aiops_triage_pipeline.contracts.peak_policy import PeakPolicyV1
 from aiops_triage_pipeline.integrations.prometheus import (
     MetricQueryDefinition,
     PrometheusClientProtocol,
@@ -107,10 +108,16 @@ def run_peak_stage_cycle(
     evidence_output: EvidenceStageOutput,
     historical_windows_by_scope: Mapping[PeakScope, Sequence[float]],
     evaluation_time: datetime,
+    peak_policy: PeakPolicyV1 | None = None,
 ) -> PeakStageOutput:
-    """Run Stage 2 peak classification from Stage 1 normalized rows."""
+    """Run Stage 2 peak classification from Stage 1 normalized rows.
+
+    Pass ``peak_policy`` to avoid disk I/O on every call; omitting it causes
+    the policy to be loaded from the default file path each time.
+    """
     return collect_peak_stage_output(
         rows=evidence_output.rows,
         historical_windows_by_scope=historical_windows_by_scope,
         evaluation_time=evaluation_time,
+        peak_policy=peak_policy,
     )

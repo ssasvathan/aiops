@@ -2,6 +2,7 @@ import io
 import json
 from datetime import UTC, datetime
 
+from aiops_triage_pipeline.contracts.peak_policy import PeakPolicyV1, PeakThresholdPolicy
 from aiops_triage_pipeline.integrations.prometheus import MetricQueryDefinition
 from aiops_triage_pipeline.pipeline.scheduler import (
     SchedulerTick,
@@ -12,6 +13,20 @@ from aiops_triage_pipeline.pipeline.scheduler import (
     run_peak_stage_cycle,
 )
 from aiops_triage_pipeline.pipeline.stages.evidence import collect_evidence_stage_output
+
+
+def _peak_policy_for_tests() -> PeakPolicyV1:
+    return PeakPolicyV1(
+        metric="kafka_server_brokertopicmetrics_messagesinpersec",
+        timezone="America/Toronto",
+        recompute_frequency="weekly",
+        defaults=PeakThresholdPolicy(
+            peak_percentile=90,
+            near_peak_percentile=95,
+            bucket_minutes=15,
+            min_baseline_windows=4,
+        ),
+    )
 
 
 def _parse_logs(stream: io.StringIO) -> list[dict]:
@@ -175,7 +190,11 @@ def test_run_peak_stage_cycle_wires_stage1_rows_to_peak_output() -> None:
         evidence_output=evidence_output,
         historical_windows_by_scope={scope: [float(x) for x in range(1, 21)]},
         evaluation_time=datetime(2026, 3, 2, 12, 5, tzinfo=UTC),
+        peak_policy=_peak_policy_for_tests(),
     )
 
     assert scope in peak_output.classifications_by_scope
     assert scope in peak_output.peak_context_by_scope
+    # value=18.0, history=[1..20]: near_peak_threshold=p90=18, peak_threshold=p95=19
+    # 18 >= near_peak_threshold(18) and < peak_threshold(19) → NEAR_PEAK
+    assert peak_output.peak_context_by_scope[scope].classification == "NEAR_PEAK"

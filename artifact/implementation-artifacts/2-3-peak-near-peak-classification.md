@@ -1,6 +1,6 @@
 # Story 2.3: Peak/Near-Peak Classification
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -291,6 +291,22 @@ GPT-5 Codex
 - Quality gates passed: `uv run pytest -q` (203 passed) and `uv run ruff check` (all checks passed).
 - Story status set to `review`.
 
+### Senior Developer Review (AI)
+
+**Reviewer:** Sas | **Date:** 2026-03-02 | **Outcome:** Approved after fixes
+
+**Issues fixed (3 HIGH, 4 MEDIUM):**
+
+- [H1] `_build_peak_profile` had crossed local variable names — `near_peak_threshold` derived from `peak_percentile` and `peak_threshold` from `near_peak_percentile`. Removed intermediate variables; inlined with explicit comment documenting the policy naming convention so future maintainers don't inadvertently invert thresholds when tuning the YAML. (`stages/peak.py:129-144`)
+- [H2] `run_peak_stage_cycle` triggered policy file I/O on every scheduler cycle — `collect_peak_stage_output` fell through to `load_peak_policy()` (disk read) because no `peak_policy` was forwarded. Added `peak_policy: PeakPolicyV1 | None = None` parameter. Scheduler test updated to inject policy (no I/O). (`scheduler.py:105-116`)
+- [H3] `get_or_compute_peak_profile` let Redis `setex` exceptions propagate, discarding the successfully-computed profile. Wrapped cache write in `try/except` with structured warning; computed profile is always returned. (`cache/peak_cache.py:60-83`)
+- [M1] `peak_profile_ttl_seconds` raised `KeyError` for unknown env names. Added `.get()` with fallback to minimum TTL across known envs and a structured warning log. (`cache/peak_cache.py:25-27`)
+- [M2] `max()` aggregation over multiple evidence rows for the same scope+metric was undocumented. Added inline comment explaining the conservative-spike rationale. (`stages/peak.py:92`)
+- [M3] No test for the `peak.scope_normalization_warning` log event. Added `test_collect_peak_stage_output_warns_for_malformed_scope` with a 2-element scope input and structured log assertion. (`test_peak.py`)
+- [M4] Integration test and determinism test used `in {valid_states}` assertions. Both updated to assert specific expected state (`NEAR_PEAK`) for known deterministic inputs. (`test_peak.py`, `test_scheduler.py`, integration test)
+
+**Quality gates post-review:** `uv run pytest -q` (204 passed) and `uv run ruff check` (all checks passed).
+
 ### File List
 
 - artifact/implementation-artifacts/2-3-peak-near-peak-classification.md
@@ -310,3 +326,4 @@ GPT-5 Codex
 ### Change Log
 
 - 2026-03-03: Implemented Story 2.3 Stage 2 peak/near-peak classification, caching, scheduler wiring, and test coverage; moved status to `review`.
+- 2026-03-02: Senior developer review — fixed 3 HIGH + 4 MEDIUM + 2 LOW issues (threshold variable name clarity, scheduler hot-path I/O, cache write error isolation, unknown-env TTL fallback, max aggregation documentation, scope warning test, weak test assertions, boundary test comments, `set_peak_profile` return type); moved status to `done`.

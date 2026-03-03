@@ -63,7 +63,7 @@ development_status:
   epic-2: in-progress
   2-1-prometheus-metric-collection-and-evaluation-cadence: done
   2-2-anomaly-pattern-detection: done
-  2-3-peak-near-peak-classification: review
+  2-3-peak-near-peak-classification: done
   2-4-sustained-status-computation: backlog
   2-5-unknown-evidence-propagation: backlog
   2-6-redis-evidence-caching: backlog

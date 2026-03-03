@@ -89,6 +89,8 @@ def collect_peak_stage_output(
         if profile is not None:
             profiles_by_scope[scope] = profile
 
+        # Conservative aggregation: use the maximum observed value for the current interval.
+        # A brief spike during the window should still trigger PEAK/NEAR_PEAK classification.
         current_value = max(current_values_by_scope.get(scope, ()), default=None)
         classification = _classify_scope(scope=scope, current_value=current_value, profile=profile)
         classifications_by_scope[scope] = classification
@@ -126,17 +128,18 @@ def _build_peak_profile(
     if not finite_values:
         return None
 
-    near_peak_threshold = _nearest_rank_percentile(
-        finite_values, percentile=policy.defaults.peak_percentile
-    )
-    peak_threshold = _nearest_rank_percentile(
-        finite_values, percentile=policy.defaults.near_peak_percentile
-    )
+    # Policy naming convention: peak_percentile (default 90) is the lower bound for the
+    # near-peak zone; near_peak_percentile (default 95) is the lower bound for the peak zone.
+    # Result: near_peak_threshold_value < peak_threshold_value (near-peak is the softer state).
     return PeakProfile(
         scope=scope,
         source_metric=policy.metric,
-        peak_threshold_value=peak_threshold,
-        near_peak_threshold_value=near_peak_threshold,
+        peak_threshold_value=_nearest_rank_percentile(
+            finite_values, percentile=policy.defaults.near_peak_percentile
+        ),
+        near_peak_threshold_value=_nearest_rank_percentile(
+            finite_values, percentile=policy.defaults.peak_percentile
+        ),
         history_samples_count=len(finite_values),
         has_sufficient_history=len(finite_values) >= policy.defaults.min_baseline_windows,
         recompute_frequency=policy.recompute_frequency,

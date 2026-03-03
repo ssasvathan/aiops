@@ -63,10 +63,7 @@ def test_stage1_output_feeds_stage2_peak_classification_shape() -> None:
 
     assert scope in peak_output.classifications_by_scope
     assert scope in peak_output.peak_context_by_scope
-    assert peak_output.peak_context_by_scope[scope].classification in {
-        "PEAK",
-        "NEAR_PEAK",
-        "OFF_PEAK",
-        "UNKNOWN",
-    }
+    # value=18.0, history=[1..20]: near_peak_threshold=p90=18, peak_threshold=p95=19
+    # 18 >= near_peak_threshold(18) and < peak_threshold(19) → NEAR_PEAK
+    assert peak_output.peak_context_by_scope[scope].classification == "NEAR_PEAK"
 
