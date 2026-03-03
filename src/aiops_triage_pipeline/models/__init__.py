@@ -6,8 +6,12 @@ from aiops_triage_pipeline.models.health import ComponentHealth, HealthStatus
 from aiops_triage_pipeline.models.peak import (
     PeakClassification,
     PeakProfile,
+    PeakScope,
     PeakStageOutput,
     PeakWindowContext,
+    SustainedIdentityKey,
+    SustainedStatus,
+    SustainedWindowState,
 )
 
 __all__ = [
@@ -18,7 +22,11 @@ __all__ = [
     "HealthStatus",
     "PeakClassification",
     "PeakProfile",
+    "PeakScope",
     "PeakStageOutput",
     "PeakWindowContext",
+    "SustainedIdentityKey",
+    "SustainedStatus",
+    "SustainedWindowState",
     "TelemetryDegradedEvent",
 ]

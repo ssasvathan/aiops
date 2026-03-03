@@ -1,6 +1,6 @@
 import io
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 from aiops_triage_pipeline.contracts.peak_policy import PeakPolicyV1, PeakThresholdPolicy
 from aiops_triage_pipeline.integrations.prometheus import MetricQueryDefinition
@@ -13,6 +13,10 @@ from aiops_triage_pipeline.pipeline.scheduler import (
     run_peak_stage_cycle,
 )
 from aiops_triage_pipeline.pipeline.stages.evidence import collect_evidence_stage_output
+from aiops_triage_pipeline.pipeline.stages.peak import (
+    build_sustained_window_state_by_key,
+    load_rulebook_policy,
+)
 
 
 def _peak_policy_for_tests() -> PeakPolicyV1:
@@ -198,3 +202,45 @@ def test_run_peak_stage_cycle_wires_stage1_rows_to_peak_output() -> None:
     # value=18.0, history=[1..20]: near_peak_threshold=p90=18, peak_threshold=p95=19
     # 18 >= near_peak_threshold(18) and < peak_threshold(19) → NEAR_PEAK
     assert peak_output.peak_context_by_scope[scope].classification == "NEAR_PEAK"
+
+
+def test_run_peak_stage_cycle_tracks_sustained_history_across_cycles() -> None:
+    samples = {
+        "topic_messages_in_per_sec": [
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "inventory"},
+                "value": 180.0,
+            },
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "inventory"},
+                "value": 0.4,
+            },
+        ],
+        "total_produce_requests_per_sec": [
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "inventory"},
+                "value": 220.0,
+            }
+        ],
+    }
+    evidence_output = collect_evidence_stage_output(samples)
+    scope = ("prod", "cluster-a", "inventory")
+    key = ("prod", "cluster-a", "topic:inventory", "VOLUME_DROP")
+    prior = {}
+    rulebook_policy = load_rulebook_policy()
+    peak_output = None
+
+    for idx in range(5):
+        peak_output = run_peak_stage_cycle(
+            evidence_output=evidence_output,
+            historical_windows_by_scope={scope: [float(x) for x in range(1, 21)]},
+            prior_sustained_window_state_by_key=prior,
+            evaluation_time=datetime(2026, 3, 2, 12, 0, tzinfo=UTC) + timedelta(minutes=idx * 5),
+            peak_policy=_peak_policy_for_tests(),
+            rulebook_policy=rulebook_policy,
+        )
+        prior = build_sustained_window_state_by_key(dict(peak_output.sustained_by_key))
+
+    assert peak_output is not None
+    assert peak_output.sustained_by_key[key].consecutive_anomalous_buckets == 5
+    assert peak_output.sustained_by_key[key].is_sustained is True

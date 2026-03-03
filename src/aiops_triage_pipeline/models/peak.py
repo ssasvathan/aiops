@@ -8,6 +8,7 @@ from pydantic import BaseModel, model_validator
 
 PeakState = Literal["PEAK", "NEAR_PEAK", "OFF_PEAK", "UNKNOWN"]
 PeakScope = tuple[str, str, str]
+SustainedIdentityKey = tuple[str, str, str, str]
 RecomputeFrequency = Literal["daily", "weekly", "monthly"]
 
 
@@ -49,12 +50,32 @@ class PeakWindowContext(BaseModel, frozen=True):
     reason_codes: tuple[str, ...]
 
 
+class SustainedWindowState(BaseModel, frozen=True):
+    """Persisted streak state for one sustained identity key."""
+
+    identity_key: SustainedIdentityKey
+    consecutive_anomalous_buckets: int
+    last_evaluated_at: datetime
+
+
+class SustainedStatus(BaseModel, frozen=True):
+    """Sustained status for one anomaly identity key."""
+
+    identity_key: SustainedIdentityKey
+    is_sustained: bool
+    consecutive_anomalous_buckets: int
+    required_buckets: int
+    last_evaluated_at: datetime
+    reason_codes: tuple[str, ...]
+
+
 class PeakStageOutput(BaseModel, frozen=True):
     """Stage 2 output keyed by normalized scope."""
 
     profiles_by_scope: Mapping[PeakScope, PeakProfile]
     classifications_by_scope: Mapping[PeakScope, PeakClassification]
     peak_context_by_scope: Mapping[PeakScope, PeakWindowContext]
+    sustained_by_key: Mapping[SustainedIdentityKey, SustainedStatus] = {}
 
     @model_validator(mode="after")
     def _freeze_nested_mappings(self) -> "PeakStageOutput":
@@ -72,5 +93,10 @@ class PeakStageOutput(BaseModel, frozen=True):
             self,
             "peak_context_by_scope",
             MappingProxyType(dict(self.peak_context_by_scope)),
+        )
+        object.__setattr__(
+            self,
+            "sustained_by_key",
+            MappingProxyType(dict(self.sustained_by_key)),
         )
         return self

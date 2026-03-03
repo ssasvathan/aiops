@@ -5,13 +5,19 @@ from datetime import UTC, datetime, timedelta
 from typing import Mapping, Sequence
 
 from aiops_triage_pipeline.contracts.peak_policy import PeakPolicyV1
+from aiops_triage_pipeline.contracts.rulebook import RulebookV1
 from aiops_triage_pipeline.integrations.prometheus import (
     MetricQueryDefinition,
     PrometheusClientProtocol,
 )
 from aiops_triage_pipeline.logging.setup import get_logger
 from aiops_triage_pipeline.models.evidence import EvidenceStageOutput
-from aiops_triage_pipeline.models.peak import PeakScope, PeakStageOutput
+from aiops_triage_pipeline.models.peak import (
+    PeakScope,
+    PeakStageOutput,
+    SustainedIdentityKey,
+    SustainedWindowState,
+)
 from aiops_triage_pipeline.pipeline.stages.evidence import (
     collect_evidence_stage_output,
     collect_prometheus_samples,
@@ -107,8 +113,12 @@ def run_peak_stage_cycle(
     *,
     evidence_output: EvidenceStageOutput,
     historical_windows_by_scope: Mapping[PeakScope, Sequence[float]],
+    prior_sustained_window_state_by_key: (
+        Mapping[SustainedIdentityKey, SustainedWindowState] | None
+    ) = None,
     evaluation_time: datetime,
     peak_policy: PeakPolicyV1 | None = None,
+    rulebook_policy: RulebookV1 | None = None,
 ) -> PeakStageOutput:
     """Run Stage 2 peak classification from Stage 1 normalized rows.
 
@@ -118,6 +128,9 @@ def run_peak_stage_cycle(
     return collect_peak_stage_output(
         rows=evidence_output.rows,
         historical_windows_by_scope=historical_windows_by_scope,
+        anomaly_findings=evidence_output.anomaly_result.findings,
+        prior_sustained_window_state_by_key=prior_sustained_window_state_by_key,
         evaluation_time=evaluation_time,
         peak_policy=peak_policy,
+        rulebook_policy=rulebook_policy,
     )

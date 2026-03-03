@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from urllib.error import URLError
 
 import pytest
@@ -8,7 +8,10 @@ from aiops_triage_pipeline.pipeline.stages.evidence import (
     collect_evidence_stage_output,
     collect_prometheus_samples,
 )
-from aiops_triage_pipeline.pipeline.stages.peak import collect_peak_stage_output
+from aiops_triage_pipeline.pipeline.stages.peak import (
+    build_sustained_window_state_by_key,
+    collect_peak_stage_output,
+)
 
 
 @pytest.mark.integration
@@ -66,4 +69,51 @@ def test_stage1_output_feeds_stage2_peak_classification_shape() -> None:
     # value=18.0, history=[1..20]: near_peak_threshold=p90=18, peak_threshold=p95=19
     # 18 >= near_peak_threshold(18) and < peak_threshold(19) → NEAR_PEAK
     assert peak_output.peak_context_by_scope[scope].classification == "NEAR_PEAK"
+
+
+def test_stage1_stage2_sustained_context_flows_across_pipeline_cycles() -> None:
+    """Verify sustained window state accumulates correctly across Stage 1→Stage 2 cycles.
+
+    Uses the same low-throughput data pattern that produces a VOLUME_DROP finding so that
+    sustained streak increments each cycle and reaches is_sustained=True after five cycles.
+    """
+    # Low topic_messages_in_per_sec alongside high total_produce_requests triggers VOLUME_DROP.
+    samples = {
+        "topic_messages_in_per_sec": [
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 180.0,
+            },
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 0.4,
+            },
+        ],
+        "total_produce_requests_per_sec": [
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 220.0,
+            }
+        ],
+    }
+    evidence_output = collect_evidence_stage_output(samples)
+    scope = ("prod", "cluster-a", "orders")
+    key = ("prod", "cluster-a", "topic:orders", "VOLUME_DROP")
+    prior: dict = {}
+    peak_output = None
+
+    for idx in range(5):
+        peak_output = collect_peak_stage_output(
+            rows=evidence_output.rows,
+            historical_windows_by_scope={scope: [float(x) for x in range(1, 21)]},
+            anomaly_findings=evidence_output.anomaly_result.findings,
+            prior_sustained_window_state_by_key=prior,
+            evaluation_time=datetime(2026, 3, 2, 12, 0, tzinfo=UTC) + timedelta(minutes=idx * 5),
+        )
+        prior = build_sustained_window_state_by_key(dict(peak_output.sustained_by_key))
+
+    assert peak_output is not None
+    assert key in peak_output.sustained_by_key
+    assert peak_output.sustained_by_key[key].consecutive_anomalous_buckets == 5
+    assert peak_output.sustained_by_key[key].is_sustained is True
 

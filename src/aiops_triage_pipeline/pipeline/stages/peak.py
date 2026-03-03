@@ -9,7 +9,9 @@ from typing import Mapping, Sequence
 from aiops_triage_pipeline.config.settings import load_policy_yaml
 from aiops_triage_pipeline.contracts.peak_policy import PeakPolicyV1
 from aiops_triage_pipeline.contracts.redis_ttl_policy import RedisTtlPolicyV1
+from aiops_triage_pipeline.contracts.rulebook import RulebookV1
 from aiops_triage_pipeline.logging.setup import get_logger
+from aiops_triage_pipeline.models.anomaly import AnomalyFinding
 from aiops_triage_pipeline.models.evidence import EvidenceRow
 from aiops_triage_pipeline.models.peak import (
     PeakClassification,
@@ -17,6 +19,9 @@ from aiops_triage_pipeline.models.peak import (
     PeakScope,
     PeakStageOutput,
     PeakWindowContext,
+    SustainedIdentityKey,
+    SustainedStatus,
+    SustainedWindowState,
 )
 
 DEFAULT_PEAK_POLICY_PATH = (
@@ -24,6 +29,9 @@ DEFAULT_PEAK_POLICY_PATH = (
 )
 DEFAULT_REDIS_TTL_POLICY_PATH = (
     Path(__file__).resolve().parents[4] / "config/policies/redis-ttl-policy-v1.yaml"
+)
+DEFAULT_RULEBOOK_POLICY_PATH = (
+    Path(__file__).resolve().parents[4] / "config/policies/rulebook-v1.yaml"
 )
 _TOPIC_MESSAGES_METRIC_KEY = "topic_messages_in_per_sec"
 
@@ -38,16 +46,27 @@ def load_redis_ttl_policy(path: Path = DEFAULT_REDIS_TTL_POLICY_PATH) -> RedisTt
     return load_policy_yaml(path, RedisTtlPolicyV1)
 
 
+def load_rulebook_policy(path: Path = DEFAULT_RULEBOOK_POLICY_PATH) -> RulebookV1:
+    """Load and validate rulebook-v1 policy."""
+    return load_policy_yaml(path, RulebookV1)
+
+
 def collect_peak_stage_output(
     *,
     rows: Sequence[EvidenceRow],
     historical_windows_by_scope: Mapping[PeakScope, Sequence[float]],
+    anomaly_findings: Sequence[AnomalyFinding] = (),
+    prior_sustained_window_state_by_key: (
+        Mapping[SustainedIdentityKey, SustainedWindowState] | None
+    ) = None,
     peak_policy: PeakPolicyV1 | None = None,
+    rulebook_policy: RulebookV1 | None = None,
     evaluation_time: datetime | None = None,
 ) -> PeakStageOutput:
     """Build Stage 2 peak classifications for normalized topic scopes."""
     logger = get_logger("pipeline.stages.peak")
     policy = peak_policy or load_peak_policy()
+    rulebook = rulebook_policy or load_rulebook_policy()
     effective_time = evaluation_time or datetime.now(tz=UTC)
 
     current_values_by_scope: dict[PeakScope, list[float]] = defaultdict(list)
@@ -102,11 +121,174 @@ def collect_peak_stage_output(
             reason_codes=classification.reason_codes,
         )
 
+    sustained_by_key = compute_sustained_status_by_key(
+        anomaly_findings=anomaly_findings,
+        prior_window_state_by_key=prior_sustained_window_state_by_key or {},
+        required_buckets=rulebook.sustained_intervals_required,
+        evaluation_interval_minutes=rulebook.evaluation_interval_minutes,
+        evaluation_time=effective_time,
+        logger=logger,
+    )
+
     return PeakStageOutput(
         profiles_by_scope=profiles_by_scope,
         classifications_by_scope=classifications_by_scope,
         peak_context_by_scope=peak_context_by_scope,
+        sustained_by_key=sustained_by_key,
     )
+
+
+def build_sustained_window_state_by_key(
+    sustained_by_key: Mapping[SustainedIdentityKey, SustainedStatus],
+) -> dict[SustainedIdentityKey, SustainedWindowState]:
+    """Convert sustained status output into persistable streak state."""
+    return {
+        key: SustainedWindowState(
+            identity_key=status.identity_key,
+            consecutive_anomalous_buckets=status.consecutive_anomalous_buckets,
+            last_evaluated_at=status.last_evaluated_at,
+        )
+        for key, status in sorted(sustained_by_key.items())
+    }
+
+
+def compute_sustained_status_by_key(
+    *,
+    anomaly_findings: Sequence[AnomalyFinding],
+    prior_window_state_by_key: Mapping[SustainedIdentityKey, SustainedWindowState],
+    required_buckets: int,
+    evaluation_interval_minutes: int,
+    evaluation_time: datetime,
+    logger,
+) -> dict[SustainedIdentityKey, SustainedStatus]:
+    """Compute sustained streak state per (env, cluster, topic/group, anomaly_family)."""
+    current_anomalous_keys: set[SustainedIdentityKey] = set()
+    for finding in anomaly_findings:
+        key = _to_sustained_identity_key(finding=finding, logger=logger)
+        if key is not None:
+            current_anomalous_keys.add(key)
+
+    keys_to_evaluate = sorted(set(prior_window_state_by_key.keys()) | current_anomalous_keys)
+    sustained_by_key: dict[SustainedIdentityKey, SustainedStatus] = {}
+    for key in keys_to_evaluate:
+        prior_state = prior_window_state_by_key.get(key)
+        streak = _next_streak_count(
+            prior_state=prior_state,
+            current_key_is_anomalous=key in current_anomalous_keys,
+            evaluation_time=evaluation_time,
+            evaluation_interval_minutes=evaluation_interval_minutes,
+        )
+        is_sustained = streak >= required_buckets
+        sustained_by_key[key] = SustainedStatus(
+            identity_key=key,
+            is_sustained=is_sustained,
+            consecutive_anomalous_buckets=streak,
+            required_buckets=required_buckets,
+            last_evaluated_at=evaluation_time,
+            reason_codes=_reason_codes(
+                prior_state=prior_state,
+                streak=streak,
+                is_sustained=is_sustained,
+                is_anomalous=key in current_anomalous_keys,
+                evaluation_time=evaluation_time,
+                evaluation_interval_minutes=evaluation_interval_minutes,
+            ),
+        )
+    return sustained_by_key
+
+
+def _to_sustained_identity_key(
+    *,
+    finding: AnomalyFinding,
+    logger,
+) -> SustainedIdentityKey | None:
+    scope = finding.scope
+    if len(scope) == 3:
+        topic_or_group = f"topic:{scope[2]}"
+        return (scope[0], scope[1], topic_or_group, finding.anomaly_family)
+    if len(scope) == 4:
+        topic_or_group = f"group:{scope[2]}"
+        return (scope[0], scope[1], topic_or_group, finding.anomaly_family)
+    logger.warning(
+        "sustained_scope_normalization_failed",
+        event_type="peak.sustained_scope_normalization_warning",
+        scope=scope,
+        anomaly_family=finding.anomaly_family,
+    )
+    return None
+
+
+def _next_streak_count(
+    *,
+    prior_state: SustainedWindowState | None,
+    current_key_is_anomalous: bool,
+    evaluation_time: datetime,
+    evaluation_interval_minutes: int,
+) -> int:
+    if not current_key_is_anomalous:
+        return 0
+    if prior_state is None:
+        return 1
+    if _is_consecutive_interval(
+        previous_evaluation=prior_state.last_evaluated_at,
+        current_evaluation=evaluation_time,
+        evaluation_interval_minutes=evaluation_interval_minutes,
+    ):
+        return prior_state.consecutive_anomalous_buckets + 1
+    return 1
+
+
+def _reason_codes(
+    *,
+    prior_state: SustainedWindowState | None,
+    streak: int,
+    is_sustained: bool,
+    is_anomalous: bool,
+    evaluation_time: datetime,
+    evaluation_interval_minutes: int,
+) -> tuple[str, ...]:
+    if not is_anomalous:
+        if prior_state is not None and prior_state.consecutive_anomalous_buckets > 0:
+            base = ("NON_ANOMALOUS_INTERVAL", "STREAK_RESET")
+        else:
+            base = ("NON_ANOMALOUS_INTERVAL",)
+    elif prior_state is None:
+        base = ("ANOMALOUS_INTERVAL", "STREAK_STARTED")
+    elif _is_consecutive_interval(
+        previous_evaluation=prior_state.last_evaluated_at,
+        current_evaluation=evaluation_time,
+        evaluation_interval_minutes=evaluation_interval_minutes,
+    ):
+        # Consecutive interval: continue streak, or re-start if prior streak was at zero.
+        if prior_state.consecutive_anomalous_buckets == 0:
+            base = ("ANOMALOUS_INTERVAL", "STREAK_STARTED")
+        else:
+            base = ("ANOMALOUS_INTERVAL", "STREAK_CONTINUES")
+    else:
+        base = ("ANOMALOUS_INTERVAL", "STREAK_RESET_GAP")
+
+    if is_sustained:
+        return (*base, "SUSTAINED_THRESHOLD_MET")
+    if streak == 0:
+        return (*base, "SUSTAINED_INACTIVE")
+    return (*base, "SUSTAINED_THRESHOLD_NOT_MET")
+
+
+def _is_consecutive_interval(
+    *,
+    previous_evaluation: datetime,
+    current_evaluation: datetime,
+    evaluation_interval_minutes: int,
+) -> bool:
+    if evaluation_interval_minutes <= 0:
+        raise ValueError(
+            f"evaluation_interval_minutes must be a positive integer, "
+            f"got {evaluation_interval_minutes}"
+        )
+    interval_seconds = evaluation_interval_minutes * 60
+    previous_bucket = int(previous_evaluation.astimezone(UTC).timestamp()) // interval_seconds
+    current_bucket = int(current_evaluation.astimezone(UTC).timestamp()) // interval_seconds
+    return current_bucket - previous_bucket == 1
 
 
 def _to_topic_scope(scope: tuple[str, ...]) -> PeakScope | None:

@@ -1,22 +1,36 @@
 import io
 import json
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from typing import Literal
 
 import pytest
 from pydantic import ValidationError
 
 from aiops_triage_pipeline.contracts.peak_policy import PeakPolicyV1, PeakThresholdPolicy
+from aiops_triage_pipeline.contracts.rulebook import (
+    GateCheck,
+    GateEffects,
+    GateSpec,
+    RulebookCaps,
+    RulebookDefaults,
+    RulebookV1,
+)
+from aiops_triage_pipeline.models.anomaly import AnomalyFinding
 from aiops_triage_pipeline.models.evidence import EvidenceRow
 from aiops_triage_pipeline.models.peak import (
     PeakClassification,
     PeakProfile,
     PeakStageOutput,
     PeakWindowContext,
+    SustainedStatus,
+    SustainedWindowState,
 )
 from aiops_triage_pipeline.pipeline.stages.peak import (
+    build_sustained_window_state_by_key,
     collect_peak_stage_output,
     load_peak_policy,
     load_redis_ttl_policy,
+    load_rulebook_policy,
 )
 
 
@@ -87,6 +101,13 @@ def test_load_redis_ttl_policy_from_default_path() -> None:
     assert policy.ttls_by_env["prod"].peak_profile_seconds == 86400
 
 
+def test_load_rulebook_policy_from_default_path() -> None:
+    policy = load_rulebook_policy()
+
+    assert policy.schema_version == "v1"
+    assert policy.sustained_intervals_required == 5
+
+
 def _peak_policy_for_tests() -> PeakPolicyV1:
     return PeakPolicyV1(
         metric="kafka_server_brokertopicmetrics_messagesinpersec",
@@ -110,6 +131,70 @@ def _row(scope: tuple[str, ...], metric_key: str, value: float) -> EvidenceRow:
     if len(scope) == 4:
         labels["group"] = scope[2]
     return EvidenceRow(metric_key=metric_key, value=value, labels=labels, scope=scope)
+
+
+def _finding(
+    *,
+    scope: tuple[str, ...],
+    anomaly_family: Literal[
+        "CONSUMER_LAG",
+        "VOLUME_DROP",
+        "THROUGHPUT_CONSTRAINED_PROXY",
+    ] = "VOLUME_DROP",
+) -> AnomalyFinding:
+    return AnomalyFinding(
+        finding_id=f"{anomaly_family}:{'|'.join(scope)}",
+        anomaly_family=anomaly_family,
+        scope=scope,
+        severity="MEDIUM",
+        reason_codes=("DETECTED",),
+        evidence_required=("topic_messages_in_per_sec",),
+        is_primary=True,
+    )
+
+
+def _rulebook_policy_for_tests(required: int = 5) -> RulebookV1:
+    defaults = RulebookDefaults(
+        missing_series_policy="UNKNOWN_NOT_ZERO",
+        required_evidence_policy="PRESENT_ONLY",
+        missing_confidence_policy="DOWNGRADE",
+        missing_sustained_policy="DOWNGRADE",
+    )
+    caps = RulebookCaps(
+        max_action_by_env={"local": "OBSERVE", "dev": "OBSERVE", "stage": "NOTIFY", "prod": "PAGE"},
+        max_action_by_tier_in_prod={
+            "TIER_0": "PAGE",
+            "TIER_1": "TICKET",
+            "TIER_2": "NOTIFY",
+            "UNKNOWN": "NOTIFY",
+        },
+        paging_denied_topic_roles=("SOURCE_TOPIC",),
+    )
+    gates = tuple(
+        GateSpec(
+            id=gate_id,
+            name=f"Gate {gate_id}",
+            intent="test",
+            effect=GateEffects(),
+            checks=(GateCheck(check_id=f"{gate_id}_CHECK", type="always_pass"),),
+        )
+        for gate_id in ("AG0", "AG1", "AG2", "AG3", "AG4", "AG5", "AG6")
+    )
+    return RulebookV1(
+        rulebook_id="rulebook.v1",
+        version=1,
+        evaluation_interval_minutes=5,
+        sustained_intervals_required=required,
+        defaults=defaults,
+        caps=caps,
+        gates=gates,
+    )
+
+
+def _to_window_state_map(
+    sustained_by_key: dict[tuple[str, str, str, str], SustainedStatus],
+) -> dict[tuple[str, str, str, str], SustainedWindowState]:
+    return build_sustained_window_state_by_key(sustained_by_key)
 
 
 def test_collect_peak_stage_output_classifies_peak_near_peak_off_peak_boundaries() -> None:
@@ -249,3 +334,124 @@ def test_collect_peak_stage_output_warns_for_malformed_scope(
     ]
     assert len(warning_events) == 1
     assert warning_events[0]["event_type"] == "peak.scope_normalization_warning"
+
+
+def test_collect_peak_stage_output_marks_sustained_true_at_exactly_five_buckets() -> None:
+    policy = _peak_policy_for_tests()
+    rulebook = _rulebook_policy_for_tests(required=5)
+    scope = ("prod", "cluster-a", "orders")
+    finding = _finding(scope=scope, anomaly_family="VOLUME_DROP")
+    prior: dict[tuple[str, str, str, str], SustainedWindowState] = {}
+    evaluation_time = datetime(2026, 3, 2, 12, 0, tzinfo=UTC)
+
+    cycle4: PeakStageOutput | None = None
+    cycle5: PeakStageOutput | None = None
+    for _ in range(5):
+        output = collect_peak_stage_output(
+            rows=[],
+            historical_windows_by_scope={},
+            anomaly_findings=[finding],
+            prior_sustained_window_state_by_key=prior,
+            peak_policy=policy,
+            rulebook_policy=rulebook,
+            evaluation_time=evaluation_time,
+        )
+        if output.sustained_by_key:
+            key = ("prod", "cluster-a", "topic:orders", "VOLUME_DROP")
+            assert key in output.sustained_by_key
+        if evaluation_time == datetime(2026, 3, 2, 12, 15, tzinfo=UTC):
+            cycle4 = output
+        if evaluation_time == datetime(2026, 3, 2, 12, 20, tzinfo=UTC):
+            cycle5 = output
+        prior = _to_window_state_map(dict(output.sustained_by_key))
+        evaluation_time += timedelta(minutes=5)
+
+    assert cycle4 is not None
+    assert cycle5 is not None
+    key = ("prod", "cluster-a", "topic:orders", "VOLUME_DROP")
+    assert cycle4.sustained_by_key[key].consecutive_anomalous_buckets == 4
+    assert cycle4.sustained_by_key[key].is_sustained is False
+    assert cycle5.sustained_by_key[key].consecutive_anomalous_buckets == 5
+    assert cycle5.sustained_by_key[key].is_sustained is True
+
+
+def test_collect_peak_stage_output_resets_streak_after_non_anomalous_gap() -> None:
+    policy = _peak_policy_for_tests()
+    rulebook = _rulebook_policy_for_tests(required=5)
+    scope = ("prod", "cluster-a", "orders")
+    finding = _finding(scope=scope, anomaly_family="VOLUME_DROP")
+    prior: dict[tuple[str, str, str, str], SustainedWindowState] = {}
+    key = ("prod", "cluster-a", "topic:orders", "VOLUME_DROP")
+
+    first = collect_peak_stage_output(
+        rows=[],
+        historical_windows_by_scope={},
+        anomaly_findings=[finding],
+        prior_sustained_window_state_by_key=prior,
+        peak_policy=policy,
+        rulebook_policy=rulebook,
+        evaluation_time=datetime(2026, 3, 2, 12, 0, tzinfo=UTC),
+    )
+    prior = _to_window_state_map(dict(first.sustained_by_key))
+
+    gap = collect_peak_stage_output(
+        rows=[],
+        historical_windows_by_scope={},
+        anomaly_findings=[],
+        prior_sustained_window_state_by_key=prior,
+        peak_policy=policy,
+        rulebook_policy=rulebook,
+        evaluation_time=datetime(2026, 3, 2, 12, 5, tzinfo=UTC),
+    )
+    prior = _to_window_state_map(dict(gap.sustained_by_key))
+
+    resumed = collect_peak_stage_output(
+        rows=[],
+        historical_windows_by_scope={},
+        anomaly_findings=[finding],
+        prior_sustained_window_state_by_key=prior,
+        peak_policy=policy,
+        rulebook_policy=rulebook,
+        evaluation_time=datetime(2026, 3, 2, 12, 10, tzinfo=UTC),
+    )
+
+    assert first.sustained_by_key[key].consecutive_anomalous_buckets == 1
+    assert gap.sustained_by_key[key].consecutive_anomalous_buckets == 0
+    assert resumed.sustained_by_key[key].consecutive_anomalous_buckets == 1
+    assert resumed.sustained_by_key[key].is_sustained is False
+
+
+def test_collect_peak_stage_output_tracks_independent_sustained_keys() -> None:
+    policy = _peak_policy_for_tests()
+    rulebook = _rulebook_policy_for_tests(required=5)
+    key_a = ("prod", "cluster-a", "topic:orders", "VOLUME_DROP")
+    key_b = ("prod", "cluster-a", "group:payments-worker", "CONSUMER_LAG")
+    finding_a = _finding(scope=("prod", "cluster-a", "orders"), anomaly_family="VOLUME_DROP")
+    finding_b = _finding(
+        scope=("prod", "cluster-a", "payments-worker", "payments"),
+        anomaly_family="CONSUMER_LAG",
+    )
+
+    cycle1 = collect_peak_stage_output(
+        rows=[],
+        historical_windows_by_scope={},
+        anomaly_findings=[finding_a, finding_b],
+        prior_sustained_window_state_by_key={},
+        peak_policy=policy,
+        rulebook_policy=rulebook,
+        evaluation_time=datetime(2026, 3, 2, 12, 0, tzinfo=UTC),
+    )
+    cycle2 = collect_peak_stage_output(
+        rows=[],
+        historical_windows_by_scope={},
+        anomaly_findings=[finding_a],
+        prior_sustained_window_state_by_key=_to_window_state_map(dict(cycle1.sustained_by_key)),
+        peak_policy=policy,
+        rulebook_policy=rulebook,
+        evaluation_time=datetime(2026, 3, 2, 12, 5, tzinfo=UTC),
+    )
+
+    assert cycle1.sustained_by_key[key_a].consecutive_anomalous_buckets == 1
+    assert cycle1.sustained_by_key[key_b].consecutive_anomalous_buckets == 1
+    assert cycle2.sustained_by_key[key_a].consecutive_anomalous_buckets == 2
+    assert cycle2.sustained_by_key[key_b].consecutive_anomalous_buckets == 0
