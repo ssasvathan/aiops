@@ -1,6 +1,7 @@
 """Internal operational event models for degraded-mode transitions."""
 
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -40,7 +41,10 @@ class TelemetryDegradedEvent(BaseModel, frozen=True):
         timestamp: UTC time of the detection
     """
 
-    affected_scope: str
+    event_type: Literal["TelemetryDegradedEvent"] = "TelemetryDegradedEvent"
+    component: str = "scheduler"
+    severity: Literal["info", "warning", "critical"] = "warning"
+    affected_scope: Literal["prometheus"]
     reason: str
-    recovery_status: str  # "pending" | "resolved"
+    recovery_status: Literal["pending", "resolved"]
     timestamp: datetime

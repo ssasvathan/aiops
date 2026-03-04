@@ -21,6 +21,11 @@ class EvidenceWindowCacheClientProtocol(Protocol):
 
 def build_sustained_window_cache_key(identity_key: SustainedIdentityKey) -> str:
     """Build deterministic cache key for one sustained identity."""
+    return f"evidence:{identity_key[0]}|{identity_key[1]}|{identity_key[2]}|{identity_key[3]}"
+
+
+def build_legacy_sustained_window_cache_key(identity_key: SustainedIdentityKey) -> str:
+    """Build legacy cache key used before Story 2.6 namespace alignment."""
     return (
         f"evidence_window:{identity_key[0]}|{identity_key[1]}|"
         f"{identity_key[2]}|{identity_key[3]}"
@@ -47,8 +52,14 @@ def get_sustained_window_state(
     redis_client: EvidenceWindowCacheClientProtocol,
     identity_key: SustainedIdentityKey,
 ) -> SustainedWindowState | None:
-    """Load persisted sustained-window state, returning None on cache miss."""
+    """Load persisted sustained-window state, returning None on cache miss.
+
+    Reads the architecture-required key first, then falls back to the legacy
+    namespace to support in-place rollout without immediate cache invalidation.
+    """
     raw = redis_client.get(build_sustained_window_cache_key(identity_key))
+    if raw is None:
+        raw = redis_client.get(build_legacy_sustained_window_cache_key(identity_key))
     if raw is None:
         return None
     if isinstance(raw, bytes):

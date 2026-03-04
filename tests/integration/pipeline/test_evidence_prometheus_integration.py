@@ -4,7 +4,14 @@ from urllib.error import URLError
 import pytest
 
 from aiops_triage_pipeline.contracts.enums import Action, CriticalityTier, EvidenceStatus
-from aiops_triage_pipeline.integrations.prometheus import PrometheusHTTPClient, build_metric_queries
+from aiops_triage_pipeline.health.registry import HealthRegistry
+from aiops_triage_pipeline.integrations.prometheus import (
+    MetricQueryDefinition,
+    PrometheusHTTPClient,
+    build_metric_queries,
+)
+from aiops_triage_pipeline.models.health import HealthStatus
+from aiops_triage_pipeline.pipeline.scheduler import run_evidence_stage_cycle
 from aiops_triage_pipeline.pipeline.stages.evidence import (
     collect_evidence_stage_output,
     collect_prometheus_samples,
@@ -178,3 +185,63 @@ def test_stage1_stage2_gate_input_flow_preserves_unknown() -> None:
         gate_input.evidence_status_map["failed_produce_requests_per_sec"]
         == EvidenceStatus.UNKNOWN
     )
+
+
+@pytest.mark.integration
+async def test_prometheus_total_outage_and_recovery_emit_transition_events() -> None:
+    class _OutageClient:
+        def query_instant(self, metric_name: str, at_time: datetime) -> list[dict]:  # noqa: ARG002
+            raise URLError(f"source unavailable for {metric_name}")
+
+    class _RecoveryClient:
+        def query_instant(self, metric_name: str, at_time: datetime) -> list[dict]:  # noqa: ARG002
+            if metric_name == "kafka_server_brokertopicmetrics_messagesinpersec":
+                return [
+                    {
+                        "labels": {
+                            "env": "prod",
+                            "cluster_name": "cluster-a",
+                            "topic": "orders",
+                        },
+                        "value": 12.0,
+                    }
+                ]
+            return []
+
+    metric_queries = {
+        "topic_messages_in_per_sec": MetricQueryDefinition(
+            metric_key="topic_messages_in_per_sec",
+            metric_name="kafka_server_brokertopicmetrics_messagesinpersec",
+            role="signal",
+        ),
+        "consumer_group_lag": MetricQueryDefinition(
+            metric_key="consumer_group_lag",
+            metric_name="kafka_consumergroup_group_lag",
+            role="signal",
+        ),
+    }
+    registry = HealthRegistry()
+
+    degraded = await run_evidence_stage_cycle(
+        client=_OutageClient(),
+        metric_queries=metric_queries,
+        evaluation_time=datetime(2026, 3, 2, 12, 5, tzinfo=UTC),
+        health_registry=registry,
+    )
+    assert degraded.telemetry_degraded_active is True
+    assert degraded.max_safe_action == Action.NOTIFY
+    assert registry.get("prometheus") == HealthStatus.UNAVAILABLE
+    assert len(degraded.telemetry_degraded_events) == 1
+    assert degraded.telemetry_degraded_events[0].recovery_status == "pending"
+
+    recovered = await run_evidence_stage_cycle(
+        client=_RecoveryClient(),
+        metric_queries=metric_queries,
+        evaluation_time=datetime(2026, 3, 2, 12, 10, tzinfo=UTC),
+        health_registry=registry,
+    )
+    assert recovered.telemetry_degraded_active is False
+    assert recovered.max_safe_action is None
+    assert registry.get("prometheus") == HealthStatus.HEALTHY
+    assert len(recovered.telemetry_degraded_events) == 1
+    assert recovered.telemetry_degraded_events[0].recovery_status == "resolved"

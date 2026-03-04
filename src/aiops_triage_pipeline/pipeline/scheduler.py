@@ -4,15 +4,21 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Mapping, Sequence
 
+from aiops_triage_pipeline.cache.findings_cache import FindingsCacheClientProtocol
+from aiops_triage_pipeline.contracts.enums import Action
 from aiops_triage_pipeline.contracts.gate_input import GateInputV1
 from aiops_triage_pipeline.contracts.peak_policy import PeakPolicyV1
+from aiops_triage_pipeline.contracts.redis_ttl_policy import RedisTtlPolicyV1
 from aiops_triage_pipeline.contracts.rulebook import RulebookV1
+from aiops_triage_pipeline.health.registry import HealthRegistry, get_health_registry
 from aiops_triage_pipeline.integrations.prometheus import (
     MetricQueryDefinition,
     PrometheusClientProtocol,
 )
 from aiops_triage_pipeline.logging.setup import get_logger
+from aiops_triage_pipeline.models.events import TelemetryDegradedEvent
 from aiops_triage_pipeline.models.evidence import EvidenceStageOutput
+from aiops_triage_pipeline.models.health import HealthStatus
 from aiops_triage_pipeline.models.peak import (
     PeakScope,
     PeakStageOutput,
@@ -21,7 +27,7 @@ from aiops_triage_pipeline.models.peak import (
 )
 from aiops_triage_pipeline.pipeline.stages.evidence import (
     collect_evidence_stage_output,
-    collect_prometheus_samples,
+    collect_prometheus_samples_with_diagnostics,
 )
 from aiops_triage_pipeline.pipeline.stages.gating import (
     GateInputContext,
@@ -104,14 +110,58 @@ async def run_evidence_stage_cycle(
     client: PrometheusClientProtocol,
     metric_queries: Mapping[str, MetricQueryDefinition],
     evaluation_time: datetime,
+    findings_cache_client: FindingsCacheClientProtocol | None = None,
+    redis_ttl_policy: RedisTtlPolicyV1 | None = None,
+    health_registry: HealthRegistry | None = None,
 ) -> EvidenceStageOutput:
     """Run Stage 1 evidence collection and anomaly derivation for one scheduler cycle."""
-    samples_by_metric = await collect_prometheus_samples(
+    diagnostics = await collect_prometheus_samples_with_diagnostics(
         client=client,
         metric_queries=metric_queries,
         evaluation_time=evaluation_time,
     )
-    return collect_evidence_stage_output(samples_by_metric)
+    registry = health_registry or get_health_registry()
+    previous_prometheus_status = registry.get("prometheus")
+    telemetry_degraded_events: tuple[TelemetryDegradedEvent, ...] = ()
+
+    if diagnostics.is_total_outage:
+        if previous_prometheus_status != HealthStatus.UNAVAILABLE:
+            await registry.update(
+                "prometheus",
+                HealthStatus.UNAVAILABLE,
+                reason=diagnostics.outage_reason,
+            )
+            telemetry_degraded_events = (
+                TelemetryDegradedEvent(
+                    affected_scope="prometheus",
+                    reason=diagnostics.outage_reason
+                    or "Prometheus source unavailable across the full query set",
+                    recovery_status="pending",
+                    severity="warning",
+                    timestamp=evaluation_time.astimezone(UTC),
+                ),
+            )
+    elif previous_prometheus_status == HealthStatus.UNAVAILABLE:
+        await registry.update("prometheus", HealthStatus.HEALTHY)
+        telemetry_degraded_events = (
+            TelemetryDegradedEvent(
+                affected_scope="prometheus",
+                reason="Prometheus connectivity restored; resuming normal evaluation",
+                recovery_status="resolved",
+                severity="info",
+                timestamp=evaluation_time.astimezone(UTC),
+            ),
+        )
+
+    return collect_evidence_stage_output(
+        diagnostics.samples_by_metric,
+        findings_cache_client=findings_cache_client,
+        redis_ttl_policy=redis_ttl_policy,
+        evaluation_time=evaluation_time,
+        telemetry_degraded_active=diagnostics.is_total_outage,
+        telemetry_degraded_events=telemetry_degraded_events,
+        max_safe_action=Action.NOTIFY if diagnostics.is_total_outage else None,
+    )
 
 
 def run_peak_stage_cycle(
@@ -153,4 +203,5 @@ def run_gate_input_stage_cycle(
         evidence_output=evidence_output,
         peak_output=peak_output,
         context_by_scope=context_by_scope,
+        max_safe_action=evidence_output.max_safe_action,
     )

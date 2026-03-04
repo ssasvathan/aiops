@@ -19,10 +19,21 @@ class _FakeRedis:
     def get(self, key: str) -> str | None:
         return self.store.get(key)
 
-    def setex(self, key: str, ttl_seconds: int, value: str) -> bool:
+    def set(self, key: str, value: str, *, ex: int | None = None) -> bool:
         self.store[key] = value
-        self.ttl_by_key[key] = ttl_seconds
+        if ex is not None:
+            self.ttl_by_key[key] = ex
         return True
+
+
+class _FailingReadRedis(_FakeRedis):
+    def get(self, key: str) -> str | None:  # noqa: ARG002
+        raise RuntimeError("redis unavailable")
+
+
+class _FailingWriteRedis(_FakeRedis):
+    def set(self, key: str, value: str, *, ex: int | None = None) -> bool:  # noqa: ARG002
+        raise RuntimeError("redis unavailable")
 
 
 def _ttl_policy() -> RedisTtlPolicyV1:
@@ -150,3 +161,41 @@ def test_set_peak_profile_serialization_is_deterministic() -> None:
     second_payload = redis_client.store["peak:prod|cluster-a|orders"]
 
     assert first_payload == second_payload
+
+
+def test_get_or_compute_peak_profile_ignores_read_failures() -> None:
+    redis_client = _FailingReadRedis()
+    profile = _profile()
+    policy = _ttl_policy()
+    calls = {"count": 0}
+
+    def _compute() -> PeakProfile:
+        calls["count"] += 1
+        return profile
+
+    loaded = get_or_compute_peak_profile(
+        redis_client=redis_client,
+        scope=profile.scope,
+        env="prod",
+        redis_ttl_policy=policy,
+        compute_profile=_compute,
+    )
+
+    assert loaded == profile
+    assert calls["count"] == 1
+
+
+def test_get_or_compute_peak_profile_ignores_write_failures() -> None:
+    redis_client = _FailingWriteRedis()
+    profile = _profile()
+    policy = _ttl_policy()
+
+    loaded = get_or_compute_peak_profile(
+        redis_client=redis_client,
+        scope=profile.scope,
+        env="prod",
+        redis_ttl_policy=policy,
+        compute_profile=lambda: profile,
+    )
+
+    assert loaded == profile

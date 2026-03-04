@@ -1,6 +1,10 @@
+import json
+from datetime import UTC, datetime
+
 import pytest
 from pydantic import ValidationError
 
+from aiops_triage_pipeline.contracts.redis_ttl_policy import RedisTtlPolicyV1, RedisTtlsByEnv
 from aiops_triage_pipeline.models.anomaly import (
     AnomalyDetectionResult,
     AnomalyFinding,
@@ -8,6 +12,46 @@ from aiops_triage_pipeline.models.anomaly import (
 )
 from aiops_triage_pipeline.models.evidence import EvidenceRow
 from aiops_triage_pipeline.pipeline.stages.anomaly import detect_anomaly_findings
+
+
+class _FakeRedis:
+    def __init__(self) -> None:
+        self.store: dict[str, str] = {}
+
+    def get(self, key: str) -> str | None:
+        return self.store.get(key)
+
+    def set(self, key: str, value: str, *, ex: int | None = None) -> bool:  # noqa: ARG002
+        self.store[key] = value
+        return True
+
+
+def _ttl_policy() -> RedisTtlPolicyV1:
+    base = RedisTtlsByEnv(
+        evidence_window_seconds=600,
+        peak_profile_seconds=3600,
+        dedupe_seconds=300,
+    )
+    return RedisTtlPolicyV1(
+        ttls_by_env={
+            "local": base,
+            "dev": RedisTtlsByEnv(
+                evidence_window_seconds=900,
+                peak_profile_seconds=7200,
+                dedupe_seconds=600,
+            ),
+            "uat": RedisTtlsByEnv(
+                evidence_window_seconds=1800,
+                peak_profile_seconds=14400,
+                dedupe_seconds=900,
+            ),
+            "prod": RedisTtlsByEnv(
+                evidence_window_seconds=3600,
+                peak_profile_seconds=86400,
+                dedupe_seconds=1800,
+            ),
+        }
+    )
 
 
 def test_anomaly_finding_is_frozen() -> None:
@@ -437,3 +481,97 @@ def test_detect_volume_drop_missing_series_is_unknown_not_zero() -> None:
     result = detect_anomaly_findings(rows)
 
     assert all(f.anomaly_family != "VOLUME_DROP" for f in result.findings)
+
+
+def test_detect_anomaly_findings_reuses_cached_findings_on_interval_hit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rows = [
+        EvidenceRow(
+            metric_key="topic_messages_in_per_sec",
+            value=180.0,
+            labels={"env": "prod", "cluster_id": "cluster-a", "topic": "inventory"},
+            scope=("prod", "cluster-a", "inventory"),
+        ),
+        EvidenceRow(
+            metric_key="topic_messages_in_per_sec",
+            value=0.8,
+            labels={"env": "prod", "cluster_id": "cluster-a", "topic": "inventory"},
+            scope=("prod", "cluster-a", "inventory"),
+        ),
+        EvidenceRow(
+            metric_key="total_produce_requests_per_sec",
+            value=240.0,
+            labels={"env": "prod", "cluster_id": "cluster-a", "topic": "inventory"},
+            scope=("prod", "cluster-a", "inventory"),
+        ),
+    ]
+    evaluation_time = datetime(2026, 3, 2, 12, 5, tzinfo=UTC)
+    redis_client = _FakeRedis()
+    policy = _ttl_policy()
+
+    first = detect_anomaly_findings(
+        rows,
+        findings_cache_client=redis_client,
+        redis_ttl_policy=policy,
+        evaluation_time=evaluation_time,
+    )
+    assert any(key.startswith("evidence:findings|") for key in redis_client.store)
+
+    def _raise_if_called(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("detectors should not execute on cache hit")
+
+    monkeypatch.setattr(
+        "aiops_triage_pipeline.pipeline.stages.anomaly._detect_consumer_lag_buildup",
+        _raise_if_called,
+    )
+    monkeypatch.setattr(
+        "aiops_triage_pipeline.pipeline.stages.anomaly._detect_throughput_constrained_proxy",
+        _raise_if_called,
+    )
+    monkeypatch.setattr(
+        "aiops_triage_pipeline.pipeline.stages.anomaly._detect_volume_drop",
+        _raise_if_called,
+    )
+
+    second = detect_anomaly_findings(
+        rows,
+        findings_cache_client=redis_client,
+        redis_ttl_policy=policy,
+        evaluation_time=evaluation_time,
+    )
+
+    assert second == first
+
+
+def test_detect_anomaly_findings_logs_warning_on_partial_cache_configuration(
+    log_stream,
+) -> None:
+    rows = [
+        EvidenceRow(
+            metric_key="topic_messages_in_per_sec",
+            value=180.0,
+            labels={"env": "prod", "cluster_id": "cluster-a", "topic": "inventory"},
+            scope=("prod", "cluster-a", "inventory"),
+        ),
+        EvidenceRow(
+            metric_key="total_produce_requests_per_sec",
+            value=240.0,
+            labels={"env": "prod", "cluster_id": "cluster-a", "topic": "inventory"},
+            scope=("prod", "cluster-a", "inventory"),
+        ),
+    ]
+
+    _ = detect_anomaly_findings(
+        rows,
+        # Intentionally omit redis_ttl_policy + evaluation_time.
+        findings_cache_client=_FakeRedis(),
+    )
+
+    warnings = [
+        json.loads(line)
+        for line in log_stream.getvalue().splitlines()
+        if line.strip()
+        and json.loads(line).get("event") == "findings_cache_configuration_incomplete"
+    ]
+    assert len(warnings) == 1

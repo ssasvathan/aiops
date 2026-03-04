@@ -5,9 +5,10 @@ from typing import Mapping
 
 from pydantic import BaseModel, model_validator
 
-from aiops_triage_pipeline.contracts.enums import EvidenceStatus
+from aiops_triage_pipeline.contracts.enums import Action, EvidenceStatus
 from aiops_triage_pipeline.contracts.gate_input import Finding
 from aiops_triage_pipeline.models.anomaly import AnomalyDetectionResult
+from aiops_triage_pipeline.models.events import TelemetryDegradedEvent
 
 
 class EvidenceRow(BaseModel, frozen=True):
@@ -32,6 +33,9 @@ class EvidenceStageOutput(BaseModel, frozen=True):
     anomaly_result: AnomalyDetectionResult
     gate_findings_by_scope: Mapping[tuple[str, ...], tuple[Finding, ...]]
     evidence_status_map_by_scope: Mapping[tuple[str, ...], Mapping[str, EvidenceStatus]] = {}
+    telemetry_degraded_active: bool = False
+    telemetry_degraded_events: tuple[TelemetryDegradedEvent, ...] = ()
+    max_safe_action: Action | None = None
 
     @model_validator(mode="after")
     def _freeze_nested_mappings(
@@ -49,5 +53,10 @@ class EvidenceStageOutput(BaseModel, frozen=True):
             self,
             "evidence_status_map_by_scope",
             MappingProxyType(frozen_evidence_status_map_by_scope),
+        )
+        object.__setattr__(
+            self,
+            "telemetry_degraded_events",
+            tuple(self.telemetry_degraded_events),
         )
         return self

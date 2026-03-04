@@ -110,8 +110,31 @@ def test_telemetry_degraded_event_creation() -> None:
         recovery_status="pending",
         timestamp=datetime.now(tz=timezone.utc),
     )
+    assert event.event_type == "TelemetryDegradedEvent"
+    assert event.component == "scheduler"
+    assert event.severity == "warning"
     assert event.affected_scope == "prometheus"
     assert event.recovery_status == "pending"
+
+
+def test_telemetry_degraded_event_rejects_invalid_recovery_status() -> None:
+    with pytest.raises(ValidationError):
+        TelemetryDegradedEvent(
+            affected_scope="prometheus",
+            reason="HTTP 503",
+            recovery_status="unknown",  # type: ignore[arg-type]
+            timestamp=datetime.now(tz=timezone.utc),
+        )
+
+
+def test_telemetry_degraded_event_rejects_invalid_affected_scope() -> None:
+    with pytest.raises(ValidationError):
+        TelemetryDegradedEvent(
+            affected_scope="redis",  # type: ignore[arg-type]
+            reason="HTTP 503",
+            recovery_status="pending",
+            timestamp=datetime.now(tz=timezone.utc),
+        )
 
 
 def test_component_health_is_frozen() -> None:

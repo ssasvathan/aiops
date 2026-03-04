@@ -13,6 +13,7 @@ from aiops_triage_pipeline.pipeline.stages.evidence import (
     collect_evidence_rows,
     collect_evidence_stage_output,
     collect_prometheus_samples,
+    collect_prometheus_samples_with_diagnostics,
 )
 
 
@@ -104,6 +105,149 @@ async def test_collect_prometheus_samples_logs_warning_for_unavailable_metric(
     ]
     assert len(logs) == 1
     assert logs[0]["severity"] == "WARNING"
+
+
+async def test_collect_prometheus_samples_with_diagnostics_detects_total_outage() -> None:
+    class _FailingClient:
+        def query_instant(self, metric_name: str, at_time: datetime) -> list:  # noqa: ARG002
+            raise URLError(f"upstream unavailable for {metric_name}")
+
+    metric_queries = {
+        "topic_messages_in_per_sec": MetricQueryDefinition(
+            metric_key="topic_messages_in_per_sec",
+            metric_name="kafka_server_brokertopicmetrics_messagesinpersec",
+            role="signal",
+        ),
+        "consumer_group_lag": MetricQueryDefinition(
+            metric_key="consumer_group_lag",
+            metric_name="kafka_consumergroup_group_lag",
+            role="signal",
+        ),
+    }
+
+    diagnostics = await collect_prometheus_samples_with_diagnostics(
+        client=_FailingClient(),
+        metric_queries=metric_queries,
+        evaluation_time=datetime(2026, 3, 2, 12, 5, tzinfo=UTC),
+    )
+
+    assert diagnostics.is_total_outage is True
+    assert diagnostics.failed_metric_keys == (
+        "topic_messages_in_per_sec",
+        "consumer_group_lag",
+    )
+    assert diagnostics.samples_by_metric == {
+        "topic_messages_in_per_sec": [],
+        "consumer_group_lag": [],
+    }
+    assert diagnostics.outage_reason is not None
+    assert "across all 2 configured metrics" in diagnostics.outage_reason
+
+
+async def test_collect_prometheus_samples_with_diagnostics_keeps_partial_failures_non_outage(
+) -> None:
+    class _PartiallyFailingClient:
+        def query_instant(self, metric_name: str, at_time: datetime) -> list[dict]:  # noqa: ARG002
+            if metric_name == "kafka_consumergroup_group_lag":
+                raise TimeoutError("timed out")
+            return [
+                {
+                    "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                    "value": 10.0,
+                }
+            ]
+
+    metric_queries = {
+        "topic_messages_in_per_sec": MetricQueryDefinition(
+            metric_key="topic_messages_in_per_sec",
+            metric_name="kafka_server_brokertopicmetrics_messagesinpersec",
+            role="signal",
+        ),
+        "consumer_group_lag": MetricQueryDefinition(
+            metric_key="consumer_group_lag",
+            metric_name="kafka_consumergroup_group_lag",
+            role="signal",
+        ),
+    }
+
+    diagnostics = await collect_prometheus_samples_with_diagnostics(
+        client=_PartiallyFailingClient(),
+        metric_queries=metric_queries,
+        evaluation_time=datetime(2026, 3, 2, 12, 5, tzinfo=UTC),
+    )
+
+    assert diagnostics.is_total_outage is False
+    assert diagnostics.failed_metric_keys == ("consumer_group_lag",)
+    assert diagnostics.samples_by_metric["topic_messages_in_per_sec"]
+    assert diagnostics.samples_by_metric["consumer_group_lag"] == []
+    assert diagnostics.outage_reason is None
+
+
+async def test_collect_prometheus_samples_with_diagnostics_ignores_result_shape_errors_for_outage(
+) -> None:
+    class _BadShapeClient:
+        def query_instant(self, metric_name: str, at_time: datetime) -> list[dict]:  # noqa: ARG002
+            raise ValueError(f"Expected vector resultType, got 'matrix' for {metric_name}")
+
+    metric_queries = {
+        "topic_messages_in_per_sec": MetricQueryDefinition(
+            metric_key="topic_messages_in_per_sec",
+            metric_name="kafka_server_brokertopicmetrics_messagesinpersec",
+            role="signal",
+        ),
+        "consumer_group_lag": MetricQueryDefinition(
+            metric_key="consumer_group_lag",
+            metric_name="kafka_consumergroup_group_lag",
+            role="signal",
+        ),
+    }
+
+    diagnostics = await collect_prometheus_samples_with_diagnostics(
+        client=_BadShapeClient(),
+        metric_queries=metric_queries,
+        evaluation_time=datetime(2026, 3, 2, 12, 5, tzinfo=UTC),
+    )
+
+    assert diagnostics.is_total_outage is False
+    assert diagnostics.failed_metric_keys == ()
+    assert diagnostics.samples_by_metric == {
+        "topic_messages_in_per_sec": [],
+        "consumer_group_lag": [],
+    }
+    assert diagnostics.outage_reason is None
+
+
+async def test_collect_prometheus_samples_with_diagnostics_treats_non_success_api_payload_as_outage(
+) -> None:
+    class _ApiErrorClient:
+        def query_instant(self, metric_name: str, at_time: datetime) -> list[dict]:  # noqa: ARG002
+            raise ValueError(f"Prometheus query failed for {metric_name}: {{'status': 'error'}}")
+
+    metric_queries = {
+        "topic_messages_in_per_sec": MetricQueryDefinition(
+            metric_key="topic_messages_in_per_sec",
+            metric_name="kafka_server_brokertopicmetrics_messagesinpersec",
+            role="signal",
+        ),
+        "consumer_group_lag": MetricQueryDefinition(
+            metric_key="consumer_group_lag",
+            metric_name="kafka_consumergroup_group_lag",
+            role="signal",
+        ),
+    }
+
+    diagnostics = await collect_prometheus_samples_with_diagnostics(
+        client=_ApiErrorClient(),
+        metric_queries=metric_queries,
+        evaluation_time=datetime(2026, 3, 2, 12, 5, tzinfo=UTC),
+    )
+
+    assert diagnostics.is_total_outage is True
+    assert diagnostics.failed_metric_keys == (
+        "topic_messages_in_per_sec",
+        "consumer_group_lag",
+    )
+    assert diagnostics.outage_reason is not None
 
 
 def test_build_evidence_scope_key_raises_for_missing_env_label() -> None:

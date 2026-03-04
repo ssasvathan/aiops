@@ -2,17 +2,21 @@
 
 import asyncio
 from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Mapping, Sequence
 from urllib.error import URLError
 
-from aiops_triage_pipeline.contracts.enums import EvidenceStatus
+from aiops_triage_pipeline.cache.findings_cache import FindingsCacheClientProtocol
+from aiops_triage_pipeline.contracts.enums import Action, EvidenceStatus
+from aiops_triage_pipeline.contracts.redis_ttl_policy import RedisTtlPolicyV1
 from aiops_triage_pipeline.integrations.prometheus import (
     MetricQueryDefinition,
     PrometheusClientProtocol,
     normalize_labels,
 )
 from aiops_triage_pipeline.logging.setup import get_logger
+from aiops_triage_pipeline.models.events import TelemetryDegradedEvent
 from aiops_triage_pipeline.models.evidence import EvidenceRow, EvidenceStageOutput
 from aiops_triage_pipeline.pipeline.stages.anomaly import (
     build_gate_findings_by_scope,
@@ -26,6 +30,17 @@ _LAG_METRIC_KEYS = frozenset({"consumer_group_lag", "consumer_group_offset"})
 _IDENTITY_IGNORE_LABELS = frozenset(
     {"instance", "job", "nodes_group", "client_id", "consumer_id", "member_host", "partition"}
 )
+_PROMETHEUS_SOURCE_FAILURES = (URLError, TimeoutError, OSError)
+
+
+@dataclass(frozen=True)
+class PrometheusCollectionDiagnostics:
+    """Collection result with source-outage diagnostics for one scheduler cycle."""
+
+    samples_by_metric: dict[str, list[dict[str, Any]]]
+    failed_metric_keys: tuple[str, ...]
+    is_total_outage: bool
+    outage_reason: str | None
 
 
 def build_evidence_scope_key(labels: Mapping[str, str], metric_key: str) -> tuple[str, ...]:
@@ -114,10 +129,22 @@ def build_evidence_status_map_by_scope(
 
 def collect_evidence_stage_output(
     samples_by_metric: Mapping[str, list[Mapping[str, Any]]],
+    *,
+    findings_cache_client: FindingsCacheClientProtocol | None = None,
+    redis_ttl_policy: RedisTtlPolicyV1 | None = None,
+    evaluation_time: datetime | None = None,
+    telemetry_degraded_active: bool = False,
+    telemetry_degraded_events: Sequence[TelemetryDegradedEvent] = (),
+    max_safe_action: Action | None = None,
 ) -> EvidenceStageOutput:
     """Collect normalized evidence rows and derive anomaly findings for downstream stages."""
     rows = collect_evidence_rows(samples_by_metric)
-    anomaly_result = detect_anomaly_findings(rows)
+    anomaly_result = detect_anomaly_findings(
+        rows,
+        findings_cache_client=findings_cache_client,
+        redis_ttl_policy=redis_ttl_policy,
+        evaluation_time=evaluation_time,
+    )
     evidence_status_map_by_scope = build_evidence_status_map_by_scope(
         metric_keys=tuple(samples_by_metric.keys()),
         rows=rows,
@@ -127,6 +154,9 @@ def collect_evidence_stage_output(
         anomaly_result=anomaly_result,
         gate_findings_by_scope=build_gate_findings_by_scope(anomaly_result),
         evidence_status_map_by_scope=evidence_status_map_by_scope,
+        telemetry_degraded_active=telemetry_degraded_active,
+        telemetry_degraded_events=tuple(telemetry_degraded_events),
+        max_safe_action=max_safe_action,
     )
 
 
@@ -141,8 +171,25 @@ async def collect_prometheus_samples(
     Uses asyncio.to_thread for each blocking HTTP call to avoid stalling the event loop
     on the hot-path evaluation cadence.
     """
+    diagnostics = await collect_prometheus_samples_with_diagnostics(
+        client=client,
+        metric_queries=metric_queries,
+        evaluation_time=evaluation_time,
+    )
+    return diagnostics.samples_by_metric
+
+
+async def collect_prometheus_samples_with_diagnostics(
+    *,
+    client: PrometheusClientProtocol,
+    metric_queries: Mapping[str, MetricQueryDefinition],
+    evaluation_time: datetime,
+) -> PrometheusCollectionDiagnostics:
+    """Collect samples and classify whether a full Prometheus source outage occurred."""
     logger = get_logger("pipeline.stages.evidence")
     collected: dict[str, list[dict[str, Any]]] = {}
+    failed_metric_keys: list[str] = []
+    failure_reasons_by_metric: dict[str, str] = {}
 
     for metric_key, query in metric_queries.items():
         try:
@@ -150,15 +197,62 @@ async def collect_prometheus_samples(
                 client.query_instant, query.metric_name, evaluation_time
             )
             collected[metric_key] = list(samples)
-        except (URLError, TimeoutError, OSError, ValueError) as exc:
+        except _PROMETHEUS_SOURCE_FAILURES as exc:
+            reason = f"{type(exc).__name__}: {exc}"
             logger.warning(
                 "prometheus_collection_missed_window",
                 event_type="evidence.prometheus_collection_warning",
                 metric_key=metric_key,
                 metric_name=getattr(query, "metric_name", metric_key),
                 evaluation_time=evaluation_time.isoformat(),
-                reason=str(exc),
+                reason=reason,
             )
+            failed_metric_keys.append(metric_key)
+            failure_reasons_by_metric[metric_key] = reason
+            collected[metric_key] = []
+        except ValueError as exc:
+            reason = f"{type(exc).__name__}: {exc}"
+            logger.warning(
+                "prometheus_collection_missed_window",
+                event_type="evidence.prometheus_collection_warning",
+                metric_key=metric_key,
+                metric_name=getattr(query, "metric_name", metric_key),
+                evaluation_time=evaluation_time.isoformat(),
+                reason=reason,
+            )
+            # Only treat explicit non-success API responses as outage candidates.
+            if _is_prometheus_non_success_api_error(exc):
+                failed_metric_keys.append(metric_key)
+                failure_reasons_by_metric[metric_key] = reason
             collected[metric_key] = []
 
-    return collected
+    is_total_outage = bool(metric_queries) and len(failed_metric_keys) == len(metric_queries)
+    outage_reason: str | None = None
+
+    if is_total_outage:
+        first_failed_metric_key = failed_metric_keys[0]
+        first_reason = failure_reasons_by_metric[first_failed_metric_key]
+        outage_reason = (
+            f"Prometheus source unavailable across all {len(metric_queries)} configured metrics; "
+            f"first failure [{first_failed_metric_key}]: {first_reason}"
+        )
+        logger.warning(
+            "prometheus_total_source_outage_detected",
+            event_type="evidence.prometheus_total_outage",
+            evaluation_time=evaluation_time.isoformat(),
+            failed_metric_count=len(failed_metric_keys),
+            total_metric_count=len(metric_queries),
+            reason=outage_reason,
+        )
+
+    return PrometheusCollectionDiagnostics(
+        samples_by_metric=collected,
+        failed_metric_keys=tuple(failed_metric_keys),
+        is_total_outage=is_total_outage,
+        outage_reason=outage_reason,
+    )
+
+
+def _is_prometheus_non_success_api_error(exc: ValueError) -> bool:
+    message = str(exc)
+    return message.startswith("Prometheus query failed for ")

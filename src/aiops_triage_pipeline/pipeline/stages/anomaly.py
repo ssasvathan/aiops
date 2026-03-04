@@ -1,8 +1,15 @@
 """Anomaly detection stage based on normalized Stage 1 evidence rows."""
 
 from collections import defaultdict
+from datetime import datetime
 
+from aiops_triage_pipeline.cache.findings_cache import (
+    FindingsCacheClientProtocol,
+    get_or_compute_interval_findings,
+)
 from aiops_triage_pipeline.contracts.gate_input import Finding
+from aiops_triage_pipeline.contracts.redis_ttl_policy import RedisTtlPolicyV1
+from aiops_triage_pipeline.logging.setup import get_logger
 from aiops_triage_pipeline.models.anomaly import (
     AnomalyDetectionResult,
     AnomalyFinding,
@@ -21,8 +28,33 @@ _VOLUME_DROP_MIN_BASELINE_MESSAGES_IN_PER_SEC = 50.0
 _VOLUME_DROP_MIN_EXPECTED_REQUESTS_PER_SEC = 150.0
 
 
-def detect_anomaly_findings(rows: list[EvidenceRow]) -> AnomalyDetectionResult:
+def detect_anomaly_findings(
+    rows: list[EvidenceRow],
+    *,
+    findings_cache_client: FindingsCacheClientProtocol | None = None,
+    redis_ttl_policy: RedisTtlPolicyV1 | None = None,
+    evaluation_time: datetime | None = None,
+) -> AnomalyDetectionResult:
     """Detect supported anomaly families from normalized evidence rows."""
+    cache_args_complete = (
+        findings_cache_client is not None
+        and redis_ttl_policy is not None
+        and evaluation_time is not None
+    )
+    cache_args_partial = (
+        findings_cache_client is not None
+        or redis_ttl_policy is not None
+        or evaluation_time is not None
+    ) and not cache_args_complete
+    if cache_args_partial:
+        get_logger("pipeline.stages.anomaly").warning(
+            "findings_cache_configuration_incomplete",
+            event_type="cache.findings_cache_configuration_warning",
+            has_findings_cache_client=findings_cache_client is not None,
+            has_redis_ttl_policy=redis_ttl_policy is not None,
+            has_evaluation_time=evaluation_time is not None,
+        )
+
     metrics_by_scope: dict[tuple[str, ...], dict[str, list[float]]] = defaultdict(
         lambda: defaultdict(list)
     )
@@ -32,22 +64,42 @@ def detect_anomaly_findings(rows: list[EvidenceRow]) -> AnomalyDetectionResult:
     findings: list[AnomalyFinding] = []
     for scope in sorted(metrics_by_scope):
         scope_metrics = metrics_by_scope[scope]
-
-        lag_finding = _detect_consumer_lag_buildup(scope, scope_metrics)
-        if lag_finding is not None:
-            findings.append(lag_finding)
-
-        throughput_finding = _detect_throughput_constrained_proxy(scope, scope_metrics)
-        if throughput_finding is not None:
-            findings.append(throughput_finding)
-
-        volume_drop_finding = _detect_volume_drop(scope, scope_metrics)
-        if volume_drop_finding is not None:
-            findings.append(volume_drop_finding)
+        if cache_args_complete:
+            scope_findings = get_or_compute_interval_findings(
+                redis_client=findings_cache_client,
+                scope=scope,
+                evaluation_time=evaluation_time,
+                redis_ttl_policy=redis_ttl_policy,
+                compute_findings=lambda: _compute_scope_findings(scope, scope_metrics),
+            )
+        else:
+            scope_findings = _compute_scope_findings(scope, scope_metrics)
+        findings.extend(scope_findings)
 
     finding_tuple = tuple(findings)
     # findings_by_scope is auto-derived from findings by AnomalyDetectionResult's model_validator.
     return AnomalyDetectionResult(findings=finding_tuple)
+
+
+def _compute_scope_findings(
+    scope: tuple[str, ...],
+    scope_metrics: dict[str, list[float]],
+) -> tuple[AnomalyFinding, ...]:
+    scope_findings: list[AnomalyFinding] = []
+
+    lag_finding = _detect_consumer_lag_buildup(scope, scope_metrics)
+    if lag_finding is not None:
+        scope_findings.append(lag_finding)
+
+    throughput_finding = _detect_throughput_constrained_proxy(scope, scope_metrics)
+    if throughput_finding is not None:
+        scope_findings.append(throughput_finding)
+
+    volume_drop_finding = _detect_volume_drop(scope, scope_metrics)
+    if volume_drop_finding is not None:
+        scope_findings.append(volume_drop_finding)
+
+    return tuple(scope_findings)
 
 
 def build_gate_findings_by_scope(

@@ -14,7 +14,7 @@ class PeakCacheClientProtocol(Protocol):
     def get(self, key: str) -> str | bytes | None:
         ...
 
-    def setex(self, key: str, ttl_seconds: int, value: str) -> bool | None:
+    def set(self, key: str, value: str, *, ex: int | None = None) -> bool | None:
         ...
 
 
@@ -68,7 +68,7 @@ def set_peak_profile(
 ) -> None:
     """Store one peak profile under required namespace with env-specific TTL."""
     ttl = peak_profile_ttl_seconds(env=env, redis_ttl_policy=redis_ttl_policy)
-    redis_client.setex(build_peak_cache_key(scope), ttl, _serialize_profile(profile))
+    redis_client.set(build_peak_cache_key(scope), _serialize_profile(profile), ex=ttl)
 
 
 def get_or_compute_peak_profile(
@@ -80,7 +80,15 @@ def get_or_compute_peak_profile(
     compute_profile: Callable[[], PeakProfile | None],
 ) -> PeakProfile | None:
     """Read-through helper: use cached profile, otherwise compute and populate cache."""
-    cached = get_peak_profile(redis_client=redis_client, scope=scope)
+    try:
+        cached = get_peak_profile(redis_client=redis_client, scope=scope)
+    except Exception:
+        get_logger("cache.peak_cache").warning(
+            "peak_cache_read_failed",
+            event_type="cache.peak_cache_read_warning",
+            scope=scope,
+        )
+        cached = None
     if cached is not None:
         return cached
 

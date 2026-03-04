@@ -1,10 +1,14 @@
 import io
 import json
 from datetime import UTC, datetime, timedelta
+from urllib.error import URLError
 
 from aiops_triage_pipeline.contracts.enums import Action, CriticalityTier, EvidenceStatus
 from aiops_triage_pipeline.contracts.peak_policy import PeakPolicyV1, PeakThresholdPolicy
+from aiops_triage_pipeline.contracts.redis_ttl_policy import RedisTtlPolicyV1, RedisTtlsByEnv
+from aiops_triage_pipeline.health.registry import HealthRegistry
 from aiops_triage_pipeline.integrations.prometheus import MetricQueryDefinition
+from aiops_triage_pipeline.models.health import HealthStatus
 from aiops_triage_pipeline.pipeline.scheduler import (
     SchedulerTick,
     evaluate_scheduler_tick,
@@ -39,6 +43,61 @@ def _peak_policy_for_tests() -> PeakPolicyV1:
 def _parse_logs(stream: io.StringIO) -> list[dict]:
     lines = [line for line in stream.getvalue().splitlines() if line.strip()]
     return [json.loads(line) for line in lines]
+
+
+class _FindingsRedis:
+    def __init__(self) -> None:
+        self.store: dict[str, str] = {}
+
+    def get(self, key: str) -> str | None:
+        return self.store.get(key)
+
+    def set(self, key: str, value: str, *, ex: int | None = None) -> bool:  # noqa: ARG002
+        self.store[key] = value
+        return True
+
+
+def _ttl_policy() -> RedisTtlPolicyV1:
+    base = RedisTtlsByEnv(
+        evidence_window_seconds=600,
+        peak_profile_seconds=3600,
+        dedupe_seconds=300,
+    )
+    return RedisTtlPolicyV1(
+        ttls_by_env={
+            "local": base,
+            "dev": RedisTtlsByEnv(
+                evidence_window_seconds=900,
+                peak_profile_seconds=7200,
+                dedupe_seconds=600,
+            ),
+            "uat": RedisTtlsByEnv(
+                evidence_window_seconds=1800,
+                peak_profile_seconds=14400,
+                dedupe_seconds=900,
+            ),
+            "prod": RedisTtlsByEnv(
+                evidence_window_seconds=3600,
+                peak_profile_seconds=86400,
+                dedupe_seconds=1800,
+            ),
+        }
+    )
+
+
+def _metric_queries_for_degraded_tests() -> dict[str, MetricQueryDefinition]:
+    return {
+        "topic_messages_in_per_sec": MetricQueryDefinition(
+            metric_key="topic_messages_in_per_sec",
+            metric_name="kafka_server_brokertopicmetrics_messagesinpersec",
+            role="signal",
+        ),
+        "consumer_group_lag": MetricQueryDefinition(
+            metric_key="consumer_group_lag",
+            metric_name="kafka_consumergroup_group_lag",
+            role="signal",
+        ),
+    }
 
 
 def test_floor_to_interval_boundary_aligns_to_5_minute_mark() -> None:
@@ -181,6 +240,196 @@ async def test_run_evidence_stage_cycle_wires_collection_to_anomaly_output() -> 
     assert ("prod", "cluster-a", "orders") in output.gate_findings_by_scope
 
 
+async def test_run_evidence_stage_cycle_reuses_findings_cache_on_interval_hit(
+    monkeypatch,
+) -> None:
+    class _Client:
+        def query_instant(self, metric_name: str, at_time: datetime) -> list[dict]:  # noqa: ARG002
+            if metric_name == "kafka_server_brokertopicmetrics_messagesinpersec":
+                return [
+                    {
+                        "labels": {
+                            "env": "prod",
+                            "cluster_name": "cluster-a",
+                            "topic": "inventory",
+                        },
+                        "value": 180.0,
+                    },
+                    {
+                        "labels": {
+                            "env": "prod",
+                            "cluster_name": "cluster-a",
+                            "topic": "inventory",
+                        },
+                        "value": 0.4,
+                    },
+                ]
+            if metric_name == "kafka_server_brokertopicmetrics_totalproducerequestspersec":
+                return [
+                    {
+                        "labels": {
+                            "env": "prod",
+                            "cluster_name": "cluster-a",
+                            "topic": "inventory",
+                        },
+                        "value": 240.0,
+                    }
+                ]
+            return []
+
+    redis_client = _FindingsRedis()
+    policy = _ttl_policy()
+    evaluation_time = datetime(2026, 3, 2, 12, 5, tzinfo=UTC)
+
+    first = await run_evidence_stage_cycle(
+        client=_Client(),
+        metric_queries={
+            "topic_messages_in_per_sec": MetricQueryDefinition(
+                metric_key="topic_messages_in_per_sec",
+                metric_name="kafka_server_brokertopicmetrics_messagesinpersec",
+                role="signal",
+            ),
+            "total_produce_requests_per_sec": MetricQueryDefinition(
+                metric_key="total_produce_requests_per_sec",
+                metric_name="kafka_server_brokertopicmetrics_totalproducerequestspersec",
+                role="signal",
+            ),
+        },
+        evaluation_time=evaluation_time,
+        findings_cache_client=redis_client,
+        redis_ttl_policy=policy,
+    )
+    assert any(key.startswith("evidence:findings|") for key in redis_client.store)
+
+    def _raise_if_called(*args, **kwargs):  # noqa: ANN002, ANN003
+        raise AssertionError("detectors should not execute on findings cache hit")
+
+    monkeypatch.setattr(
+        "aiops_triage_pipeline.pipeline.stages.anomaly._detect_consumer_lag_buildup",
+        _raise_if_called,
+    )
+    monkeypatch.setattr(
+        "aiops_triage_pipeline.pipeline.stages.anomaly._detect_throughput_constrained_proxy",
+        _raise_if_called,
+    )
+    monkeypatch.setattr(
+        "aiops_triage_pipeline.pipeline.stages.anomaly._detect_volume_drop",
+        _raise_if_called,
+    )
+
+    second = await run_evidence_stage_cycle(
+        client=_Client(),
+        metric_queries={
+            "topic_messages_in_per_sec": MetricQueryDefinition(
+                metric_key="topic_messages_in_per_sec",
+                metric_name="kafka_server_brokertopicmetrics_messagesinpersec",
+                role="signal",
+            ),
+            "total_produce_requests_per_sec": MetricQueryDefinition(
+                metric_key="total_produce_requests_per_sec",
+                metric_name="kafka_server_brokertopicmetrics_totalproducerequestspersec",
+                role="signal",
+            ),
+        },
+        evaluation_time=evaluation_time,
+        findings_cache_client=redis_client,
+        redis_ttl_policy=policy,
+    )
+
+    assert second.anomaly_result == first.anomaly_result
+
+
+async def test_run_evidence_stage_cycle_detects_total_outage_and_emits_pending_event() -> None:
+    class _OutageClient:
+        def query_instant(self, metric_name: str, at_time: datetime) -> list[dict]:  # noqa: ARG002
+            raise URLError(f"source unavailable for {metric_name}")
+
+    registry = HealthRegistry()
+    output = await run_evidence_stage_cycle(
+        client=_OutageClient(),
+        metric_queries=_metric_queries_for_degraded_tests(),
+        evaluation_time=datetime(2026, 3, 2, 12, 5, tzinfo=UTC),
+        health_registry=registry,
+    )
+
+    assert output.telemetry_degraded_active is True
+    assert output.max_safe_action == Action.NOTIFY
+    assert output.rows == ()
+    assert output.gate_findings_by_scope == {}
+    assert registry.get("prometheus") == HealthStatus.UNAVAILABLE
+    assert len(output.telemetry_degraded_events) == 1
+    assert output.telemetry_degraded_events[0].recovery_status == "pending"
+    assert output.telemetry_degraded_events[0].affected_scope == "prometheus"
+
+
+async def test_run_evidence_stage_cycle_avoids_duplicate_pending_events_while_degraded() -> None:
+    class _OutageClient:
+        def query_instant(self, metric_name: str, at_time: datetime) -> list[dict]:  # noqa: ARG002
+            raise URLError(f"source unavailable for {metric_name}")
+
+    registry = HealthRegistry()
+    first = await run_evidence_stage_cycle(
+        client=_OutageClient(),
+        metric_queries=_metric_queries_for_degraded_tests(),
+        evaluation_time=datetime(2026, 3, 2, 12, 5, tzinfo=UTC),
+        health_registry=registry,
+    )
+    second = await run_evidence_stage_cycle(
+        client=_OutageClient(),
+        metric_queries=_metric_queries_for_degraded_tests(),
+        evaluation_time=datetime(2026, 3, 2, 12, 10, tzinfo=UTC),
+        health_registry=registry,
+    )
+
+    assert len(first.telemetry_degraded_events) == 1
+    assert first.telemetry_degraded_events[0].recovery_status == "pending"
+    assert second.telemetry_degraded_events == ()
+    assert second.telemetry_degraded_active is True
+    assert registry.get("prometheus") == HealthStatus.UNAVAILABLE
+
+
+async def test_run_evidence_stage_cycle_emits_resolved_event_when_prometheus_recovers() -> None:
+    class _OutageClient:
+        def query_instant(self, metric_name: str, at_time: datetime) -> list[dict]:  # noqa: ARG002
+            raise URLError(f"source unavailable for {metric_name}")
+
+    class _RecoveryClient:
+        def query_instant(self, metric_name: str, at_time: datetime) -> list[dict]:  # noqa: ARG002
+            if metric_name == "kafka_server_brokertopicmetrics_messagesinpersec":
+                return [
+                    {
+                        "labels": {
+                            "env": "prod",
+                            "cluster_name": "cluster-a",
+                            "topic": "orders",
+                        },
+                        "value": 8.0,
+                    }
+                ]
+            return []
+
+    registry = HealthRegistry()
+    _ = await run_evidence_stage_cycle(
+        client=_OutageClient(),
+        metric_queries=_metric_queries_for_degraded_tests(),
+        evaluation_time=datetime(2026, 3, 2, 12, 5, tzinfo=UTC),
+        health_registry=registry,
+    )
+    recovered = await run_evidence_stage_cycle(
+        client=_RecoveryClient(),
+        metric_queries=_metric_queries_for_degraded_tests(),
+        evaluation_time=datetime(2026, 3, 2, 12, 10, tzinfo=UTC),
+        health_registry=registry,
+    )
+
+    assert recovered.telemetry_degraded_active is False
+    assert recovered.max_safe_action is None
+    assert registry.get("prometheus") == HealthStatus.HEALTHY
+    assert len(recovered.telemetry_degraded_events) == 1
+    assert recovered.telemetry_degraded_events[0].recovery_status == "resolved"
+    assert recovered.rows
+
+
 def test_run_peak_stage_cycle_wires_stage1_rows_to_peak_output() -> None:
     samples = {
         "topic_messages_in_per_sec": [
@@ -275,7 +524,7 @@ def test_run_gate_input_stage_cycle_preserves_unknown_evidence_status() -> None:
         ],
         "failed_produce_requests_per_sec": [],
     }
-    evidence_output = collect_evidence_stage_output(samples)
+    evidence_output = collect_evidence_stage_output(samples, max_safe_action=Action.NOTIFY)
     scope = ("prod", "cluster-a", "orders")
     peak_output = run_peak_stage_cycle(
         evidence_output=evidence_output,
@@ -299,6 +548,7 @@ def test_run_gate_input_stage_cycle_preserves_unknown_evidence_status() -> None:
 
     assert scope in gate_inputs_by_scope
     gate_input = gate_inputs_by_scope[scope][0]
+    assert gate_input.proposed_action == Action.NOTIFY
     assert (
         gate_input.evidence_status_map["failed_produce_requests_per_sec"]
         == EvidenceStatus.UNKNOWN

@@ -11,6 +11,12 @@ from aiops_triage_pipeline.models.evidence import EvidenceStageOutput
 from aiops_triage_pipeline.models.peak import PeakStageOutput
 
 GateScope = tuple[str, ...]
+_ACTION_PRIORITY: dict[Action, int] = {
+    Action.OBSERVE: 0,
+    Action.NOTIFY: 1,
+    Action.TICKET: 2,
+    Action.PAGE: 3,
+}
 
 
 @dataclass(frozen=True)
@@ -32,6 +38,7 @@ def collect_gate_inputs_by_scope(
     evidence_output: EvidenceStageOutput,
     peak_output: PeakStageOutput,
     context_by_scope: Mapping[GateScope, GateInputContext],
+    max_safe_action: Action | None = None,
 ) -> dict[GateScope, tuple[GateInputV1, ...]]:
     """Build GateInputV1 payloads grouped by normalized anomaly scope."""
     logger = get_logger("pipeline.stages.gating")
@@ -71,7 +78,10 @@ def collect_gate_inputs_by_scope(
                     topic_role=context.topic_role,
                     anomaly_family=anomaly_family,
                     criticality_tier=context.criticality_tier,
-                    proposed_action=context.proposed_action,
+                    proposed_action=_cap_action_to_max_safe(
+                        proposed_action=context.proposed_action,
+                        max_safe_action=max_safe_action,
+                    ),
                     diagnosis_confidence=context.diagnosis_confidence,
                     sustained=sustained,
                     findings=tuple(findings),
@@ -188,3 +198,11 @@ def _action_fingerprint(
     if consumer_group is not None:
         parts.append(f"group:{consumer_group}")
     return "/".join(parts)
+
+
+def _cap_action_to_max_safe(*, proposed_action: Action, max_safe_action: Action | None) -> Action:
+    if max_safe_action is None:
+        return proposed_action
+    if _ACTION_PRIORITY[proposed_action] <= _ACTION_PRIORITY[max_safe_action]:
+        return proposed_action
+    return max_safe_action
