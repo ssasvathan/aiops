@@ -17,6 +17,17 @@ from aiops_triage_pipeline.contracts.topology_registry import TopologyRegistryLo
 from aiops_triage_pipeline.errors.exceptions import PipelineError
 from aiops_triage_pipeline.logging.setup import get_logger
 
+_KNOWN_TOPIC_ROLES: frozenset[str] = frozenset(
+    {
+        "SOURCE_TOPIC",
+        "KAFKA_SOURCE_STREAM",
+        "STANDARDIZER_SHARED",
+        "AUDIT_RAW_SHARED",
+        "SHARED_TOPIC",
+        "SINK_TOPIC",
+    }
+)
+
 
 class TopologyRegistryError(PipelineError):
     """Base class for topology registry loader errors."""
@@ -273,11 +284,16 @@ def load_topology_registry(
     registry = _canonicalize_registry(
         raw=raw,
         source_path=source_path,
+        rules=effective_rules,
         input_version=input_version,
         default_env=default_env,
         default_cluster_id=default_cluster_id,
     )
-    _validate_ownership_matrix(registry=registry, source_path=source_path)
+    _validate_ownership_matrix(
+        registry=registry,
+        source_path=source_path,
+        rules=effective_rules,
+    )
 
     metadata = TopologyRegistryMetadata(
         source_path=source_path,
@@ -454,6 +470,7 @@ def _canonicalize_registry(
     *,
     raw: Mapping[str, Any],
     source_path: str,
+    rules: TopologyRegistryLoaderRulesV1,
     input_version: int,
     default_env: str,
     default_cluster_id: str,
@@ -513,6 +530,15 @@ def _canonicalize_registry(
                     )
                 scoped_topic_index[topic] = topic_entry
 
+                if rules.fail_on_unknown_topic_role and topic_entry.role not in _KNOWN_TOPIC_ROLES:
+                    allowed = ", ".join(sorted(_KNOWN_TOPIC_ROLES))
+                    raise TopologyRegistryValidationError(
+                        category="unknown_topic_role",
+                        source_path=source_path,
+                        offending_key=f"{scope[0]}:{scope[1]}:{topic}",
+                        detail=f"unsupported role {topic_entry.role!r}; allowed roles: {allowed}",
+                    )
+
     routing_directory = _canonicalize_routing_directory(raw=raw, source_path=source_path)
     ownership_map = _canonicalize_ownership_map(raw=raw, source_path=source_path)
 
@@ -567,7 +593,12 @@ def _canonicalize_v0_streams(
             topic=str(topic),
             role=role,
             stream_id=stream_id,
-            source_system=_optional_string(entry.get("source_system")),
+            source_system=_optional_string(
+                entry.get("source_system"),
+                source_path=source_path,
+                category="invalid_topic_index_entry",
+                offending_key=f"topic_index.{topic}.source_system",
+            ),
         )
 
     streams: list[CanonicalStream] = []
@@ -586,26 +617,51 @@ def _canonicalize_v0_streams(
             offending_key="streams[].stream_id",
         )
         known_stream_ids.add(stream_id)
-        env = _optional_string(stream.get("env")) or default_env
-        cluster_id = _optional_string(stream.get("cluster_id")) or default_cluster_id
+        env = _optional_string(
+            stream.get("env"),
+            source_path=source_path,
+            category="invalid_stream_entry",
+            offending_key=f"streams[{stream_id}].env",
+        ) or default_env
+        cluster_id = _optional_string(
+            stream.get("cluster_id"),
+            source_path=source_path,
+            category="invalid_stream_entry",
+            offending_key=f"streams[{stream_id}].cluster_id",
+        ) or default_cluster_id
         stream_topic_index = topics_by_stream_id.get(stream_id, {})
 
         stream_instance = CanonicalStreamInstance(
-            env=env,
-            cluster_id=cluster_id,
-            topic_index=stream_topic_index,
-            topics=_coerce_string_mapping(stream.get("topics", {})),
-            shared_components=_coerce_mapping(stream.get("shared_components", {})),
-            sources=_coerce_mapping_list(stream.get("sources", ())),
-            sinks=_coerce_mapping_list(stream.get("sinks", ())),
-            peak_window_policy=_coerce_optional_mapping(stream.get("peak_window_policy")),
-        )
+                env=env,
+                cluster_id=cluster_id,
+                topic_index=stream_topic_index,
+                topics=_coerce_string_mapping(
+                    stream.get("topics", {}),
+                    source_path=source_path,
+                    category="invalid_stream_entry",
+                    offending_key=f"streams[{stream_id}].topics",
+                ),
+                shared_components=_coerce_mapping(stream.get("shared_components", {})),
+                sources=_coerce_mapping_list(stream.get("sources", ())),
+                sinks=_coerce_mapping_list(stream.get("sinks", ())),
+                peak_window_policy=_coerce_optional_mapping(stream.get("peak_window_policy")),
+            )
 
         streams.append(
             CanonicalStream(
                 stream_id=stream_id,
-                description=_optional_string(stream.get("description")),
-                criticality_tier=_optional_string(stream.get("criticality_tier")),
+                description=_optional_string(
+                    stream.get("description"),
+                    source_path=source_path,
+                    category="invalid_stream_entry",
+                    offending_key=f"streams[{stream_id}].description",
+                ),
+                criticality_tier=_optional_string(
+                    stream.get("criticality_tier"),
+                    source_path=source_path,
+                    category="invalid_stream_entry",
+                    offending_key=f"streams[{stream_id}].criticality_tier",
+                ),
                 owners=_coerce_mapping(stream.get("owners", {})),
                 instances=(stream_instance,),
             )
@@ -682,7 +738,12 @@ def _canonicalize_v1_streams(
                     env=env,
                     cluster_id=cluster_id,
                     topic_index=topic_index,
-                    topics=_coerce_string_mapping(instance.get("topics", {})),
+                    topics=_coerce_string_mapping(
+                        instance.get("topics", {}),
+                        source_path=source_path,
+                        category="invalid_instance_entry",
+                        offending_key=f"streams[{stream_id}].instances[{env}:{cluster_id}].topics",
+                    ),
                     shared_components=_coerce_mapping(instance.get("shared_components", {})),
                     sources=_coerce_mapping_list(instance.get("sources", ())),
                     sinks=_coerce_mapping_list(instance.get("sinks", ())),
@@ -693,8 +754,18 @@ def _canonicalize_v1_streams(
         streams.append(
             CanonicalStream(
                 stream_id=stream_id,
-                description=_optional_string(stream.get("description")),
-                criticality_tier=_optional_string(stream.get("criticality_tier")),
+                description=_optional_string(
+                    stream.get("description"),
+                    source_path=source_path,
+                    category="invalid_stream_entry",
+                    offending_key=f"streams[{stream_id}].description",
+                ),
+                criticality_tier=_optional_string(
+                    stream.get("criticality_tier"),
+                    source_path=source_path,
+                    category="invalid_stream_entry",
+                    offending_key=f"streams[{stream_id}].criticality_tier",
+                ),
                 owners=_coerce_mapping(stream.get("owners", {})),
                 instances=tuple(instances),
             )
@@ -726,7 +797,12 @@ def _canonicalize_instance_topic_index(
                 offending_key=f"{scope[0]}:{scope[1]}:{topic}",
                 detail="topic_index entry must be an object",
             )
-        entry_stream_id = _optional_string(entry.get("stream_id")) or stream_id
+        entry_stream_id = _optional_string(
+            entry.get("stream_id"),
+            source_path=source_path,
+            category="invalid_topic_index_entry",
+            offending_key=f"{scope[0]}:{scope[1]}:{topic}.stream_id",
+        ) or stream_id
         if entry_stream_id != stream_id:
             raise TopologyRegistryValidationError(
                 category="topic_index_stream_mismatch",
@@ -747,7 +823,12 @@ def _canonicalize_instance_topic_index(
             topic=str(topic),
             role=role,
             stream_id=stream_id,
-            source_system=_optional_string(entry.get("source_system")),
+            source_system=_optional_string(
+                entry.get("source_system"),
+                source_path=source_path,
+                category="invalid_topic_index_entry",
+                offending_key=f"{scope[0]}:{scope[1]}:{topic}.source_system",
+            ),
         )
     return scoped_topics
 
@@ -803,9 +884,24 @@ def _canonicalize_routing_directory(
                 category="invalid_routing_directory_entry",
                 offending_key=f"routing_directory[{routing_key}].owning_team_name",
             ),
-            support_channel=_optional_string(item.get("support_channel")),
-            escalation_policy_ref=_optional_string(item.get("escalation_policy_ref")),
-            service_now_assignment_group=_optional_string(item.get("service_now_assignment_group")),
+            support_channel=_optional_string(
+                item.get("support_channel"),
+                source_path=source_path,
+                category="invalid_routing_directory_entry",
+                offending_key=f"routing_directory[{routing_key}].support_channel",
+            ),
+            escalation_policy_ref=_optional_string(
+                item.get("escalation_policy_ref"),
+                source_path=source_path,
+                category="invalid_routing_directory_entry",
+                offending_key=f"routing_directory[{routing_key}].escalation_policy_ref",
+            ),
+            service_now_assignment_group=_optional_string(
+                item.get("service_now_assignment_group"),
+                source_path=source_path,
+                category="invalid_routing_directory_entry",
+                offending_key=f"routing_directory[{routing_key}].service_now_assignment_group",
+            ),
         )
     return directory
 
@@ -853,7 +949,12 @@ def _canonicalize_ownership_map(
             key=lambda x: (x.stream_id, x.env, x.cluster_id),
         )
     )
-    platform_default = _optional_string(ownership_raw.get("platform_default"))
+    platform_default = _optional_string(
+        ownership_raw.get("platform_default"),
+        source_path=source_path,
+        category="invalid_ownership_map_shape",
+        offending_key="ownership_map.platform_default",
+    )
     return CanonicalOwnershipMap(
         consumer_group_owners=consumer_group_owners,
         topic_owners=topic_owners,
@@ -909,8 +1010,18 @@ def _coerce_consumer_group_owners(
                     category="invalid_consumer_group_owner_entry",
                     offending_key="ownership_map.consumer_group_owners[].routing_key",
                 ),
-                source=_optional_string(item.get("source")),
-                confidence=_coerce_optional_float(item.get("confidence")),
+                source=_optional_string(
+                    item.get("source"),
+                    source_path=source_path,
+                    category="invalid_consumer_group_owner_entry",
+                    offending_key="ownership_map.consumer_group_owners[].source",
+                ),
+                confidence=_coerce_optional_float(
+                    item.get("confidence"),
+                    source_path=source_path,
+                    category="invalid_consumer_group_owner_entry",
+                    offending_key="ownership_map.consumer_group_owners[].confidence",
+                ),
                 reason_codes=_coerce_string_tuple(item.get("reason_codes", ())),
             )
         )
@@ -960,8 +1071,18 @@ def _coerce_topic_owners(raw_entries: Any, *, source_path: str) -> list[TopicOwn
                     category="invalid_topic_owner_entry",
                     offending_key="ownership_map.topic_owners[].routing_key",
                 ),
-                source=_optional_string(item.get("source")),
-                confidence=_coerce_optional_float(item.get("confidence")),
+                source=_optional_string(
+                    item.get("source"),
+                    source_path=source_path,
+                    category="invalid_topic_owner_entry",
+                    offending_key="ownership_map.topic_owners[].source",
+                ),
+                confidence=_coerce_optional_float(
+                    item.get("confidence"),
+                    source_path=source_path,
+                    category="invalid_topic_owner_entry",
+                    offending_key="ownership_map.topic_owners[].confidence",
+                ),
                 reason_codes=_coerce_string_tuple(item.get("reason_codes", ())),
             )
         )
@@ -1015,8 +1136,18 @@ def _coerce_stream_default_owners(
                     category="invalid_stream_default_owner_entry",
                     offending_key="ownership_map.stream_default_owner[].routing_key",
                 ),
-                source=_optional_string(item.get("source")),
-                confidence=_coerce_optional_float(item.get("confidence")),
+                source=_optional_string(
+                    item.get("source"),
+                    source_path=source_path,
+                    category="invalid_stream_default_owner_entry",
+                    offending_key="ownership_map.stream_default_owner[].source",
+                ),
+                confidence=_coerce_optional_float(
+                    item.get("confidence"),
+                    source_path=source_path,
+                    category="invalid_stream_default_owner_entry",
+                    offending_key="ownership_map.stream_default_owner[].confidence",
+                ),
                 reason_codes=_coerce_string_tuple(item.get("reason_codes", ())),
             )
         )
@@ -1027,6 +1158,7 @@ def _validate_ownership_matrix(
     *,
     registry: CanonicalTopologyRegistry,
     source_path: str,
+    rules: TopologyRegistryLoaderRulesV1,
 ) -> None:
     seen_consumer_group_keys: set[tuple[str, str, str]] = set()
     for item in registry.ownership_map.consumer_group_owners:
@@ -1049,17 +1181,18 @@ def _validate_ownership_matrix(
     if registry.ownership_map.platform_default is not None:
         referenced_routing_keys.add(registry.ownership_map.platform_default)
 
-    for routing_key in sorted(referenced_routing_keys):
-        if routing_key not in valid_routing_keys:
-            raise TopologyRegistryValidationError(
-                category="missing_routing_key_reference",
-                source_path=source_path,
-                offending_key=routing_key,
-                detail=(
-                    "routing_key is referenced by ownership map but missing "
-                    "in routing_directory"
-                ),
-            )
+    if rules.routing_key_required:
+        for routing_key in sorted(referenced_routing_keys):
+            if routing_key not in valid_routing_keys:
+                raise TopologyRegistryValidationError(
+                    category="missing_routing_key_reference",
+                    source_path=source_path,
+                    offending_key=routing_key,
+                    detail=(
+                        "routing_key is referenced by ownership map but missing "
+                        "in routing_directory"
+                    ),
+                )
 
 
 def _require_non_empty_string(
@@ -1079,13 +1212,24 @@ def _require_non_empty_string(
     return value.strip()
 
 
-def _optional_string(value: Any) -> str | None:
+def _optional_string(
+    value: Any,
+    *,
+    source_path: str,
+    category: str,
+    offending_key: str,
+) -> str | None:
     if value is None:
         return None
-    if isinstance(value, str):
-        normalized = value.strip()
-        return normalized if normalized else None
-    return str(value)
+    if not isinstance(value, str):
+        raise TopologyRegistryValidationError(
+            category=category,
+            source_path=source_path,
+            offending_key=offending_key,
+            detail="expected string-compatible value",
+        )
+    normalized = value.strip()
+    return normalized if normalized else None
 
 
 def _coerce_mapping(value: Any) -> dict[str, Any]:
@@ -1116,10 +1260,41 @@ def _coerce_mapping_list(value: Any) -> tuple[dict[str, Any], ...]:
     return tuple(mappings)
 
 
-def _coerce_string_mapping(value: Any) -> dict[str, str]:
-    if value is None or not isinstance(value, Mapping):
+def _coerce_string_mapping(
+    value: Any,
+    *,
+    source_path: str,
+    category: str,
+    offending_key: str,
+) -> dict[str, str]:
+    if value is None:
         return {}
-    return {str(k): str(v) for k, v in value.items()}
+    if not isinstance(value, Mapping):
+        raise TopologyRegistryValidationError(
+            category=category,
+            source_path=source_path,
+            offending_key=offending_key,
+            detail="expected mapping of non-empty string keys to non-empty string values",
+        )
+
+    normalized: dict[str, str] = {}
+    for raw_key, raw_value in value.items():
+        if not isinstance(raw_key, str) or not raw_key.strip():
+            raise TopologyRegistryValidationError(
+                category=category,
+                source_path=source_path,
+                offending_key=offending_key,
+                detail="topics mapping keys must be non-empty strings",
+            )
+        if not isinstance(raw_value, str) or not raw_value.strip():
+            raise TopologyRegistryValidationError(
+                category=category,
+                source_path=source_path,
+                offending_key=f"{offending_key}.{raw_key}",
+                detail="topics mapping values must be non-empty strings",
+            )
+        normalized[raw_key.strip()] = raw_value.strip()
+    return normalized
 
 
 def _coerce_string_tuple(value: Any) -> tuple[str, ...]:
@@ -1132,10 +1307,21 @@ def _coerce_string_tuple(value: Any) -> tuple[str, ...]:
     return ()
 
 
-def _coerce_optional_float(value: Any) -> float | None:
+def _coerce_optional_float(
+    value: Any,
+    *,
+    source_path: str,
+    category: str,
+    offending_key: str,
+) -> float | None:
     if value is None:
         return None
     try:
         return float(value)
     except (TypeError, ValueError):
-        return None
+        raise TopologyRegistryValidationError(
+            category=category,
+            source_path=source_path,
+            offending_key=offending_key,
+            detail="expected float-compatible value",
+        ) from None

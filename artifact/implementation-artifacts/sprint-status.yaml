@@ -75,8 +75,8 @@ development_status:
   # Phase: Phase 1A | FRs: FR9-FR16
   # ─────────────────────────────────────────────────────────
   epic-3: in-progress
-  3-1-topology-registry-loader-v0-and-v1-formats: review
-  3-2-stream-resolution-and-topic-role-classification: backlog
+  3-1-topology-registry-loader-v0-and-v1-formats: done
+  3-2-stream-resolution-and-topic-role-classification: done
   3-3-blast-radius-and-downstream-impact-assessment: backlog
   3-4-multi-level-ownership-routing: backlog
   3-5-legacy-v0-compatibility-views: backlog

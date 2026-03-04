@@ -7,6 +7,7 @@ from time import perf_counter
 import pytest
 from pydantic import BaseModel
 
+from aiops_triage_pipeline.contracts.topology_registry import TopologyRegistryLoaderRulesV1
 from aiops_triage_pipeline.registry.loader import (
     TopologyRegistryLoader,
     TopologyRegistryValidationError,
@@ -58,15 +59,6 @@ topic_index:
 def _v1_registry_yaml() -> str:
     return """
 version: 2
-routing_directory:
-  - routing_key: OWN::Streaming::KafkaPlatform::Ops
-    owning_team_id: kafka-platform-ops
-    owning_team_name: Kafka Platform Ops
-    support_channel: "#platform-kafka-ops"
-ownership_map:
-  consumer_group_owners: []
-  topic_owners: []
-  stream_default_owner: []
 streams:
   - stream_id: payments-stream
     description: Payments stream
@@ -89,6 +81,21 @@ streams:
             source_system: Payments
           payments-source:
             role: KAFKA_SOURCE_STREAM
+            stream_id: payments-stream
+"""
+
+
+def _v1_registry_yaml_with_unknown_topic_role() -> str:
+    return """
+version: 2
+streams:
+  - stream_id: payments-stream
+    instances:
+      - env: prod
+        cluster_id: Business_Essential
+        topic_index:
+          payments-topic:
+            role: UNKNOWN_ROLE
             stream_id: payments-stream
 """
 
@@ -180,6 +187,68 @@ streams:
 """
 
 
+def _v1_registry_yaml_with_invalid_confidence() -> str:
+    return """
+version: 2
+routing_directory:
+  - routing_key: OWN::Streaming::KafkaPlatform::Ops
+    owning_team_id: kafka-platform-ops
+    owning_team_name: Kafka Platform Ops
+ownership_map:
+  consumer_group_owners:
+    - match:
+        env: prod
+        cluster_id: Business_Essential
+        group: payments-consumer
+      routing_key: OWN::Streaming::KafkaPlatform::Ops
+      confidence: not-a-number
+  topic_owners: []
+  stream_default_owner: []
+streams:
+  - stream_id: payments-stream
+    instances:
+      - env: prod
+        cluster_id: Business_Essential
+        topic_index:
+          payments-topic:
+            role: SOURCE_TOPIC
+            stream_id: payments-stream
+"""
+
+
+def _v1_registry_yaml_with_non_string_source_system() -> str:
+    return """
+version: 2
+streams:
+  - stream_id: payments-stream
+    instances:
+      - env: prod
+        cluster_id: Business_Essential
+        topic_index:
+          payments-topic:
+            role: SOURCE_TOPIC
+            stream_id: payments-stream
+            source_system: 42
+"""
+
+
+def _v1_registry_yaml_with_non_string_topics_mapping_value() -> str:
+    return """
+version: 2
+streams:
+  - stream_id: payments-stream
+    instances:
+      - env: prod
+        cluster_id: Business_Essential
+        topics:
+          source_stream: 123
+        topic_index:
+          payments-topic:
+            role: SOURCE_TOPIC
+            stream_id: payments-stream
+"""
+
+
 def test_load_v0_registry_canonicalizes_to_in_memory_model(tmp_path: Path) -> None:
     path = tmp_path / "topology-v0.yaml"
     _write_registry(path, _v0_registry_yaml())
@@ -220,10 +289,7 @@ def test_v0_and_v1_equivalent_fixtures_produce_identical_canonical_model(tmp_pat
     )
     v1_snapshot = load_topology_registry(path_v1)
 
-    assert _to_plain(v0_snapshot.registry.streams) == _to_plain(v1_snapshot.registry.streams)
-    assert _to_plain(v0_snapshot.registry.topic_index_by_scope) == _to_plain(
-        v1_snapshot.registry.topic_index_by_scope
-    )
+    assert _to_plain(v0_snapshot.registry) == _to_plain(v1_snapshot.registry)
 
 
 def test_loader_output_is_immutable_for_concurrent_reads(tmp_path: Path) -> None:
@@ -264,6 +330,66 @@ def test_load_fails_fast_on_missing_routing_key_references(tmp_path: Path) -> No
         load_topology_registry(path)
 
     assert exc_info.value.category == "missing_routing_key_reference"
+
+
+def test_load_allows_missing_routing_key_reference_when_rule_disabled(tmp_path: Path) -> None:
+    path = tmp_path / "missing-routing-key-but-allowed.yaml"
+    _write_registry(path, _v1_registry_yaml_with_missing_routing_key())
+
+    snapshot = load_topology_registry(
+        path,
+        rules=TopologyRegistryLoaderRulesV1(routing_key_required=False),
+    )
+
+    assert snapshot.metadata.input_version == 2
+
+
+def test_load_fails_on_unknown_topic_role_when_rule_enabled(tmp_path: Path) -> None:
+    path = tmp_path / "unknown-topic-role.yaml"
+    _write_registry(path, _v1_registry_yaml_with_unknown_topic_role())
+
+    with pytest.raises(TopologyRegistryValidationError) as exc_info:
+        load_topology_registry(
+            path,
+            rules=TopologyRegistryLoaderRulesV1(fail_on_unknown_topic_role=True),
+        )
+
+    assert exc_info.value.category == "unknown_topic_role"
+
+
+def test_load_fails_on_invalid_confidence_value(tmp_path: Path) -> None:
+    path = tmp_path / "invalid-confidence.yaml"
+    _write_registry(path, _v1_registry_yaml_with_invalid_confidence())
+
+    with pytest.raises(TopologyRegistryValidationError) as exc_info:
+        load_topology_registry(path)
+
+    assert exc_info.value.category == "invalid_consumer_group_owner_entry"
+
+
+def test_load_fails_on_non_string_optional_source_system(tmp_path: Path) -> None:
+    path = tmp_path / "invalid-source-system.yaml"
+    _write_registry(path, _v1_registry_yaml_with_non_string_source_system())
+
+    with pytest.raises(TopologyRegistryValidationError) as exc_info:
+        load_topology_registry(path)
+
+    assert exc_info.value.category == "invalid_topic_index_entry"
+    assert exc_info.value.offending_key == "prod:Business_Essential:payments-topic.source_system"
+
+
+def test_load_fails_on_non_string_topics_mapping_value(tmp_path: Path) -> None:
+    path = tmp_path / "invalid-topics-mapping-value.yaml"
+    _write_registry(path, _v1_registry_yaml_with_non_string_topics_mapping_value())
+
+    with pytest.raises(TopologyRegistryValidationError) as exc_info:
+        load_topology_registry(path)
+
+    assert exc_info.value.category == "invalid_instance_entry"
+    assert (
+        exc_info.value.offending_key
+        == "streams[payments-stream].instances[prod:Business_Essential].topics.source_stream"
+    )
 
 
 def test_reload_if_changed_swaps_model_atomically_after_success(tmp_path: Path) -> None:

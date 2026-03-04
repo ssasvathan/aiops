@@ -1,6 +1,6 @@
 # Story 3.1: Topology Registry Loader (v0 + v1 Formats)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -284,3 +284,33 @@ GPT-5 Codex
 ### Change Log
 
 - 2026-03-04: Implemented Story 3.1 loader/canonicalization/validation/reload and added focused registry tests; passed full repo quality gates.
+- 2026-03-04: Senior code review fixes applied for rule-driven validation and strict ownership confidence parsing; story moved to done.
+
+### Senior Developer Review (AI)
+
+- Reviewer: Sas
+- Date: 2026-03-04
+- Outcome: Changes Requested (resolved in this review pass)
+
+#### Findings
+
+1. **HIGH** - Loader rules from `TopologyRegistryLoaderRulesV1` were partially ignored at runtime (`routing_key_required`, `fail_on_unknown_topic_role` had no behavioral effect), so policy toggles in `config/policies/topology-registry-loader-rules-v1.yaml` were not enforceable.
+2. **MEDIUM** - Ownership confidence parsing silently coerced malformed values to `None`, masking malformed registry input instead of failing fast with typed context.
+3. **MEDIUM** - Canonical equivalence testing asserted only selected subsets of the canonical model; this allowed regressions in unasserted fields.
+
+#### Fixes Applied
+
+- Updated loader to apply rule-driven behavior:
+  - `routing_key_required` now gates missing routing-key enforcement.
+  - `fail_on_unknown_topic_role` now enforces an explicit known role set and fails fast when enabled.
+- Updated ownership confidence parsing to raise `TopologyRegistryValidationError` on invalid non-float values with specific offending keys.
+- Expanded unit tests to cover:
+  - full canonical model equivalence for equivalent v0/v1 fixtures,
+  - missing routing-key behavior when `routing_key_required=False`,
+  - strict unknown-topic-role behavior when `fail_on_unknown_topic_role=True`,
+  - invalid confidence failure semantics.
+- Verification run after fixes:
+  - `uv run pytest -q tests/unit/registry/test_loader.py` (13 passed)
+  - `uv run pytest -q tests/unit/contracts/test_policy_models.py` (26 passed)
+  - `uv run pytest -q` (268 passed, 1 skipped)
+  - `uv run ruff check src/aiops_triage_pipeline/registry/loader.py src/aiops_triage_pipeline/registry/__init__.py tests/unit/registry/test_loader.py` (all checks passed)

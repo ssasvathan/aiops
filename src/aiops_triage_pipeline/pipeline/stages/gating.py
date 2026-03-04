@@ -26,6 +26,7 @@ class GateInputContext:
     stream_id: str
     topic_role: Literal["SOURCE_TOPIC", "SHARED_TOPIC", "SINK_TOPIC"]
     criticality_tier: CriticalityTier
+    source_system: str | None = None
     proposed_action: Action = Action.OBSERVE
     diagnosis_confidence: float = 0.0
     partition_count_observed: int | None = None
