@@ -25,6 +25,12 @@ streams:
           - source_system: Payments
             source_topic: orders
             criticality_tier: TIER_1
+        shared_components:
+          nifi_flow_id: nifi-edl-writer-main
+        sinks:
+          - sink_id: edl_orders_events_v1
+            type: hdfs_path
+            hdfs_path: /edl/source/payments/orders/events/v1
         topic_index:
           orders:
             role: SOURCE_TOPIC
@@ -112,6 +118,20 @@ def test_collect_topology_stage_output_builds_gate_context_for_topic_and_group_s
     assert output.context_by_scope[topic_scope].topic_role == "SOURCE_TOPIC"
     assert output.context_by_scope[topic_scope].criticality_tier == CriticalityTier.TIER_1
     assert output.context_by_scope[topic_scope].source_system == "Payments"
+    assert output.impact_by_scope[topic_scope].blast_radius == "LOCAL_SOURCE_INGESTION"
+    assert output.impact_by_scope[group_scope].blast_radius == "LOCAL_SOURCE_INGESTION"
+    assert [
+        (
+            impact.component_type,
+            impact.component_id,
+            impact.exposure_type,
+        )
+        for impact in output.impact_by_scope[topic_scope].downstream_impacts
+    ] == [
+        ("shared_component", "nifi_flow_id:nifi-edl-writer-main", "VISIBILITY_ONLY"),
+        ("sink", "edl_orders_events_v1", "DOWNSTREAM_DATA_FRESHNESS_RISK"),
+        ("source", "Payments", "DIRECT_COMPONENT_RISK"),
+    ]
     assert output.unresolved_by_scope == {}
 
 
@@ -149,6 +169,7 @@ def test_collect_topology_stage_output_tracks_unresolved_without_fabricating_con
 
     scope = ("prod", "cluster-a", "missing")
     assert output.context_by_scope == {}
+    assert output.impact_by_scope == {}
     assert scope in output.unresolved_by_scope
     assert output.unresolved_by_scope[scope].status == "unresolved"
     assert output.unresolved_by_scope[scope].reason_code == "topic_not_found"

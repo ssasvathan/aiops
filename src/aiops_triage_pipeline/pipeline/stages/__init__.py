@@ -13,6 +13,7 @@ from aiops_triage_pipeline.pipeline.stages.peak import (
     load_rulebook_policy,
 )
 from aiops_triage_pipeline.pipeline.stages.topology import (
+    TopologyImpactContext,
     TopologyStageOutput,
     build_topology_stage_output,
     collect_topology_stage_output,
@@ -21,6 +22,7 @@ from aiops_triage_pipeline.pipeline.stages.topology import (
 __all__ = [
     "GateInputContext",
     "collect_gate_inputs_by_scope",
+    "TopologyImpactContext",
     "TopologyStageOutput",
     "collect_topology_stage_output",
     "build_topology_stage_output",

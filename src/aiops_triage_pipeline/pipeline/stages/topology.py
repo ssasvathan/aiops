@@ -12,20 +12,31 @@ from aiops_triage_pipeline.models.evidence import EvidenceStageOutput
 from aiops_triage_pipeline.pipeline.stages.gating import GateInputContext
 from aiops_triage_pipeline.registry.loader import TopologyRegistrySnapshot
 from aiops_triage_pipeline.registry.resolver import (
+    BlastRadiusClassification,
+    DownstreamImpact,
     TopologyResolution,
     resolve_anomaly_scope,
 )
+
+
+class TopologyImpactContext(BaseModel, frozen=True):
+    """Stage 3 impact metadata for downstream CaseFile/TriageExcerpt assembly paths."""
+
+    blast_radius: BlastRadiusClassification
+    downstream_impacts: tuple[DownstreamImpact, ...] = ()
 
 
 class TopologyStageOutput(BaseModel, frozen=True):
     """Stage 3 output for downstream Stage 6 gate-input assembly."""
 
     context_by_scope: Mapping[tuple[str, ...], GateInputContext] = Field(default_factory=dict)
+    impact_by_scope: Mapping[tuple[str, ...], TopologyImpactContext] = Field(default_factory=dict)
     unresolved_by_scope: Mapping[tuple[str, ...], TopologyResolution] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _freeze_nested_mappings(self) -> "TopologyStageOutput":
         object.__setattr__(self, "context_by_scope", MappingProxyType(dict(self.context_by_scope)))
+        object.__setattr__(self, "impact_by_scope", MappingProxyType(dict(self.impact_by_scope)))
         object.__setattr__(
             self,
             "unresolved_by_scope",
@@ -54,6 +65,7 @@ def build_topology_stage_output(
     """Resolve topology for the provided scopes and split resolved/unresolved outputs."""
     logger = get_logger("pipeline.stages.topology")
     context_by_scope: dict[tuple[str, ...], GateInputContext] = {}
+    impact_by_scope: dict[tuple[str, ...], TopologyImpactContext] = {}
     unresolved_by_scope: dict[tuple[str, ...], TopologyResolution] = {}
 
     for scope in sorted(scopes):
@@ -65,11 +77,16 @@ def build_topology_stage_output(
             assert resolution.stream_id is not None
             assert resolution.topic_role is not None
             assert resolution.criticality_tier is not None
+            assert resolution.blast_radius is not None
             context_by_scope[scope] = GateInputContext(
                 stream_id=resolution.stream_id,
                 topic_role=resolution.topic_role,
                 criticality_tier=resolution.criticality_tier,
                 source_system=resolution.source_system,
+            )
+            impact_by_scope[scope] = TopologyImpactContext(
+                blast_radius=resolution.blast_radius,
+                downstream_impacts=resolution.downstream_impacts,
             )
             continue
 
@@ -84,5 +101,6 @@ def build_topology_stage_output(
 
     return TopologyStageOutput(
         context_by_scope=context_by_scope,
+        impact_by_scope=impact_by_scope,
         unresolved_by_scope=unresolved_by_scope,
     )

@@ -62,4 +62,5 @@ def test_run_topology_stage_cycle_prepares_context_for_stage6(tmp_path: Path) ->
     scope = ("prod", "cluster-a", "orders")
     assert scope in topology_output.context_by_scope
     assert topology_output.context_by_scope[scope].stream_id == "orders-stream"
+    assert topology_output.impact_by_scope[scope].blast_radius == "LOCAL_SOURCE_INGESTION"
     assert topology_output.unresolved_by_scope == {}

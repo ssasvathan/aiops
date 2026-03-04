@@ -4,6 +4,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter_ns
 
+import pytest
+
 from aiops_triage_pipeline.contracts.enums import CriticalityTier
 from aiops_triage_pipeline.registry.loader import (
     CanonicalOwnershipMap,
@@ -33,6 +35,12 @@ streams:
           - source_system: Payments
             source_topic: orders
             criticality_tier: TIER_0
+        shared_components:
+          nifi_flow_id: nifi-edl-writer-main
+        sinks:
+          - sink_id: edl_orders_events_v1
+            type: hdfs_path
+            hdfs_path: /edl/source/payments/orders/events/v1
         topic_index:
           orders:
             role: SOURCE_TOPIC
@@ -143,6 +151,8 @@ def test_resolve_anomaly_scope_returns_explicit_unresolved_when_scope_missing(
     assert result.stream_id is None
     assert result.topic_role is None
     assert result.criticality_tier is None
+    assert result.blast_radius is None
+    assert result.downstream_impacts == ()
 
 
 def test_resolve_anomaly_scope_returns_explicit_unresolved_when_topic_missing(
@@ -159,6 +169,8 @@ def test_resolve_anomaly_scope_returns_explicit_unresolved_when_topic_missing(
 
     assert result.status == "unresolved"
     assert result.reason_code == "topic_not_found"
+    assert result.blast_radius is None
+    assert result.downstream_impacts == ()
 
 
 def test_resolve_anomaly_scope_returns_explicit_unresolved_when_stream_missing() -> None:
@@ -196,6 +208,8 @@ def test_resolve_anomaly_scope_returns_explicit_unresolved_when_stream_missing()
 
     assert result.status == "unresolved"
     assert result.reason_code == "stream_not_found"
+    assert result.blast_radius is None
+    assert result.downstream_impacts == ()
 
 
 def test_resolve_anomaly_scope_returns_explicit_unresolved_for_unsupported_topic_role(
@@ -212,6 +226,128 @@ def test_resolve_anomaly_scope_returns_explicit_unresolved_for_unsupported_topic
 
     assert result.status == "unresolved"
     assert result.reason_code == "UNSUPPORTED_TOPIC_ROLE"
+    assert result.blast_radius is None
+    assert result.downstream_impacts == ()
+
+
+@pytest.mark.parametrize(
+    ("scope", "expected_blast_radius"),
+    [
+        (("prod", "cluster-a", "orders"), "LOCAL_SOURCE_INGESTION"),
+        (("prod", "cluster-a", "orders-shared"), "SHARED_KAFKA_INGESTION"),
+        (("prod", "cluster-a", "sink-topic"), "SHARED_KAFKA_INGESTION"),
+    ],
+)
+def test_resolve_anomaly_scope_computes_blast_radius_from_topic_role(
+    tmp_path: Path,
+    scope: tuple[str, ...],
+    expected_blast_radius: str,
+) -> None:
+    path = tmp_path / "topology.yaml"
+    _write_registry(path, _registry_yaml())
+    snapshot = load_topology_registry(path)
+
+    result = resolve_anomaly_scope(snapshot=snapshot, anomaly_scope=scope)
+
+    assert result.status == "resolved"
+    assert result.blast_radius == expected_blast_radius
+
+
+def test_resolve_anomaly_scope_derives_downstream_impacts_with_deterministic_ordering(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "topology.yaml"
+    _write_registry(path, _registry_yaml())
+    snapshot = load_topology_registry(path)
+
+    result = resolve_anomaly_scope(
+        snapshot=snapshot,
+        anomaly_scope=("prod", "cluster-a", "orders"),
+    )
+
+    assert result.status == "resolved"
+    assert [
+        (
+            impact.component_type,
+            impact.component_id,
+            impact.exposure_type,
+            impact.risk_status,
+        )
+        for impact in result.downstream_impacts
+    ] == [
+        ("shared_component", "nifi_flow_id:nifi-edl-writer-main", "VISIBILITY_ONLY", "AT_RISK"),
+        ("sink", "edl_orders_events_v1", "DOWNSTREAM_DATA_FRESHNESS_RISK", "AT_RISK"),
+        ("source", "Payments", "DIRECT_COMPONENT_RISK", "AT_RISK"),
+    ]
+
+
+def test_resolve_anomaly_scope_deduplicates_repeated_downstream_components(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "topology.yaml"
+    _write_registry(
+        path,
+        """
+version: 2
+streams:
+  - stream_id: orders-stream
+    instances:
+      - env: prod
+        cluster_id: cluster-a
+        sources:
+          - source_system: Payments
+            source_topic: orders
+          - source_system: Payments
+            source_topic: orders-replay
+        sinks:
+          - sink_id: edl_orders_events_v1
+          - sink_id: edl_orders_events_v1
+        shared_components:
+          nifi_flow_id: nifi-edl-writer-main
+          nifi_flow_id_alias: nifi-edl-writer-main
+        topic_index:
+          orders:
+            role: SOURCE_TOPIC
+            stream_id: orders-stream
+""",
+    )
+    snapshot = load_topology_registry(path)
+
+    result = resolve_anomaly_scope(
+        snapshot=snapshot,
+        anomaly_scope=("prod", "cluster-a", "orders"),
+    )
+
+    assert result.status == "resolved"
+    assert [
+        (
+            impact.component_type,
+            impact.component_id,
+            impact.exposure_type,
+        )
+        for impact in result.downstream_impacts
+    ] == [
+        ("shared_component", "nifi_flow_id:nifi-edl-writer-main", "VISIBILITY_ONLY"),
+        ("shared_component", "nifi_flow_id_alias:nifi-edl-writer-main", "VISIBILITY_ONLY"),
+        ("sink", "edl_orders_events_v1", "DOWNSTREAM_DATA_FRESHNESS_RISK"),
+        ("source", "Payments", "DIRECT_COMPONENT_RISK"),
+    ]
+
+
+def test_resolve_anomaly_scope_allows_empty_downstream_impacts_when_none_configured(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "topology.yaml"
+    _write_registry(path, _registry_yaml())
+    snapshot = load_topology_registry(path)
+
+    result = resolve_anomaly_scope(
+        snapshot=snapshot,
+        anomaly_scope=("prod", "cluster-a", "sink-topic"),
+    )
+
+    assert result.status == "resolved"
+    assert result.downstream_impacts == ()
 
 
 def test_resolve_anomaly_scope_p99_latency_is_within_50ms_in_memory(tmp_path: Path) -> None:

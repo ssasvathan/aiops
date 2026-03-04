@@ -77,7 +77,7 @@ development_status:
   epic-3: in-progress
   3-1-topology-registry-loader-v0-and-v1-formats: done
   3-2-stream-resolution-and-topic-role-classification: done
-  3-3-blast-radius-and-downstream-impact-assessment: backlog
+  3-3-blast-radius-and-downstream-impact-assessment: done
   3-4-multi-level-ownership-routing: backlog
   3-5-legacy-v0-compatibility-views: backlog
   epic-3-retrospective: optional

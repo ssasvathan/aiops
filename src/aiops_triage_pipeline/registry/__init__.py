@@ -14,6 +14,8 @@ from aiops_triage_pipeline.registry.loader import (
     load_topology_registry,
 )
 from aiops_triage_pipeline.registry.resolver import (
+    BlastRadiusClassification,
+    DownstreamImpact,
     TopologyResolution,
     resolve_anomaly_scope,
     resolve_anomaly_scopes,
@@ -31,6 +33,8 @@ __all__ = [
     "TopologyRegistrySnapshot",
     "TopologyRegistryValidationError",
     "load_topology_registry",
+    "BlastRadiusClassification",
+    "DownstreamImpact",
     "TopologyResolution",
     "resolve_anomaly_scope",
     "resolve_anomaly_scopes",
