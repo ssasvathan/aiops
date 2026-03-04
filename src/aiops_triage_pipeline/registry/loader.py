@@ -11,7 +11,7 @@ from types import MappingProxyType
 from typing import Any, Mapping
 
 import yaml
-from pydantic import AwareDatetime, BaseModel, Field, model_validator
+from pydantic import AwareDatetime, BaseModel, Field, PrivateAttr, model_validator
 
 from aiops_triage_pipeline.contracts.topology_registry import TopologyRegistryLoaderRulesV1
 from aiops_triage_pipeline.errors.exceptions import PipelineError
@@ -165,6 +165,63 @@ class CanonicalOwnershipMap(BaseModel, frozen=True):
     topic_owners: tuple[TopicOwnerEntry, ...] = ()
     stream_default_owner: tuple[StreamDefaultOwnerEntry, ...] = ()
     platform_default: str | None = None
+
+    _consumer_group_index: Mapping[tuple[str, str, str], str] = PrivateAttr(default_factory=dict)
+    _topic_index: Mapping[tuple[str, str, str], str] = PrivateAttr(default_factory=dict)
+    _stream_default_index: Mapping[tuple[str, str, str], str] = PrivateAttr(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _build_lookup_indexes(self) -> "CanonicalOwnershipMap":
+        consumer_group_index: dict[tuple[str, str, str], str] = {}
+        for entry in self.consumer_group_owners:
+            key = (entry.env, entry.cluster_id, entry.group)
+            consumer_group_index.setdefault(key, entry.routing_key)
+
+        topic_index: dict[tuple[str, str, str], str] = {}
+        for entry in self.topic_owners:
+            key = (entry.env, entry.cluster_id, entry.topic)
+            topic_index.setdefault(key, entry.routing_key)
+
+        stream_default_index: dict[tuple[str, str, str], str] = {}
+        for entry in self.stream_default_owner:
+            key = (entry.stream_id, entry.env, entry.cluster_id)
+            stream_default_index.setdefault(key, entry.routing_key)
+
+        object.__setattr__(
+            self,
+            "_consumer_group_index",
+            MappingProxyType(consumer_group_index),
+        )
+        object.__setattr__(self, "_topic_index", MappingProxyType(topic_index))
+        object.__setattr__(self, "_stream_default_index", MappingProxyType(stream_default_index))
+        return self
+
+    def consumer_group_routing_key(
+        self,
+        *,
+        env: str,
+        cluster_id: str,
+        group: str,
+    ) -> str | None:
+        return self._consumer_group_index.get((env, cluster_id, group))
+
+    def topic_routing_key(
+        self,
+        *,
+        env: str,
+        cluster_id: str,
+        topic: str,
+    ) -> str | None:
+        return self._topic_index.get((env, cluster_id, topic))
+
+    def stream_default_routing_key(
+        self,
+        *,
+        stream_id: str,
+        env: str,
+        cluster_id: str,
+    ) -> str | None:
+        return self._stream_default_index.get((stream_id, env, cluster_id))
 
 
 class CanonicalTopologyRegistry(BaseModel, frozen=True):
@@ -1171,6 +1228,30 @@ def _validate_ownership_matrix(
                 detail="duplicate consumer-group ownership key",
             )
         seen_consumer_group_keys.add(key)
+
+    seen_topic_owner_keys: set[tuple[str, str, str]] = set()
+    for item in registry.ownership_map.topic_owners:
+        key = (item.env, item.cluster_id, item.topic)
+        if key in seen_topic_owner_keys:
+            raise TopologyRegistryValidationError(
+                category="duplicate_topic_owner",
+                source_path=source_path,
+                offending_key=f"{item.env}:{item.cluster_id}:{item.topic}",
+                detail="duplicate topic ownership key",
+            )
+        seen_topic_owner_keys.add(key)
+
+    seen_stream_default_keys: set[tuple[str, str, str]] = set()
+    for item in registry.ownership_map.stream_default_owner:
+        key = (item.stream_id, item.env, item.cluster_id)
+        if key in seen_stream_default_keys:
+            raise TopologyRegistryValidationError(
+                category="duplicate_stream_default_owner",
+                source_path=source_path,
+                offending_key=f"{item.stream_id}:{item.env}:{item.cluster_id}",
+                detail="duplicate stream-default ownership key",
+            )
+        seen_stream_default_keys.add(key)
 
     valid_routing_keys = set(registry.routing_directory.keys())
     referenced_routing_keys = {

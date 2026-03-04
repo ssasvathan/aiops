@@ -14,6 +14,7 @@ from aiops_triage_pipeline.pipeline.stages.peak import (
 )
 from aiops_triage_pipeline.pipeline.stages.topology import (
     TopologyImpactContext,
+    TopologyRoutingContext,
     TopologyStageOutput,
     build_topology_stage_output,
     collect_topology_stage_output,
@@ -23,6 +24,7 @@ __all__ = [
     "GateInputContext",
     "collect_gate_inputs_by_scope",
     "TopologyImpactContext",
+    "TopologyRoutingContext",
     "TopologyStageOutput",
     "collect_topology_stage_output",
     "build_topology_stage_output",

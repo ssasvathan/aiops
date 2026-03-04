@@ -10,9 +10,11 @@ from pydantic import BaseModel, Field, model_validator
 
 from aiops_triage_pipeline.contracts.enums import CriticalityTier
 from aiops_triage_pipeline.registry.loader import (
+    CanonicalOwnershipMap,
     CanonicalStream,
     CanonicalStreamInstance,
     CanonicalTopicEntry,
+    RoutingDirectoryEntry,
     TopologyRegistrySnapshot,
 )
 
@@ -23,9 +25,17 @@ REASON_TOPIC_NOT_FOUND = "topic_not_found"
 REASON_STREAM_NOT_FOUND = "stream_not_found"
 REASON_STREAM_INSTANCE_NOT_FOUND = "stream_instance_not_found"
 REASON_UNSUPPORTED_TOPIC_ROLE = "UNSUPPORTED_TOPIC_ROLE"
+REASON_OWNER_NOT_FOUND = "owner_not_found"
+REASON_ROUTING_KEY_NOT_FOUND = "routing_key_not_found"
 
 TopologyResolutionStatus = Literal["resolved", "unresolved"]
 NormalizedTopicRole = Literal["SOURCE_TOPIC", "SHARED_TOPIC", "SINK_TOPIC"]
+OwnershipLookupLevel = Literal[
+    "consumer_group_owner",
+    "topic_owner",
+    "stream_default_owner",
+    "platform_default",
+]
 BlastRadiusClassification = Literal["LOCAL_SOURCE_INGESTION", "SHARED_KAFKA_INGESTION"]
 DownstreamRiskStatus = Literal["AT_RISK"]
 DownstreamExposureType = Literal[
@@ -60,6 +70,24 @@ class DownstreamImpact(BaseModel, frozen=True):
     risk_status: DownstreamRiskStatus = "AT_RISK"
 
 
+class OwnershipRoutingTarget(BaseModel, frozen=True):
+    """Resolved ownership routing metadata from the topology routing directory."""
+
+    routing_key: str
+    owning_team_id: str
+    owning_team_name: str
+    support_channel: str | None = None
+    escalation_policy_ref: str | None = None
+    service_now_assignment_group: str | None = None
+
+
+class OwnershipRoutingResolution(BaseModel, frozen=True):
+    """Selected ownership lookup level and its resolved target metadata."""
+
+    lookup_level: OwnershipLookupLevel
+    target: OwnershipRoutingTarget
+
+
 class TopologyResolution(BaseModel, frozen=True):
     """Typed topology resolution result for one anomaly scope."""
 
@@ -72,6 +100,7 @@ class TopologyResolution(BaseModel, frozen=True):
     source_system: str | None = None
     blast_radius: BlastRadiusClassification | None = None
     downstream_impacts: tuple[DownstreamImpact, ...] = ()
+    ownership_routing: OwnershipRoutingResolution | None = None
     diagnostics: Mapping[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -89,6 +118,8 @@ class TopologyResolution(BaseModel, frozen=True):
                 )
             if self.blast_radius is None:
                 raise ValueError("resolved topology output requires blast_radius")
+            if self.ownership_routing is None:
+                raise ValueError("resolved topology output requires ownership_routing")
         else:
             if self.stream_id is not None or self.topic_role is not None:
                 raise ValueError("unresolved topology output cannot include resolved fields")
@@ -98,6 +129,8 @@ class TopologyResolution(BaseModel, frozen=True):
                 raise ValueError("unresolved topology output cannot include blast_radius")
             if self.downstream_impacts:
                 raise ValueError("unresolved topology output cannot include downstream_impacts")
+            if self.ownership_routing is not None:
+                raise ValueError("unresolved topology output cannot include ownership_routing")
 
         object.__setattr__(self, "downstream_impacts", tuple(self.downstream_impacts))
         object.__setattr__(self, "diagnostics", MappingProxyType(dict(self.diagnostics)))
@@ -123,7 +156,7 @@ def resolve_anomaly_scope(
             diagnostics={"scope": _render_scope(anomaly_scope)},
         )
 
-    env, cluster_id, topic, _group = parsed_scope
+    env, cluster_id, topic, group = parsed_scope
     scope_key = (env, cluster_id)
     scoped_topics = snapshot.registry.topic_index_by_scope.get(scope_key)
     if scoped_topics is None:
@@ -212,7 +245,31 @@ def resolve_anomaly_scope(
         topic=topic,
         source_system=source_system,
     )
+    ownership_routing, unresolved = _resolve_ownership_routing(
+        scope=anomaly_scope,
+        ownership_map=snapshot.registry.ownership_map,
+        routing_directory=snapshot.registry.routing_directory,
+        env=env,
+        cluster_id=cluster_id,
+        topic=topic,
+        group=group,
+        stream_id=stream.stream_id,
+    )
+    if unresolved is not None:
+        return unresolved
 
+    diagnostics = _scope_diagnostics(
+        env=env,
+        cluster_id=cluster_id,
+        topic=topic,
+        group=group,
+    )
+    assert ownership_routing is not None
+    diagnostics["ownership_lookup_path"] = _ownership_lookup_path(
+        include_consumer_group=group is not None
+    )
+    diagnostics["selected_owner_level"] = ownership_routing.lookup_level
+    diagnostics["selected_routing_key"] = ownership_routing.target.routing_key
     return TopologyResolution(
         scope=anomaly_scope,
         status="resolved",
@@ -223,11 +280,8 @@ def resolve_anomaly_scope(
         source_system=source_system,
         blast_radius=blast_radius,
         downstream_impacts=downstream_impacts,
-        diagnostics={
-            "env": env,
-            "cluster_id": cluster_id,
-            "topic": topic,
-        },
+        ownership_routing=ownership_routing,
+        diagnostics=diagnostics,
     )
 
 
@@ -278,6 +332,141 @@ def _normalize_topic_role(role: str) -> NormalizedTopicRole | None:
 
 def _derive_blast_radius(topic_role: NormalizedTopicRole) -> BlastRadiusClassification | None:
     return _BLAST_RADIUS_BY_TOPIC_ROLE.get(topic_role)
+
+
+def _resolve_ownership_routing(
+    *,
+    scope: tuple[str, ...],
+    ownership_map: CanonicalOwnershipMap,
+    routing_directory: Mapping[str, RoutingDirectoryEntry],
+    env: str,
+    cluster_id: str,
+    topic: str,
+    group: str | None,
+    stream_id: str,
+) -> tuple[OwnershipRoutingResolution | None, TopologyResolution | None]:
+    lookup_path = _ownership_lookup_path(include_consumer_group=group is not None)
+    selected_owner = _select_owner_routing_key(
+        ownership_map=ownership_map,
+        env=env,
+        cluster_id=cluster_id,
+        topic=topic,
+        group=group,
+        stream_id=stream_id,
+    )
+    if selected_owner is None:
+        diagnostics = _scope_diagnostics(
+            env=env,
+            cluster_id=cluster_id,
+            topic=topic,
+            group=group,
+            stream_id=stream_id,
+        )
+        diagnostics["ownership_lookup_path"] = lookup_path
+        return None, _unresolved(
+            scope=scope,
+            reason_code=REASON_OWNER_NOT_FOUND,
+            diagnostics=diagnostics,
+        )
+
+    selected_level, routing_key = selected_owner
+    routing_target = routing_directory.get(routing_key)
+    if routing_target is None:
+        diagnostics = _scope_diagnostics(
+            env=env,
+            cluster_id=cluster_id,
+            topic=topic,
+            group=group,
+            stream_id=stream_id,
+        )
+        diagnostics["ownership_lookup_path"] = lookup_path
+        diagnostics["selected_owner_level"] = selected_level
+        diagnostics["selected_routing_key"] = routing_key
+        return None, _unresolved(
+            scope=scope,
+            reason_code=REASON_ROUTING_KEY_NOT_FOUND,
+            diagnostics=diagnostics,
+        )
+
+    return OwnershipRoutingResolution(
+        lookup_level=selected_level,
+        target=OwnershipRoutingTarget(
+            routing_key=routing_target.routing_key,
+            owning_team_id=routing_target.owning_team_id,
+            owning_team_name=routing_target.owning_team_name,
+            support_channel=routing_target.support_channel,
+            escalation_policy_ref=routing_target.escalation_policy_ref,
+            service_now_assignment_group=routing_target.service_now_assignment_group,
+        ),
+    ), None
+
+
+def _select_owner_routing_key(
+    *,
+    ownership_map: CanonicalOwnershipMap,
+    env: str,
+    cluster_id: str,
+    topic: str,
+    group: str | None,
+    stream_id: str,
+) -> tuple[OwnershipLookupLevel, str] | None:
+    if group is not None:
+        routing_key = ownership_map.consumer_group_routing_key(
+            env=env,
+            cluster_id=cluster_id,
+            group=group,
+        )
+        if routing_key is not None:
+            return ("consumer_group_owner", routing_key)
+
+    topic_routing_key = ownership_map.topic_routing_key(
+        env=env,
+        cluster_id=cluster_id,
+        topic=topic,
+    )
+    if topic_routing_key is not None:
+        return ("topic_owner", topic_routing_key)
+
+    stream_default_routing_key = ownership_map.stream_default_routing_key(
+        stream_id=stream_id,
+        env=env,
+        cluster_id=cluster_id,
+    )
+    if stream_default_routing_key is not None:
+        return ("stream_default_owner", stream_default_routing_key)
+
+    if ownership_map.platform_default is not None:
+        return ("platform_default", ownership_map.platform_default)
+
+    return None
+
+
+def _ownership_lookup_path(*, include_consumer_group: bool) -> str:
+    if include_consumer_group:
+        return (
+            "consumer_group_owner->topic_owner->stream_default_owner->platform_default"
+        )
+    return "topic_owner->stream_default_owner->platform_default"
+
+
+def _scope_diagnostics(
+    *,
+    env: str,
+    cluster_id: str,
+    topic: str,
+    group: str | None = None,
+    stream_id: str | None = None,
+) -> dict[str, str]:
+    diagnostics: dict[str, str] = {
+        "env": env,
+        "cluster_id": cluster_id,
+        "topic": topic,
+    }
+    if group is not None:
+        diagnostics["group"] = group
+    if stream_id is not None:
+        diagnostics["stream_id"] = stream_id
+    return diagnostics
 
 
 def _derive_downstream_impacts(

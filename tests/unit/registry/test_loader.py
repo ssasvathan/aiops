@@ -159,6 +159,72 @@ streams:
 """
 
 
+def _v1_registry_yaml_with_duplicate_topic_owner() -> str:
+    return """
+version: 2
+routing_directory:
+  - routing_key: OWN::Streaming::KafkaPlatform::Ops
+    owning_team_id: kafka-platform-ops
+    owning_team_name: Kafka Platform Ops
+ownership_map:
+  consumer_group_owners: []
+  topic_owners:
+    - match:
+        env: prod
+        cluster_id: Business_Essential
+        topic: payments-topic
+      routing_key: OWN::Streaming::KafkaPlatform::Ops
+    - match:
+        env: prod
+        cluster_id: Business_Essential
+        topic: payments-topic
+      routing_key: OWN::Streaming::KafkaPlatform::Ops
+  stream_default_owner: []
+streams:
+  - stream_id: payments-stream
+    instances:
+      - env: prod
+        cluster_id: Business_Essential
+        topic_index:
+          payments-topic:
+            role: SOURCE_TOPIC
+            stream_id: payments-stream
+"""
+
+
+def _v1_registry_yaml_with_duplicate_stream_default_owner() -> str:
+    return """
+version: 2
+routing_directory:
+  - routing_key: OWN::Streaming::KafkaPlatform::Ops
+    owning_team_id: kafka-platform-ops
+    owning_team_name: Kafka Platform Ops
+ownership_map:
+  consumer_group_owners: []
+  topic_owners: []
+  stream_default_owner:
+    - match:
+        stream_id: payments-stream
+        env: prod
+        cluster_id: Business_Essential
+      routing_key: OWN::Streaming::KafkaPlatform::Ops
+    - match:
+        stream_id: payments-stream
+        env: prod
+        cluster_id: Business_Essential
+      routing_key: OWN::Streaming::KafkaPlatform::Ops
+streams:
+  - stream_id: payments-stream
+    instances:
+      - env: prod
+        cluster_id: Business_Essential
+        topic_index:
+          payments-topic:
+            role: SOURCE_TOPIC
+            stream_id: payments-stream
+"""
+
+
 def _v1_registry_yaml_with_missing_routing_key() -> str:
     return """
 version: 2
@@ -320,6 +386,26 @@ def test_load_fails_fast_on_duplicate_consumer_group_ownership_keys(tmp_path: Pa
         load_topology_registry(path)
 
     assert exc_info.value.category == "duplicate_consumer_group_owner"
+
+
+def test_load_fails_fast_on_duplicate_topic_ownership_keys(tmp_path: Path) -> None:
+    path = tmp_path / "bad-duplicate-topic-owner.yaml"
+    _write_registry(path, _v1_registry_yaml_with_duplicate_topic_owner())
+
+    with pytest.raises(TopologyRegistryValidationError) as exc_info:
+        load_topology_registry(path)
+
+    assert exc_info.value.category == "duplicate_topic_owner"
+
+
+def test_load_fails_fast_on_duplicate_stream_default_ownership_keys(tmp_path: Path) -> None:
+    path = tmp_path / "bad-duplicate-stream-default-owner.yaml"
+    _write_registry(path, _v1_registry_yaml_with_duplicate_stream_default_owner())
+
+    with pytest.raises(TopologyRegistryValidationError) as exc_info:
+        load_topology_registry(path)
+
+    assert exc_info.value.category == "duplicate_stream_default_owner"
 
 
 def test_load_fails_fast_on_missing_routing_key_references(tmp_path: Path) -> None:

@@ -15,6 +15,39 @@ def _write_registry(path: Path, content: str) -> None:
 def _registry_yaml() -> str:
     return """
 version: 2
+routing_directory:
+  - routing_key: OWN::Streaming::Payments::Consumer
+    owning_team_id: team-payments-cg
+    owning_team_name: Payments Consumer Team
+  - routing_key: OWN::Streaming::Payments::Topic
+    owning_team_id: team-payments-topic
+    owning_team_name: Payments Topic Team
+  - routing_key: OWN::Streaming::Payments::StreamDefault
+    owning_team_id: team-payments-stream
+    owning_team_name: Payments Stream Team
+  - routing_key: OWN::Streaming::KafkaPlatform::Ops
+    owning_team_id: team-platform
+    owning_team_name: Kafka Platform Ops
+ownership_map:
+  consumer_group_owners:
+    - match:
+        env: prod
+        cluster_id: cluster-a
+        group: payments-worker
+      routing_key: OWN::Streaming::Payments::Consumer
+  topic_owners:
+    - match:
+        env: prod
+        cluster_id: cluster-a
+        topic: orders
+      routing_key: OWN::Streaming::Payments::Topic
+  stream_default_owner:
+    - match:
+        stream_id: orders-stream
+        env: prod
+        cluster_id: cluster-a
+      routing_key: OWN::Streaming::Payments::StreamDefault
+  platform_default: OWN::Streaming::KafkaPlatform::Ops
 streams:
   - stream_id: orders-stream
     criticality_tier: TIER_1
@@ -120,6 +153,10 @@ def test_collect_topology_stage_output_builds_gate_context_for_topic_and_group_s
     assert output.context_by_scope[topic_scope].source_system == "Payments"
     assert output.impact_by_scope[topic_scope].blast_radius == "LOCAL_SOURCE_INGESTION"
     assert output.impact_by_scope[group_scope].blast_radius == "LOCAL_SOURCE_INGESTION"
+    assert output.routing_by_scope[topic_scope].lookup_level == "topic_owner"
+    assert output.routing_by_scope[group_scope].lookup_level == "consumer_group_owner"
+    assert output.routing_by_scope[topic_scope].routing_key == "OWN::Streaming::Payments::Topic"
+    assert output.routing_by_scope[group_scope].routing_key == "OWN::Streaming::Payments::Consumer"
     assert [
         (
             impact.component_type,
@@ -170,6 +207,7 @@ def test_collect_topology_stage_output_tracks_unresolved_without_fabricating_con
     scope = ("prod", "cluster-a", "missing")
     assert output.context_by_scope == {}
     assert output.impact_by_scope == {}
+    assert output.routing_by_scope == {}
     assert scope in output.unresolved_by_scope
     assert output.unresolved_by_scope[scope].status == "unresolved"
     assert output.unresolved_by_scope[scope].reason_code == "topic_not_found"

@@ -14,6 +14,7 @@ from aiops_triage_pipeline.registry.loader import TopologyRegistrySnapshot
 from aiops_triage_pipeline.registry.resolver import (
     BlastRadiusClassification,
     DownstreamImpact,
+    OwnershipLookupLevel,
     TopologyResolution,
     resolve_anomaly_scope,
 )
@@ -26,17 +27,31 @@ class TopologyImpactContext(BaseModel, frozen=True):
     downstream_impacts: tuple[DownstreamImpact, ...] = ()
 
 
+class TopologyRoutingContext(BaseModel, frozen=True):
+    """Stage 3 routing metadata for downstream case assembly and dispatch stages."""
+
+    lookup_level: OwnershipLookupLevel
+    routing_key: str
+    owning_team_id: str
+    owning_team_name: str
+    support_channel: str | None = None
+    escalation_policy_ref: str | None = None
+    service_now_assignment_group: str | None = None
+
+
 class TopologyStageOutput(BaseModel, frozen=True):
     """Stage 3 output for downstream Stage 6 gate-input assembly."""
 
     context_by_scope: Mapping[tuple[str, ...], GateInputContext] = Field(default_factory=dict)
     impact_by_scope: Mapping[tuple[str, ...], TopologyImpactContext] = Field(default_factory=dict)
+    routing_by_scope: Mapping[tuple[str, ...], TopologyRoutingContext] = Field(default_factory=dict)
     unresolved_by_scope: Mapping[tuple[str, ...], TopologyResolution] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _freeze_nested_mappings(self) -> "TopologyStageOutput":
         object.__setattr__(self, "context_by_scope", MappingProxyType(dict(self.context_by_scope)))
         object.__setattr__(self, "impact_by_scope", MappingProxyType(dict(self.impact_by_scope)))
+        object.__setattr__(self, "routing_by_scope", MappingProxyType(dict(self.routing_by_scope)))
         object.__setattr__(
             self,
             "unresolved_by_scope",
@@ -66,6 +81,7 @@ def build_topology_stage_output(
     logger = get_logger("pipeline.stages.topology")
     context_by_scope: dict[tuple[str, ...], GateInputContext] = {}
     impact_by_scope: dict[tuple[str, ...], TopologyImpactContext] = {}
+    routing_by_scope: dict[tuple[str, ...], TopologyRoutingContext] = {}
     unresolved_by_scope: dict[tuple[str, ...], TopologyResolution] = {}
 
     for scope in sorted(scopes):
@@ -78,6 +94,7 @@ def build_topology_stage_output(
             assert resolution.topic_role is not None
             assert resolution.criticality_tier is not None
             assert resolution.blast_radius is not None
+            assert resolution.ownership_routing is not None
             context_by_scope[scope] = GateInputContext(
                 stream_id=resolution.stream_id,
                 topic_role=resolution.topic_role,
@@ -87,6 +104,17 @@ def build_topology_stage_output(
             impact_by_scope[scope] = TopologyImpactContext(
                 blast_radius=resolution.blast_radius,
                 downstream_impacts=resolution.downstream_impacts,
+            )
+            routing_by_scope[scope] = TopologyRoutingContext(
+                lookup_level=resolution.ownership_routing.lookup_level,
+                routing_key=resolution.ownership_routing.target.routing_key,
+                owning_team_id=resolution.ownership_routing.target.owning_team_id,
+                owning_team_name=resolution.ownership_routing.target.owning_team_name,
+                support_channel=resolution.ownership_routing.target.support_channel,
+                escalation_policy_ref=resolution.ownership_routing.target.escalation_policy_ref,
+                service_now_assignment_group=(
+                    resolution.ownership_routing.target.service_now_assignment_group
+                ),
             )
             continue
 
@@ -102,5 +130,6 @@ def build_topology_stage_output(
     return TopologyStageOutput(
         context_by_scope=context_by_scope,
         impact_by_scope=impact_by_scope,
+        routing_by_scope=routing_by_scope,
         unresolved_by_scope=unresolved_by_scope,
     )

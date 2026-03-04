@@ -15,6 +15,23 @@ def _write_registry(path: Path, content: str) -> None:
 def _registry_yaml() -> str:
     return """
 version: 2
+routing_directory:
+  - routing_key: OWN::Streaming::Payments::Topic
+    owning_team_id: team-payments-topic
+    owning_team_name: Payments Topic Team
+  - routing_key: OWN::Streaming::KafkaPlatform::Ops
+    owning_team_id: team-platform
+    owning_team_name: Kafka Platform Ops
+ownership_map:
+  consumer_group_owners: []
+  topic_owners:
+    - match:
+        env: prod
+        cluster_id: cluster-a
+        topic: orders
+      routing_key: OWN::Streaming::Payments::Topic
+  stream_default_owner: []
+  platform_default: OWN::Streaming::KafkaPlatform::Ops
 streams:
   - stream_id: orders-stream
     criticality_tier: TIER_0
@@ -63,4 +80,5 @@ def test_run_topology_stage_cycle_prepares_context_for_stage6(tmp_path: Path) ->
     assert scope in topology_output.context_by_scope
     assert topology_output.context_by_scope[scope].stream_id == "orders-stream"
     assert topology_output.impact_by_scope[scope].blast_radius == "LOCAL_SOURCE_INGESTION"
+    assert topology_output.routing_by_scope[scope].routing_key == "OWN::Streaming::Payments::Topic"
     assert topology_output.unresolved_by_scope == {}
