@@ -79,7 +79,7 @@ development_status:
   3-2-stream-resolution-and-topic-role-classification: done
   3-3-blast-radius-and-downstream-impact-assessment: done
   3-4-multi-level-ownership-routing: done
-  3-5-legacy-v0-compatibility-views: ready-for-dev
+  3-5-legacy-v0-compatibility-views: done
   epic-3-retrospective: optional
 
   # ─────────────────────────────────────────────────────────

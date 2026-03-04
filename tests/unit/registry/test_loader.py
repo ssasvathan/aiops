@@ -9,8 +9,10 @@ from pydantic import BaseModel
 
 from aiops_triage_pipeline.contracts.topology_registry import TopologyRegistryLoaderRulesV1
 from aiops_triage_pipeline.registry.loader import (
+    TopologyRegistryCompatibilityError,
     TopologyRegistryLoader,
     TopologyRegistryValidationError,
+    build_v0_compat_view,
     load_topology_registry,
 )
 
@@ -52,6 +54,33 @@ topic_index:
     source_system: Payments
   payments-source:
     role: KAFKA_SOURCE_STREAM
+    stream_id: payments-stream
+"""
+
+
+def _v0_registry_yaml_with_ordered_sources_and_sinks() -> str:
+    return """
+version: 1
+streams:
+  - stream_id: payments-stream
+    env: prod
+    cluster_id: Business_Essential
+    sources:
+      - source_system: Zeta
+        source_topic: z-topic
+      - source_system: Alpha
+        source_topic: a-topic
+    sinks:
+      - sink_system: ZetaSink
+        sink_topic: z-sink
+      - sink_system: AlphaSink
+        sink_topic: a-sink
+topic_index:
+  z-topic:
+    role: SOURCE_TOPIC
+    stream_id: payments-stream
+  a-topic:
+    role: SOURCE_TOPIC
     stream_id: payments-stream
 """
 
@@ -315,6 +344,76 @@ streams:
 """
 
 
+def _v1_multi_scope_collision_registry_yaml() -> str:
+    return """
+version: 2
+streams:
+  - stream_id: payments-stream-cluster-a
+    instances:
+      - env: prod
+        cluster_id: cluster-a
+        topics:
+          source_stream: payments-source-a
+        sources:
+          - source_system: Payments
+            source_topic: shared-orders
+        topic_index:
+          shared-orders:
+            role: SOURCE_TOPIC
+            stream_id: payments-stream-cluster-a
+          payments-source-a:
+            role: KAFKA_SOURCE_STREAM
+            stream_id: payments-stream-cluster-a
+  - stream_id: payments-stream-cluster-b
+    instances:
+      - env: prod
+        cluster_id: cluster-b
+        topics:
+          source_stream: payments-source-b
+        sources:
+          - source_system: Fraud
+            source_topic: shared-orders
+        topic_index:
+          shared-orders:
+            role: SOURCE_TOPIC
+            stream_id: payments-stream-cluster-b
+          payments-source-b:
+            role: KAFKA_SOURCE_STREAM
+            stream_id: payments-stream-cluster-b
+"""
+
+
+def _expected_v0_compat_output() -> dict[str, object]:
+    return {
+        "version": 1,
+        "streams": [
+            {
+                "stream_id": "payments-stream",
+                "env": "prod",
+                "description": "Payments stream",
+                "criticality_tier": "TIER_0",
+                "owners": {"platform_team": "streaming-platform-ops"},
+                "topics": {"source_stream": "payments-source"},
+                "sources": [
+                    {
+                        "source_system": "Payments",
+                        "source_topic": "payments-topic",
+                        "criticality_tier": "TIER_0",
+                    }
+                ],
+            }
+        ],
+        "topic_index": {
+            "payments-source": {"role": "KAFKA_SOURCE_STREAM", "stream_id": "payments-stream"},
+            "payments-topic": {
+                "role": "SOURCE_TOPIC",
+                "stream_id": "payments-stream",
+                "source_system": "Payments",
+            },
+        },
+    }
+
+
 def test_load_v0_registry_canonicalizes_to_in_memory_model(tmp_path: Path) -> None:
     path = tmp_path / "topology-v0.yaml"
     _write_registry(path, _v0_registry_yaml())
@@ -524,3 +623,148 @@ def test_reload_on_change_completes_within_five_seconds(tmp_path: Path) -> None:
 
     assert changed is True
     assert elapsed < 5.0
+
+
+def test_v0_compat_projection_matches_v0_golden_output_field_by_field(tmp_path: Path) -> None:
+    path = tmp_path / "topology-v0.yaml"
+    _write_registry(path, _v0_registry_yaml())
+    snapshot = load_topology_registry(
+        path,
+        default_env="prod",
+        default_cluster_id="Business_Essential",
+    )
+
+    compat_view = build_v0_compat_view(
+        snapshot=snapshot,
+        env="prod",
+        cluster_id="Business_Essential",
+    )
+
+    assert compat_view.to_legacy_dict() == _expected_v0_compat_output()
+
+
+def test_v0_compat_projection_from_v1_matches_same_v0_golden_output(tmp_path: Path) -> None:
+    path = tmp_path / "topology-v1.yaml"
+    _write_registry(path, _v1_registry_yaml())
+    snapshot = load_topology_registry(path)
+
+    compat_view = build_v0_compat_view(
+        snapshot=snapshot,
+        env="prod",
+        cluster_id="Business_Essential",
+    )
+
+    assert compat_view.to_legacy_dict() == _expected_v0_compat_output()
+
+
+def test_v0_compat_projection_is_scope_isolated_for_topic_name_collisions(tmp_path: Path) -> None:
+    path = tmp_path / "topology-v1-multi-scope.yaml"
+    _write_registry(path, _v1_multi_scope_collision_registry_yaml())
+    snapshot = load_topology_registry(path)
+
+    cluster_a = build_v0_compat_view(snapshot=snapshot, env="prod", cluster_id="cluster-a")
+    cluster_b = build_v0_compat_view(snapshot=snapshot, env="prod", cluster_id="cluster-b")
+
+    cluster_a_payload = cluster_a.to_legacy_dict()
+    cluster_b_payload = cluster_b.to_legacy_dict()
+    cluster_a_topic_entry = cluster_a_payload["topic_index"]["shared-orders"]  # type: ignore[index]
+    cluster_b_topic_entry = cluster_b_payload["topic_index"]["shared-orders"]  # type: ignore[index]
+    assert cluster_a_topic_entry["stream_id"] == "payments-stream-cluster-a"
+    assert cluster_b_topic_entry["stream_id"] == "payments-stream-cluster-b"
+    assert cluster_a_payload["streams"][0]["stream_id"] == "payments-stream-cluster-a"  # type: ignore[index]
+    assert cluster_b_payload["streams"][0]["stream_id"] == "payments-stream-cluster-b"  # type: ignore[index]
+    assert cluster_a_payload != cluster_b_payload
+
+
+def test_v0_compat_projection_fails_loudly_for_unknown_scope(tmp_path: Path) -> None:
+    path = tmp_path / "topology-v1.yaml"
+    _write_registry(path, _v1_registry_yaml())
+    snapshot = load_topology_registry(path)
+
+    with pytest.raises(TopologyRegistryCompatibilityError) as exc_info:
+        build_v0_compat_view(snapshot=snapshot, env="prod", cluster_id="missing-cluster")
+
+    assert exc_info.value.category == "scope_not_found"
+
+
+def test_v0_compat_projection_fails_loudly_for_invalid_scope_inputs(tmp_path: Path) -> None:
+    path = tmp_path / "topology-v1.yaml"
+    _write_registry(path, _v1_registry_yaml())
+    snapshot = load_topology_registry(path)
+
+    with pytest.raises(TopologyRegistryCompatibilityError) as exc_info:
+        build_v0_compat_view(snapshot=snapshot, env=" ", cluster_id="cluster-a")
+
+    assert exc_info.value.category == "invalid_scope"
+
+
+@pytest.mark.parametrize(
+    ("env", "cluster_id"),
+    [
+        pytest.param(None, "cluster-a", id="env-none"),
+        pytest.param(123, "cluster-a", id="env-int"),
+        pytest.param("prod", None, id="cluster-none"),
+        pytest.param("prod", 123, id="cluster-int"),
+    ],
+)
+def test_v0_compat_projection_fails_loudly_for_non_string_scope_inputs(
+    tmp_path: Path,
+    env: object,
+    cluster_id: object,
+) -> None:
+    path = tmp_path / "topology-v1.yaml"
+    _write_registry(path, _v1_registry_yaml())
+    snapshot = load_topology_registry(path)
+
+    with pytest.raises(TopologyRegistryCompatibilityError) as exc_info:
+        build_v0_compat_view(
+            snapshot=snapshot,
+            env=env,  # type: ignore[arg-type]
+            cluster_id=cluster_id,  # type: ignore[arg-type]
+        )
+
+    assert exc_info.value.category == "invalid_scope"
+
+
+def test_v0_compat_projection_preserves_legacy_sources_and_sinks_order(tmp_path: Path) -> None:
+    path = tmp_path / "topology-v0-ordered-lists.yaml"
+    _write_registry(path, _v0_registry_yaml_with_ordered_sources_and_sinks())
+    snapshot = load_topology_registry(
+        path,
+        default_env="prod",
+        default_cluster_id="Business_Essential",
+    )
+
+    payload = build_v0_compat_view(
+        snapshot=snapshot,
+        env="prod",
+        cluster_id="Business_Essential",
+    ).to_legacy_dict()
+
+    stream = payload["streams"][0]  # type: ignore[index]
+    assert [item["source_topic"] for item in stream["sources"]] == ["z-topic", "a-topic"]  # type: ignore[index]
+    assert [item["sink_topic"] for item in stream["sinks"]] == ["z-sink", "a-sink"]  # type: ignore[index]
+
+
+def test_v0_compat_projection_preserves_required_keys_and_types(tmp_path: Path) -> None:
+    path = tmp_path / "topology-v0.yaml"
+    _write_registry(path, _v0_registry_yaml())
+    snapshot = load_topology_registry(
+        path,
+        default_env="prod",
+        default_cluster_id="Business_Essential",
+    )
+
+    payload = build_v0_compat_view(
+        snapshot=snapshot,
+        env="prod",
+        cluster_id="Business_Essential",
+    ).to_legacy_dict()
+
+    assert type(payload["version"]) is int
+    stream = payload["streams"][0]  # type: ignore[index]
+    assert type(stream["stream_id"]) is str
+    assert type(stream["env"]) is str
+    topic_entry = payload["topic_index"]["payments-topic"]  # type: ignore[index]
+    assert type(topic_entry["role"]) is str
+    assert type(topic_entry["stream_id"]) is str

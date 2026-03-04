@@ -53,6 +53,26 @@ class TopologyRegistryValidationError(TopologyRegistryError):
         super().__init__(f"{category} in {source_path}{where}{suffix}")
 
 
+class TopologyRegistryCompatibilityError(TopologyRegistryError):
+    """Typed compatibility projection failure for explicit v0 view requests."""
+
+    def __init__(
+        self,
+        *,
+        category: str,
+        source_path: str,
+        offending_key: str | None = None,
+        detail: str = "",
+    ) -> None:
+        self.category = category
+        self.source_path = source_path
+        self.offending_key = offending_key
+        self.detail = detail
+        suffix = f" ({detail})" if detail else ""
+        where = f" key={offending_key!r}" if offending_key is not None else ""
+        super().__init__(f"{category} in {source_path}{where}{suffix}")
+
+
 class CanonicalTopicEntry(BaseModel, frozen=True):
     """Canonical topic index entry used by downstream topology resolution."""
 
@@ -273,6 +293,113 @@ class TopologyRegistrySnapshot(BaseModel, frozen=True):
     metadata: TopologyRegistryMetadata
 
 
+class V0CompatTopicIndexEntry(BaseModel, frozen=True):
+    """Legacy v0 topic_index entry contract."""
+
+    role: str
+    stream_id: str
+    source_system: str | None = None
+
+
+class V0CompatStream(BaseModel, frozen=True):
+    """Legacy v0 stream projection scoped to one (env, cluster_id) instance."""
+
+    stream_id: str
+    env: str
+    description: str | None = None
+    criticality_tier: str | None = None
+    owners: Mapping[str, Any] = Field(default_factory=dict)
+    topics: Mapping[str, str] = Field(default_factory=dict)
+    sources: tuple[Mapping[str, Any], ...] = ()
+    sinks: tuple[Mapping[str, Any], ...] = ()
+    shared_components: Mapping[str, Any] = Field(default_factory=dict)
+    peak_window_policy: Mapping[str, Any] | None = None
+
+    @model_validator(mode="after")
+    def _freeze_nested(self) -> "V0CompatStream":
+        object.__setattr__(self, "owners", MappingProxyType(dict(self.owners)))
+        object.__setattr__(self, "topics", MappingProxyType(dict(self.topics)))
+        object.__setattr__(
+            self,
+            "sources",
+            tuple(MappingProxyType(dict(source)) for source in self.sources),
+        )
+        object.__setattr__(
+            self,
+            "sinks",
+            tuple(MappingProxyType(dict(sink)) for sink in self.sinks),
+        )
+        object.__setattr__(
+            self,
+            "shared_components",
+            MappingProxyType(dict(self.shared_components)),
+        )
+        if self.peak_window_policy is not None:
+            object.__setattr__(
+                self,
+                "peak_window_policy",
+                MappingProxyType(dict(self.peak_window_policy)),
+            )
+        return self
+
+    def to_legacy_dict(self) -> dict[str, Any]:
+        """Render stream payload while preserving legacy omission semantics."""
+        payload: dict[str, Any] = {
+            "stream_id": self.stream_id,
+            "env": self.env,
+        }
+        if self.description is not None:
+            payload["description"] = self.description
+        if self.criticality_tier is not None:
+            payload["criticality_tier"] = self.criticality_tier
+        if self.owners:
+            payload["owners"] = _to_sorted_plain_mapping(self.owners)
+        if self.topics:
+            payload["topics"] = _to_sorted_string_mapping(self.topics)
+        if self.sources:
+            payload["sources"] = [_to_sorted_plain_mapping(source) for source in self.sources]
+        if self.sinks:
+            payload["sinks"] = [_to_sorted_plain_mapping(sink) for sink in self.sinks]
+        if self.shared_components:
+            payload["shared_components"] = _to_sorted_plain_mapping(self.shared_components)
+        if self.peak_window_policy is not None:
+            payload["peak_window_policy"] = _to_sorted_plain_mapping(self.peak_window_policy)
+        return payload
+
+
+class V0CompatView(BaseModel, frozen=True):
+    """Legacy v0 compatibility view derived from canonical topology state."""
+
+    version: int = 1
+    streams: tuple[V0CompatStream, ...]
+    topic_index: Mapping[str, V0CompatTopicIndexEntry]
+
+    @model_validator(mode="after")
+    def _freeze_nested(self) -> "V0CompatView":
+        object.__setattr__(
+            self,
+            "streams",
+            tuple(sorted(self.streams, key=lambda stream: stream.stream_id)),
+        )
+        ordered_topic_index = {
+            topic: entry
+            for topic, entry in sorted(self.topic_index.items(), key=lambda item: item[0])
+        }
+        object.__setattr__(self, "topic_index", MappingProxyType(ordered_topic_index))
+        return self
+
+    def to_legacy_dict(self) -> dict[str, Any]:
+        """Render the compat view as a plain v0-shaped payload."""
+        return {
+            "version": self.version,
+            "streams": [stream.to_legacy_dict() for stream in self.streams],
+            "topic_index": {
+                topic: entry.model_dump(mode="python", exclude_none=True)
+                for topic, entry in self.topic_index.items()
+            },
+        }
+
+
 class _DuplicateYamlKeyError(Exception):
     def __init__(self, *, path: str, key: str, line: int | None = None) -> None:
         self.path = path
@@ -444,6 +571,76 @@ class TopologyRegistryLoader:
         return True
 
 
+def build_v0_compat_view(
+    *,
+    snapshot: TopologyRegistrySnapshot,
+    env: str,
+    cluster_id: str,
+) -> V0CompatView:
+    """Project canonical registry state into a deterministic v0 compatibility view."""
+    source_path = snapshot.metadata.source_path
+    normalized_env = _normalize_scope_component(
+        value=env,
+        component_name="env",
+        source_path=source_path,
+    )
+    normalized_cluster_id = _normalize_scope_component(
+        value=cluster_id,
+        component_name="cluster_id",
+        source_path=source_path,
+    )
+    scope = (normalized_env, normalized_cluster_id)
+
+    scoped_streams: list[V0CompatStream] = []
+    for stream in snapshot.registry.streams:
+        scoped_instance = _find_stream_instance_for_scope(
+            stream=stream,
+            scope=scope,
+        )
+        if scoped_instance is None:
+            continue
+        scoped_streams.append(
+            V0CompatStream(
+                stream_id=stream.stream_id,
+                env=normalized_env,
+                description=stream.description,
+                criticality_tier=stream.criticality_tier,
+                owners=_to_sorted_plain_mapping(stream.owners),
+                topics=_to_sorted_string_mapping(scoped_instance.topics),
+                # Preserve canonical list order for legacy compatibility semantics.
+                sources=_to_plain_mapping_sequence(scoped_instance.sources),
+                sinks=_to_plain_mapping_sequence(scoped_instance.sinks),
+                shared_components=_to_sorted_plain_mapping(scoped_instance.shared_components),
+                peak_window_policy=_to_optional_sorted_plain_mapping(
+                    scoped_instance.peak_window_policy
+                ),
+            )
+        )
+
+    if not scoped_streams:
+        raise TopologyRegistryCompatibilityError(
+            category="scope_not_found",
+            source_path=source_path,
+            offending_key=f"{normalized_env}:{normalized_cluster_id}",
+            detail="no stream instances found for requested scope",
+        )
+
+    scoped_topic_index = snapshot.registry.topic_index_by_scope.get(scope, {})
+    compat_topic_index = {
+        topic: V0CompatTopicIndexEntry(
+            role=entry.role,
+            stream_id=entry.stream_id,
+            source_system=entry.source_system,
+        )
+        for topic, entry in sorted(scoped_topic_index.items(), key=lambda item: item[0])
+    }
+
+    return V0CompatView(
+        streams=tuple(scoped_streams),
+        topic_index=compat_topic_index,
+    )
+
+
 def _read_registry_yaml(path: Path) -> Mapping[str, Any]:
     source_path = str(path)
     content = path.read_text(encoding="utf-8")
@@ -472,6 +669,75 @@ def _read_registry_yaml(path: Path) -> Mapping[str, Any]:
             detail="top-level YAML node must be a mapping",
         )
     return loaded
+
+
+def _normalize_scope_component(
+    *,
+    value: str,
+    component_name: str,
+    source_path: str,
+) -> str:
+    if not isinstance(value, str):
+        raise TopologyRegistryCompatibilityError(
+            category="invalid_scope",
+            source_path=source_path,
+            offending_key=component_name,
+            detail="scope components must be strings",
+        )
+    normalized = value.strip()
+    if not normalized:
+        raise TopologyRegistryCompatibilityError(
+            category="invalid_scope",
+            source_path=source_path,
+            offending_key=component_name,
+            detail="scope components must be non-empty strings",
+        )
+    return normalized
+
+
+def _find_stream_instance_for_scope(
+    *,
+    stream: CanonicalStream,
+    scope: tuple[str, str],
+) -> CanonicalStreamInstance | None:
+    for instance in stream.instances:
+        if (instance.env, instance.cluster_id) == scope:
+            return instance
+    return None
+
+
+def _to_sorted_plain_mapping(mapping: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        str(key): _to_plain_value(value)
+        for key, value in sorted(mapping.items(), key=lambda item: str(item[0]))
+    }
+
+
+def _to_optional_sorted_plain_mapping(mapping: Mapping[str, Any] | None) -> dict[str, Any] | None:
+    if mapping is None:
+        return None
+    return _to_sorted_plain_mapping(mapping)
+
+
+def _to_sorted_string_mapping(mapping: Mapping[str, str]) -> dict[str, str]:
+    return {
+        str(key): str(value)
+        for key, value in sorted(mapping.items(), key=lambda item: str(item[0]))
+    }
+
+
+def _to_plain_mapping_sequence(
+    entries: tuple[Mapping[str, Any], ...],
+) -> tuple[dict[str, Any], ...]:
+    return tuple(_to_sorted_plain_mapping(entry) for entry in entries)
+
+
+def _to_plain_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return _to_sorted_plain_mapping(value)
+    if isinstance(value, tuple | list):
+        return [_to_plain_value(item) for item in value]
+    return value
 
 
 def _detect_registry_version(raw: Mapping[str, Any]) -> int:
