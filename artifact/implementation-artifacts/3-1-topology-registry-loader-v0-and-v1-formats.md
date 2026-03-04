@@ -1,6 +1,6 @@
 # Story 3.1: Topology Registry Loader (v0 + v1 Formats)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -30,38 +30,38 @@ so that the pipeline supports both registry versions during migration with stric
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Define canonical in-memory topology model and loader API (AC: 1, 2)
-  - [ ] Implement typed canonical structures shared by v0/v1 parsing paths.
-  - [ ] Keep loader output immutable and safe for concurrent read access.
-  - [ ] Expose a single loader entrypoint returning canonical model plus metadata/version info.
+- [x] Task 1: Define canonical in-memory topology model and loader API (AC: 1, 2)
+  - [x] Implement typed canonical structures shared by v0/v1 parsing paths.
+  - [x] Keep loader output immutable and safe for concurrent read access.
+  - [x] Expose a single loader entrypoint returning canonical model plus metadata/version info.
 
-- [ ] Task 2: Implement v0 and v1 parsing with canonicalization (AC: 1)
-  - [ ] Parse v0 topology shape and map into canonical structures.
-  - [ ] Parse v1 instances-based shape and map into canonical structures.
-  - [ ] Ensure equivalent v0/v1 fixtures normalize to the same canonical representation.
+- [x] Task 2: Implement v0 and v1 parsing with canonicalization (AC: 1)
+  - [x] Parse v0 topology shape and map into canonical structures.
+  - [x] Parse v1 instances-based shape and map into canonical structures.
+  - [x] Ensure equivalent v0/v1 fixtures normalize to the same canonical representation.
 
-- [ ] Task 3: Implement fail-fast validation matrix (AC: 3, 4, 5)
-  - [ ] Detect duplicate `topic_index` keys in `(env, cluster_id)` scope.
-  - [ ] Detect duplicate consumer-group ownership keys.
-  - [ ] Detect missing `routing_key` references for resolved ownership entries.
-  - [ ] Raise explicit typed errors with actionable context; do not continue on invalid registry.
+- [x] Task 3: Implement fail-fast validation matrix (AC: 3, 4, 5)
+  - [x] Detect duplicate `topic_index` keys in `(env, cluster_id)` scope.
+  - [x] Detect duplicate consumer-group ownership keys.
+  - [x] Detect missing `routing_key` references for resolved ownership entries.
+  - [x] Raise explicit typed errors with actionable context; do not continue on invalid registry.
 
-- [ ] Task 4: Implement reload-on-change behavior (AC: 6)
-  - [ ] Add file-change detection/polling with deterministic refresh behavior.
-  - [ ] Ensure reload path swaps model atomically after successful validation.
-  - [ ] Ensure invalid reload input preserves last-known-good in-memory model and emits structured error logs.
+- [x] Task 4: Implement reload-on-change behavior (AC: 6)
+  - [x] Add file-change detection/polling with deterministic refresh behavior.
+  - [x] Ensure reload path swaps model atomically after successful validation.
+  - [x] Ensure invalid reload input preserves last-known-good in-memory model and emits structured error logs.
 
-- [ ] Task 5: Add focused unit tests for loader and validation semantics (AC: 7)
-  - [ ] Add v0 fixture loading and canonical assertions.
-  - [ ] Add v1 fixture loading and canonical assertions.
-  - [ ] Add duplicate `topic_index` failure test.
-  - [ ] Add duplicate consumer-group ownership failure test.
-  - [ ] Add missing `routing_key` failure test.
-  - [ ] Add reload-timing and last-known-good preservation tests.
+- [x] Task 5: Add focused unit tests for loader and validation semantics (AC: 7)
+  - [x] Add v0 fixture loading and canonical assertions.
+  - [x] Add v1 fixture loading and canonical assertions.
+  - [x] Add duplicate `topic_index` failure test.
+  - [x] Add duplicate consumer-group ownership failure test.
+  - [x] Add missing `routing_key` failure test.
+  - [x] Add reload-timing and last-known-good preservation tests.
 
-- [ ] Task 6: Quality gates
-  - [ ] Run focused tests for `registry` and `contracts` packages.
-  - [ ] Run full `uv run pytest -q` and `uv run ruff check` before moving to review.
+- [x] Task 6: Quality gates
+  - [x] Run focused tests for `registry` and `contracts` packages.
+  - [x] Run full `uv run pytest -q` and `uv run ruff check` before moving to review.
 
 ## Dev Notes
 
@@ -251,25 +251,36 @@ GPT-5 Codex
 
 ### Debug Log References
 
-- Workflow runner: `_bmad/core/tasks/workflow.xml` with config `_bmad/bmm/workflows/4-implementation/create-story/workflow.yaml`.
-- Story selection source: `artifact/implementation-artifacts/sprint-status.yaml` first backlog story in order.
-- Selected story key: `3-1-topology-registry-loader-v0-and-v1-formats`.
-- Discovery protocol results:
-  - `epics_content`: loaded from `artifact/planning-artifacts/epics.md` (whole file).
-  - `architecture_content`: loaded from `artifact/planning-artifacts/architecture.md` (whole file).
-  - `prd_content`: loaded from sharded PRD files (`prd/index.md`, `prd/functional-requirements.md`, `prd/non-functional-requirements.md`) for fallback requirements context.
-  - `ux_content`: no matching UX artifact found.
-  - `project_context`: loaded from `artifact/project-context.md`.
-- Previous-story intelligence: not applicable (`story_num=1`).
-- Git-intelligence branch: skipped because previous-story prerequisite was not met.
-- Validation task reference issue: `_bmad/core/tasks/validate-workflow.xml` is absent in this repository; checklist-grounded manual validation applied against `_bmad/bmm/workflows/4-implementation/create-story/checklist.md`.
-- Web verification completed for runtime/package specifics used in this story context.
+- Workflow runner: `_bmad/core/tasks/workflow.xml` with config `_bmad/bmm/workflows/4-implementation/dev-story/workflow.yaml`.
+- Story selected from `artifact/implementation-artifacts/sprint-status.yaml` as first `ready-for-dev` item in development order.
+- Implemented `src/aiops_triage_pipeline/registry/loader.py` with:
+  - immutable canonical topology models for streams/instances/topic index,
+  - v0 + v1 parsing and deterministic canonicalization,
+  - strict fail-fast validation and typed errors with context,
+  - reload manager preserving last-known-good model on invalid changes.
+- Added public exports in `src/aiops_triage_pipeline/registry/__init__.py`.
+- Added focused tests in `tests/unit/registry/test_loader.py` for v0/v1 load, canonical equivalence, fail-fast matrix, and reload behavior.
+- Validation commands executed successfully:
+  - `uv run pytest -q tests/unit/registry/test_loader.py tests/unit/contracts/test_policy_models.py` (36 passed)
+  - `uv run pytest -q` (265 passed, 1 skipped)
+  - `uv run ruff check` (all checks passed)
 
 ### Completion Notes List
 
-- Story prepared as `ready-for-dev` with implementation guardrails focused on v0/v1 canonicalization, fail-fast validation, and reload safety.
-- Epic 3 kickoff preparation from prior retrospective incorporated into task breakdown and testing guidance.
+- Implemented topology registry loader with a single canonical in-memory model and metadata-returning entrypoint for v0/v1 registries.
+- Added strict validation matrix for duplicate scoped `topic_index`, duplicate consumer-group ownership keys, and missing `routing_key` references.
+- Implemented reload-on-change path with atomic snapshot swap and structured failure logging while preserving last-known-good state.
+- Added 10 focused unit tests for AC coverage, including canonical equivalence and reload timing/preservation behavior.
+- Verified non-regression and quality gates with full test suite and lint checks.
 
 ### File List
 
+- `src/aiops_triage_pipeline/registry/loader.py`
+- `src/aiops_triage_pipeline/registry/__init__.py`
+- `tests/unit/registry/test_loader.py`
 - `artifact/implementation-artifacts/3-1-topology-registry-loader-v0-and-v1-formats.md`
+- `artifact/implementation-artifacts/sprint-status.yaml`
+
+### Change Log
+
+- 2026-03-04: Implemented Story 3.1 loader/canonicalization/validation/reload and added focused registry tests; passed full repo quality gates.
