@@ -1,5 +1,6 @@
 """Pipeline stages."""
 
+from aiops_triage_pipeline.pipeline.stages.casefile import assemble_casefile_triage_stage
 from aiops_triage_pipeline.pipeline.stages.gating import (
     GateInputContext,
     collect_gate_inputs_by_scope,
@@ -21,6 +22,7 @@ from aiops_triage_pipeline.pipeline.stages.topology import (
 )
 
 __all__ = [
+    "assemble_casefile_triage_stage",
     "GateInputContext",
     "collect_gate_inputs_by_scope",
     "TopologyImpactContext",
