@@ -14,6 +14,7 @@ from aiops_triage_pipeline.contracts.enums import (
     EvidenceStatus,
 )
 from aiops_triage_pipeline.contracts.gate_input import Finding, GateInputV1
+from aiops_triage_pipeline.errors.exceptions import CriticalDependencyError, InvariantViolation
 from aiops_triage_pipeline.models.case_file import (
     TRIAGE_HASH_PLACEHOLDER,
     CaseFileEvidenceSnapshot,
@@ -23,11 +24,17 @@ from aiops_triage_pipeline.models.case_file import (
     CaseFileTriageV1,
 )
 from aiops_triage_pipeline.storage.casefile_io import (
+    build_casefile_triage_object_key,
     compute_casefile_triage_hash,
     compute_sha256_hex,
     has_valid_casefile_triage_hash,
+    persist_casefile_triage_write_once,
     serialize_casefile_triage,
     validate_casefile_triage_json,
+)
+from aiops_triage_pipeline.storage.client import (
+    ObjectStoreClientProtocol,
+    PutIfAbsentResult,
 )
 
 
@@ -154,3 +161,100 @@ def test_missing_policy_version_field_fails_validation() -> None:
 
     with pytest.raises(ValidationError):
         CaseFileTriageV1.model_validate(payload)
+
+
+class _FakeObjectStoreClient(ObjectStoreClientProtocol):
+    def __init__(self) -> None:
+        self.store: dict[str, bytes] = {}
+        self.last_put: tuple[str, bytes] | None = None
+        self.fail_put: Exception | None = None
+        self.fail_get: Exception | None = None
+
+    def put_if_absent(
+        self,
+        *,
+        key: str,
+        body: bytes,
+        content_type: str,
+        checksum_sha256: str | None = None,
+        metadata: dict[str, str] | None = None,
+    ) -> PutIfAbsentResult:
+        del content_type, checksum_sha256, metadata
+        if self.fail_put is not None:
+            raise self.fail_put
+        self.last_put = (key, body)
+        if key in self.store:
+            return PutIfAbsentResult.EXISTS
+        self.store[key] = body
+        return PutIfAbsentResult.CREATED
+
+    def get_object_bytes(self, *, key: str) -> bytes:
+        if self.fail_get is not None:
+            raise self.fail_get
+        return self.store[key]
+
+
+def test_build_casefile_triage_object_key_uses_required_layout() -> None:
+    assert (
+        build_casefile_triage_object_key("case-prod-cluster-a-orders")
+        == "cases/case-prod-cluster-a-orders/triage.json"
+    )
+
+
+def test_persist_casefile_triage_write_once_creates_object() -> None:
+    client = _FakeObjectStoreClient()
+    casefile = _sample_casefile()
+
+    persisted = persist_casefile_triage_write_once(
+        object_store_client=client,
+        casefile=casefile,
+    )
+
+    expected_key = build_casefile_triage_object_key(casefile.case_id)
+    assert persisted.case_id == casefile.case_id
+    assert persisted.object_path == expected_key
+    assert persisted.triage_hash == casefile.triage_hash
+    assert persisted.write_result == "created"
+    assert client.last_put is not None
+    assert client.last_put[0] == expected_key
+    assert client.last_put[1] == serialize_casefile_triage(casefile)
+
+
+def test_persist_casefile_triage_write_once_is_idempotent_on_duplicate() -> None:
+    client = _FakeObjectStoreClient()
+    casefile = _sample_casefile()
+    key = build_casefile_triage_object_key(casefile.case_id)
+    client.store[key] = serialize_casefile_triage(casefile)
+
+    persisted = persist_casefile_triage_write_once(
+        object_store_client=client,
+        casefile=casefile,
+    )
+
+    assert persisted.write_result == "idempotent"
+    assert client.store[key] == serialize_casefile_triage(casefile)
+
+
+def test_persist_casefile_triage_write_once_raises_on_duplicate_content_mismatch() -> None:
+    client = _FakeObjectStoreClient()
+    casefile = _sample_casefile()
+    key = build_casefile_triage_object_key(casefile.case_id)
+    client.store[key] = b'{"schema_version":"v1","triage_hash":"%s"}' % ("0" * 64).encode("utf-8")
+
+    with pytest.raises(InvariantViolation, match="write-once"):
+        persist_casefile_triage_write_once(
+            object_store_client=client,
+            casefile=casefile,
+        )
+
+
+def test_persist_casefile_triage_write_once_fails_fast_when_object_store_unavailable() -> None:
+    client = _FakeObjectStoreClient()
+    casefile = _sample_casefile()
+    client.fail_put = CriticalDependencyError("object storage unavailable")
+
+    with pytest.raises(CriticalDependencyError, match="object storage unavailable"):
+        persist_casefile_triage_write_once(
+            object_store_client=client,
+            casefile=casefile,
+        )

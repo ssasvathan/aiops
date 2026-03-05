@@ -23,7 +23,12 @@ from aiops_triage_pipeline.contracts.rulebook import (
     RulebookV1,
 )
 from aiops_triage_pipeline.denylist.loader import DenylistV1
-from aiops_triage_pipeline.pipeline.stages.casefile import assemble_casefile_triage_stage
+from aiops_triage_pipeline.errors.exceptions import CriticalDependencyError, InvariantViolation
+from aiops_triage_pipeline.outbox.schema import OutboxReadyCasefileV1
+from aiops_triage_pipeline.pipeline.stages.casefile import (
+    assemble_casefile_triage_stage,
+    persist_casefile_and_prepare_outbox_ready,
+)
 from aiops_triage_pipeline.pipeline.stages.evidence import collect_evidence_stage_output
 from aiops_triage_pipeline.pipeline.stages.gating import (
     GateInputContext,
@@ -33,9 +38,11 @@ from aiops_triage_pipeline.pipeline.stages.peak import collect_peak_stage_output
 from aiops_triage_pipeline.pipeline.stages.topology import collect_topology_stage_output
 from aiops_triage_pipeline.registry.loader import load_topology_registry
 from aiops_triage_pipeline.storage.casefile_io import (
+    build_casefile_triage_object_key,
     compute_casefile_triage_hash,
     has_valid_casefile_triage_hash,
 )
+from aiops_triage_pipeline.storage.client import ObjectStoreClientProtocol, PutIfAbsentResult
 
 
 def _registry_yaml() -> str:
@@ -397,4 +404,167 @@ def test_assemble_casefile_triage_stage_requires_matching_fingerprint(tmp_path: 
             denylist=_denylist_for_tests(),
             diagnosis_policy_version="v1",
             triage_timestamp=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
+        )
+
+
+class _InMemoryObjectStoreClient(ObjectStoreClientProtocol):
+    def __init__(self) -> None:
+        self.store: dict[str, bytes] = {}
+
+    def put_if_absent(
+        self,
+        *,
+        key: str,
+        body: bytes,
+        content_type: str,
+        checksum_sha256: str | None = None,
+        metadata: dict[str, str] | None = None,
+    ) -> PutIfAbsentResult:
+        del content_type, checksum_sha256, metadata
+        if key in self.store:
+            return PutIfAbsentResult.EXISTS
+        self.store[key] = body
+        return PutIfAbsentResult.CREATED
+
+    def get_object_bytes(self, *, key: str) -> bytes:
+        return self.store[key]
+
+
+class _UnavailableObjectStoreClient(ObjectStoreClientProtocol):
+    def put_if_absent(
+        self,
+        *,
+        key: str,
+        body: bytes,
+        content_type: str,
+        checksum_sha256: str | None = None,
+        metadata: dict[str, str] | None = None,
+    ) -> PutIfAbsentResult:
+        del key, body, content_type, checksum_sha256, metadata
+        raise CriticalDependencyError("object storage unavailable")
+
+    def get_object_bytes(self, *, key: str) -> bytes:
+        del key
+        raise CriticalDependencyError("object storage unavailable")
+
+
+class _WriteOnceConflictObjectStoreClient(ObjectStoreClientProtocol):
+    def put_if_absent(
+        self,
+        *,
+        key: str,
+        body: bytes,
+        content_type: str,
+        checksum_sha256: str | None = None,
+        metadata: dict[str, str] | None = None,
+    ) -> PutIfAbsentResult:
+        del key, body, content_type, checksum_sha256, metadata
+        return PutIfAbsentResult.EXISTS
+
+    def get_object_bytes(self, *, key: str) -> bytes:
+        del key
+        return b'{"schema_version":"v1","triage_hash":"' + ("0" * 64).encode("utf-8") + b'"}'
+
+
+def test_persist_casefile_and_prepare_outbox_ready_requires_confirmed_write(tmp_path: Path) -> None:
+    (
+        scope,
+        evidence_output,
+        peak_output,
+        topology_output,
+        gate_input,
+        action_decision,
+    ) = _build_scope_inputs(tmp_path)
+
+    assembled = assemble_casefile_triage_stage(
+        scope=scope,
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        topology_output=topology_output,
+        gate_input=gate_input,
+        action_decision=action_decision,
+        rulebook_policy=_rulebook_policy_for_tests(),
+        peak_policy=_peak_policy_for_tests(),
+        prometheus_metrics_contract=_prometheus_contract_for_tests(),
+        denylist=_denylist_for_tests(),
+        diagnosis_policy_version="v1",
+        triage_timestamp=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
+    )
+    object_store_client = _InMemoryObjectStoreClient()
+
+    ready_payload = persist_casefile_and_prepare_outbox_ready(
+        casefile=assembled,
+        object_store_client=object_store_client,
+    )
+
+    assert isinstance(ready_payload, OutboxReadyCasefileV1)
+    assert ready_payload.case_id == assembled.case_id
+    assert ready_payload.triage_hash == assembled.triage_hash
+    assert ready_payload.object_path == build_casefile_triage_object_key(assembled.case_id)
+    assert ready_payload.object_path in object_store_client.store
+
+
+def test_persist_casefile_and_prepare_outbox_ready_fails_fast_when_store_unavailable(
+    tmp_path: Path,
+) -> None:
+    (
+        scope,
+        evidence_output,
+        peak_output,
+        topology_output,
+        gate_input,
+        action_decision,
+    ) = _build_scope_inputs(tmp_path)
+    assembled = assemble_casefile_triage_stage(
+        scope=scope,
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        topology_output=topology_output,
+        gate_input=gate_input,
+        action_decision=action_decision,
+        rulebook_policy=_rulebook_policy_for_tests(),
+        peak_policy=_peak_policy_for_tests(),
+        prometheus_metrics_contract=_prometheus_contract_for_tests(),
+        denylist=_denylist_for_tests(),
+        diagnosis_policy_version="v1",
+        triage_timestamp=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
+    )
+
+    with pytest.raises(CriticalDependencyError, match="object storage unavailable"):
+        persist_casefile_and_prepare_outbox_ready(
+            casefile=assembled,
+            object_store_client=_UnavailableObjectStoreClient(),
+        )
+
+
+def test_persist_casefile_and_prepare_outbox_ready_raises_on_write_once_violation(
+    tmp_path: Path,
+) -> None:
+    (
+        scope,
+        evidence_output,
+        peak_output,
+        topology_output,
+        gate_input,
+        action_decision,
+    ) = _build_scope_inputs(tmp_path)
+    assembled = assemble_casefile_triage_stage(
+        scope=scope,
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        topology_output=topology_output,
+        gate_input=gate_input,
+        action_decision=action_decision,
+        rulebook_policy=_rulebook_policy_for_tests(),
+        peak_policy=_peak_policy_for_tests(),
+        prometheus_metrics_contract=_prometheus_contract_for_tests(),
+        denylist=_denylist_for_tests(),
+        diagnosis_policy_version="v1",
+        triage_timestamp=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
+    )
+
+    with pytest.raises(InvariantViolation, match="write-once"):
+        persist_casefile_and_prepare_outbox_ready(
+            casefile=assembled,
+            object_store_client=_WriteOnceConflictObjectStoreClient(),
         )

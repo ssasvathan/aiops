@@ -14,6 +14,8 @@ from aiops_triage_pipeline.contracts.prometheus_metrics import PrometheusMetrics
 from aiops_triage_pipeline.contracts.rulebook import RulebookV1
 from aiops_triage_pipeline.denylist.enforcement import apply_denylist
 from aiops_triage_pipeline.denylist.loader import DenylistV1
+from aiops_triage_pipeline.errors.exceptions import IntegrationError
+from aiops_triage_pipeline.logging.setup import get_logger
 from aiops_triage_pipeline.models.case_file import (
     TRIAGE_HASH_PLACEHOLDER,
     CaseFileDownstreamImpact,
@@ -26,12 +28,16 @@ from aiops_triage_pipeline.models.case_file import (
 )
 from aiops_triage_pipeline.models.evidence import EvidenceStageOutput
 from aiops_triage_pipeline.models.peak import PeakStageOutput
+from aiops_triage_pipeline.outbox.schema import OutboxReadyCasefileV1
 from aiops_triage_pipeline.pipeline.stages.topology import TopologyStageOutput
 from aiops_triage_pipeline.storage.casefile_io import (
+    build_casefile_triage_object_key,
     compute_casefile_triage_hash,
+    persist_casefile_triage_write_once,
     serialize_casefile_triage,
     validate_casefile_triage_json,
 )
+from aiops_triage_pipeline.storage.client import ObjectStoreClientProtocol
 
 
 def assemble_casefile_triage_stage(
@@ -225,3 +231,49 @@ def _sanitize_value(value: Any, *, denylist: DenylistV1) -> Any:
 
 def _value_matches_denylist(value: str, denylist: DenylistV1) -> bool:
     return any(re.search(pattern, value) for pattern in denylist.denied_value_patterns)
+
+
+def persist_casefile_and_prepare_outbox_ready(
+    *,
+    casefile: CaseFileTriageV1,
+    object_store_client: ObjectStoreClientProtocol,
+) -> OutboxReadyCasefileV1:
+    """Persist triage artifact and return a typed READY handoff payload."""
+    logger = get_logger("pipeline.stages.casefile")
+    object_path = build_casefile_triage_object_key(casefile.case_id)
+
+    try:
+        persisted = persist_casefile_triage_write_once(
+            object_store_client=object_store_client,
+            casefile=casefile,
+        )
+    except Exception as exc:
+        logger.error(
+            "casefile_persistence_failed",
+            event_type="casefile.persistence_failed",
+            case_id=casefile.case_id,
+            object_path=object_path,
+            reason=str(exc),
+            error_type=type(exc).__name__,
+        )
+        raise
+
+    logger.info(
+        "casefile_persistence_confirmed",
+        event_type="casefile.persistence_confirmed",
+        case_id=persisted.case_id,
+        object_path=persisted.object_path,
+        triage_hash=persisted.triage_hash,
+        write_result=persisted.write_result,
+    )
+
+    try:
+        return OutboxReadyCasefileV1(
+            case_id=persisted.case_id,
+            object_path=persisted.object_path,
+            triage_hash=persisted.triage_hash,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise IntegrationError(
+            "failed to construct outbox-ready payload from confirmed casefile persistence"
+        ) from exc

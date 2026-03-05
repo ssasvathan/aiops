@@ -1,0 +1,244 @@
+from __future__ import annotations
+
+import time
+from datetime import UTC, datetime
+from urllib.error import URLError
+from urllib.request import urlopen
+
+import boto3
+import pytest
+from botocore.client import BaseClient
+from testcontainers.core.container import DockerContainer
+
+from aiops_triage_pipeline.contracts.action_decision import ActionDecisionV1
+from aiops_triage_pipeline.contracts.enums import (
+    Action,
+    CriticalityTier,
+    Environment,
+    EvidenceStatus,
+)
+from aiops_triage_pipeline.contracts.gate_input import Finding, GateInputV1
+from aiops_triage_pipeline.errors.exceptions import CriticalDependencyError
+from aiops_triage_pipeline.models.case_file import (
+    TRIAGE_HASH_PLACEHOLDER,
+    CaseFileEvidenceSnapshot,
+    CaseFilePolicyVersions,
+    CaseFileRoutingContext,
+    CaseFileTopologyContext,
+    CaseFileTriageV1,
+)
+from aiops_triage_pipeline.pipeline.stages.casefile import (
+    persist_casefile_and_prepare_outbox_ready,
+)
+from aiops_triage_pipeline.pipeline.stages.outbox import (
+    build_outbox_ready_transition_payload,
+)
+from aiops_triage_pipeline.storage.casefile_io import (
+    compute_casefile_triage_hash,
+    persist_casefile_triage_write_once,
+    validate_casefile_triage_json,
+)
+from aiops_triage_pipeline.storage.client import (
+    ObjectStoreClientProtocol,
+    PutIfAbsentResult,
+    S3ObjectStoreClient,
+)
+
+_MINIO_IMAGE = "minio/minio:RELEASE.2025-01-20T14-49-07Z"
+_MINIO_ACCESS_KEY = "minioadmin"
+_MINIO_SECRET_KEY = "minioadmin"
+_MINIO_BUCKET = "aiops-cases-integration"
+
+
+def _sample_casefile() -> CaseFileTriageV1:
+    gate_input = GateInputV1(
+        env=Environment.PROD,
+        cluster_id="cluster-a",
+        stream_id="stream-orders",
+        topic="orders",
+        topic_role="SOURCE_TOPIC",
+        anomaly_family="VOLUME_DROP",
+        criticality_tier=CriticalityTier.TIER_1,
+        proposed_action=Action.TICKET,
+        diagnosis_confidence=0.75,
+        sustained=True,
+        findings=(
+            Finding(
+                finding_id="f-volume-drop",
+                name="VOLUME_DROP",
+                is_anomalous=True,
+                evidence_required=("topic_messages_in_per_sec",),
+            ),
+        ),
+        evidence_status_map={"topic_messages_in_per_sec": EvidenceStatus.PRESENT},
+        action_fingerprint=(
+            "prod/cluster-a/stream-orders/SOURCE_TOPIC/orders/VOLUME_DROP/TIER_1"
+        ),
+        case_id="case-prod-cluster-a-orders-volume-drop",
+    )
+    action_decision = ActionDecisionV1(
+        final_action=Action.TICKET,
+        env_cap_applied=False,
+        gate_rule_ids=("AG0", "AG1", "AG2"),
+        gate_reason_codes=("PASS", "PASS", "PASS"),
+        action_fingerprint=gate_input.action_fingerprint,
+        postmortem_required=False,
+    )
+    base = CaseFileTriageV1(
+        case_id="case-prod-cluster-a-orders-volume-drop",
+        scope=("prod", "cluster-a", "orders"),
+        triage_timestamp=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
+        evidence_snapshot=CaseFileEvidenceSnapshot(
+            evidence_status_map={"topic_messages_in_per_sec": EvidenceStatus.PRESENT},
+        ),
+        topology_context=CaseFileTopologyContext(
+            stream_id="stream-orders",
+            topic_role="SOURCE_TOPIC",
+            criticality_tier=CriticalityTier.TIER_1,
+            source_system="Payments",
+            blast_radius="LOCAL_SOURCE_INGESTION",
+            routing=CaseFileRoutingContext(
+                lookup_level="topic_owner",
+                routing_key="OWN::Streaming::Payments::Topic",
+                owning_team_id="team-payments-topic",
+                owning_team_name="Payments Topic Team",
+            ),
+        ),
+        gate_input=gate_input,
+        action_decision=action_decision,
+        policy_versions=CaseFilePolicyVersions(
+            rulebook_version="1",
+            peak_policy_version="v1",
+            prometheus_metrics_contract_version="v1.0.0",
+            exposure_denylist_version="v1.0.0",
+            diagnosis_policy_version="v1",
+        ),
+        triage_hash=TRIAGE_HASH_PLACEHOLDER,
+    )
+    return base.model_copy(update={"triage_hash": compute_casefile_triage_hash(base)})
+
+
+def _wait_for_minio(endpoint_url: str, timeout_seconds: float = 30.0) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        try:
+            with urlopen(f"{endpoint_url}/minio/health/live", timeout=1.0) as response:  # noqa: S310
+                if response.status == 200:
+                    return
+        except (URLError, TimeoutError, ConnectionError):
+            time.sleep(0.25)
+    raise TimeoutError(f"Timed out waiting for MinIO health endpoint at {endpoint_url}")
+
+
+@pytest.fixture
+def minio_object_store() -> tuple[BaseClient, S3ObjectStoreClient]:
+    try:
+        with (
+            DockerContainer(_MINIO_IMAGE)
+            .with_env("MINIO_ROOT_USER", _MINIO_ACCESS_KEY)
+            .with_env("MINIO_ROOT_PASSWORD", _MINIO_SECRET_KEY)
+            .with_command("server /data --address :9000")
+            .with_exposed_ports(9000) as container
+        ):
+            host = container.get_container_host_ip()
+            port = int(container.get_exposed_port(9000))
+            endpoint_url = f"http://{host}:{port}"
+            _wait_for_minio(endpoint_url)
+
+            s3_client = boto3.client(
+                "s3",
+                endpoint_url=endpoint_url,
+                aws_access_key_id=_MINIO_ACCESS_KEY,
+                aws_secret_access_key=_MINIO_SECRET_KEY,
+                region_name="us-east-1",
+            )
+            s3_client.create_bucket(Bucket=_MINIO_BUCKET)
+
+            yield s3_client, S3ObjectStoreClient(
+                s3_client=s3_client,
+                bucket=_MINIO_BUCKET,
+            )
+    except Exception as exc:  # noqa: BLE001
+        pytest.skip(f"Docker/MinIO unavailable for integration test: {exc}")
+
+
+class _FailFirstPutObjectStoreClient(ObjectStoreClientProtocol):
+    def __init__(self, delegate: ObjectStoreClientProtocol) -> None:
+        self._delegate = delegate
+        self._failed_once = False
+
+    def put_if_absent(
+        self,
+        *,
+        key: str,
+        body: bytes,
+        content_type: str,
+        checksum_sha256: str | None = None,
+        metadata: dict[str, str] | None = None,
+    ) -> PutIfAbsentResult:
+        if not self._failed_once:
+            self._failed_once = True
+            raise CriticalDependencyError("transient object store unavailability")
+        return self._delegate.put_if_absent(
+            key=key,
+            body=body,
+            content_type=content_type,
+            checksum_sha256=checksum_sha256,
+            metadata=metadata,
+        )
+
+    def get_object_bytes(self, *, key: str) -> bytes:
+        return self._delegate.get_object_bytes(key=key)
+
+
+@pytest.mark.integration
+def test_casefile_exists_before_outbox_ready_payload(
+    minio_object_store: tuple[BaseClient, S3ObjectStoreClient],
+) -> None:
+    s3_client, object_store_client = minio_object_store
+    casefile = _sample_casefile()
+
+    ready_payload = persist_casefile_and_prepare_outbox_ready(
+        casefile=casefile,
+        object_store_client=object_store_client,
+    )
+    persisted_object = s3_client.get_object(Bucket=_MINIO_BUCKET, Key=ready_payload.object_path)
+    persisted_payload = persisted_object["Body"].read()
+
+    reconstructed = validate_casefile_triage_json(persisted_payload)
+    assert reconstructed.case_id == casefile.case_id
+    assert reconstructed.triage_hash == ready_payload.triage_hash
+
+    outbox_payload = build_outbox_ready_transition_payload(
+        confirmed_casefile=ready_payload,
+    )
+    assert outbox_payload["status"] == "READY"
+    assert outbox_payload["casefile_object_path"] == ready_payload.object_path
+
+
+@pytest.mark.integration
+def test_retry_after_transient_failure_remains_idempotent(
+    minio_object_store: tuple[BaseClient, S3ObjectStoreClient],
+) -> None:
+    _, object_store_client = minio_object_store
+    casefile = _sample_casefile()
+    fail_once_client = _FailFirstPutObjectStoreClient(object_store_client)
+
+    with pytest.raises(CriticalDependencyError, match="transient"):
+        persist_casefile_and_prepare_outbox_ready(
+            casefile=casefile,
+            object_store_client=fail_once_client,
+        )
+
+    ready_payload = persist_casefile_and_prepare_outbox_ready(
+        casefile=casefile,
+        object_store_client=fail_once_client,
+    )
+    retry_result = persist_casefile_triage_write_once(
+        object_store_client=object_store_client,
+        casefile=casefile,
+    )
+
+    assert ready_payload.case_id == casefile.case_id
+    assert ready_payload.triage_hash == casefile.triage_hash
+    assert retry_result.write_result == "idempotent"

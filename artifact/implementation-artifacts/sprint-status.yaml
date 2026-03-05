@@ -88,8 +88,8 @@ development_status:
   # ─────────────────────────────────────────────────────────
   epic-4: in-progress
   4-1-casefile-triage-stage-assembly: done
-  4-2-write-once-casefile-to-object-storage-invariant-a: ready-for-dev
-  4-3-append-only-casefile-stage-files: backlog
+  4-2-write-once-casefile-to-object-storage-invariant-a: review
+  4-3-append-only-casefile-stage-files: ready-for-dev
   4-4-postgres-durable-outbox-state-machine: backlog
   4-5-outbox-to-kafka-event-publishing-invariant-b2: backlog
   4-6-triageexcerpt-exposure-denylist-enforcement: backlog
