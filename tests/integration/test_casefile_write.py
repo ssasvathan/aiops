@@ -11,6 +11,7 @@ from botocore.client import BaseClient
 from testcontainers.core.container import DockerContainer
 
 from aiops_triage_pipeline.contracts.action_decision import ActionDecisionV1
+from aiops_triage_pipeline.contracts.case_header_event import CaseHeaderEventV1
 from aiops_triage_pipeline.contracts.enums import (
     Action,
     CriticalityTier,
@@ -31,7 +32,9 @@ from aiops_triage_pipeline.pipeline.stages.casefile import (
     persist_casefile_and_prepare_outbox_ready,
 )
 from aiops_triage_pipeline.pipeline.stages.outbox import (
+    build_outbox_ready_record,
     build_outbox_ready_transition_payload,
+    publish_case_header_after_confirmed_casefile,
 )
 from aiops_triage_pipeline.storage.casefile_io import (
     compute_casefile_triage_hash,
@@ -118,6 +121,21 @@ def _sample_casefile() -> CaseFileTriageV1:
     return base.model_copy(update={"triage_hash": compute_casefile_triage_hash(base)})
 
 
+def _sample_case_header_event(case_id: str) -> CaseHeaderEventV1:
+    return CaseHeaderEventV1(
+        case_id=case_id,
+        env=Environment.PROD,
+        cluster_id="cluster-a",
+        stream_id="stream-orders",
+        topic="orders",
+        anomaly_family="VOLUME_DROP",
+        criticality_tier=CriticalityTier.TIER_1,
+        final_action=Action.TICKET,
+        routing_key="OWN::Streaming::Payments::Topic",
+        evaluation_ts=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
+    )
+
+
 def _wait_for_minio(endpoint_url: str, timeout_seconds: float = 30.0) -> None:
     deadline = time.monotonic() + timeout_seconds
     while time.monotonic() < deadline:
@@ -191,6 +209,37 @@ class _FailFirstPutObjectStoreClient(ObjectStoreClientProtocol):
         return self._delegate.get_object_bytes(key=key)
 
 
+class _InMemoryObjectStoreClient(ObjectStoreClientProtocol):
+    def __init__(self) -> None:
+        self.store: dict[str, bytes] = {}
+
+    def put_if_absent(
+        self,
+        *,
+        key: str,
+        body: bytes,
+        content_type: str,
+        checksum_sha256: str | None = None,
+        metadata: dict[str, str] | None = None,
+    ) -> PutIfAbsentResult:
+        del content_type, checksum_sha256, metadata
+        if key in self.store:
+            return PutIfAbsentResult.EXISTS
+        self.store[key] = body
+        return PutIfAbsentResult.CREATED
+
+    def get_object_bytes(self, *, key: str) -> bytes:
+        return self.store[key]
+
+
+class _RecordingHeaderPublisher:
+    def __init__(self) -> None:
+        self.published: list[CaseHeaderEventV1] = []
+
+    def publish_case_header(self, *, event: CaseHeaderEventV1) -> None:
+        self.published.append(event)
+
+
 @pytest.mark.integration
 def test_casefile_exists_before_outbox_ready_payload(
     minio_object_store: tuple[BaseClient, S3ObjectStoreClient],
@@ -212,8 +261,21 @@ def test_casefile_exists_before_outbox_ready_payload(
     outbox_payload = build_outbox_ready_transition_payload(
         confirmed_casefile=ready_payload,
     )
+    outbox_record = build_outbox_ready_record(confirmed_casefile=ready_payload)
+    publisher = _RecordingHeaderPublisher()
+    publish_evidence = publish_case_header_after_confirmed_casefile(
+        confirmed_casefile=ready_payload,
+        case_header_event=_sample_case_header_event(casefile.case_id),
+        object_store_client=object_store_client,
+        publisher=publisher,
+    )
+
     assert outbox_payload["status"] == "READY"
     assert outbox_payload["casefile_object_path"] == ready_payload.object_path
+    assert outbox_record.triage_hash == ready_payload.triage_hash
+    assert publish_evidence.case_id == casefile.case_id
+    assert publish_evidence.triage_hash == ready_payload.triage_hash
+    assert len(publisher.published) == 1
 
 
 @pytest.mark.integration
@@ -242,3 +304,25 @@ def test_retry_after_transient_failure_remains_idempotent(
     assert ready_payload.case_id == casefile.case_id
     assert ready_payload.triage_hash == casefile.triage_hash
     assert retry_result.write_result == "idempotent"
+
+
+@pytest.mark.integration
+def test_invariant_a_publish_guardrail_runs_without_docker() -> None:
+    casefile = _sample_casefile()
+    object_store_client = _InMemoryObjectStoreClient()
+    publisher = _RecordingHeaderPublisher()
+
+    ready_payload = persist_casefile_and_prepare_outbox_ready(
+        casefile=casefile,
+        object_store_client=object_store_client,
+    )
+    publish_evidence = publish_case_header_after_confirmed_casefile(
+        confirmed_casefile=ready_payload,
+        case_header_event=_sample_case_header_event(casefile.case_id),
+        object_store_client=object_store_client,
+        publisher=publisher,
+    )
+
+    assert publish_evidence.case_id == casefile.case_id
+    assert publish_evidence.triage_hash == casefile.triage_hash
+    assert len(publisher.published) == 1

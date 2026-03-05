@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 from datetime import UTC, datetime
 
@@ -167,6 +168,8 @@ class _FakeObjectStoreClient(ObjectStoreClientProtocol):
     def __init__(self) -> None:
         self.store: dict[str, bytes] = {}
         self.last_put: tuple[str, bytes] | None = None
+        self.last_checksum: str | None = None
+        self.last_metadata: dict[str, str] | None = None
         self.fail_put: Exception | None = None
         self.fail_get: Exception | None = None
 
@@ -179,10 +182,12 @@ class _FakeObjectStoreClient(ObjectStoreClientProtocol):
         checksum_sha256: str | None = None,
         metadata: dict[str, str] | None = None,
     ) -> PutIfAbsentResult:
-        del content_type, checksum_sha256, metadata
+        del content_type
         if self.fail_put is not None:
             raise self.fail_put
         self.last_put = (key, body)
+        self.last_checksum = checksum_sha256
+        self.last_metadata = dict(metadata or {})
         if key in self.store:
             return PutIfAbsentResult.EXISTS
         self.store[key] = body
@@ -218,6 +223,12 @@ def test_persist_casefile_triage_write_once_creates_object() -> None:
     assert client.last_put is not None
     assert client.last_put[0] == expected_key
     assert client.last_put[1] == serialize_casefile_triage(casefile)
+    payload_sha256 = hashlib.sha256(serialize_casefile_triage(casefile)).digest()
+    assert client.last_checksum == base64.b64encode(payload_sha256).decode("ascii")
+    assert client.last_metadata == {
+        "triage_hash": casefile.triage_hash,
+        "payload_sha256": hashlib.sha256(serialize_casefile_triage(casefile)).hexdigest(),
+    }
 
 
 def test_persist_casefile_triage_write_once_is_idempotent_on_duplicate() -> None:

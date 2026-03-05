@@ -71,6 +71,7 @@ def persist_casefile_triage_write_once(
 ) -> CasefilePersistResult:
     """Persist triage.json using create-only semantics with idempotent retry handling."""
     payload = serialize_casefile_triage(casefile)
+    payload_sha256 = compute_sha256_hex(payload)
     expected_hash = compute_casefile_triage_hash(casefile)
     if casefile.triage_hash != expected_hash:
         raise InvariantViolation(
@@ -78,13 +79,16 @@ def persist_casefile_triage_write_once(
         )
 
     object_path = build_casefile_triage_object_key(casefile.case_id)
-    checksum_sha256 = _to_s3_checksum_sha256(casefile.triage_hash)
+    checksum_sha256 = _to_s3_checksum_sha256(payload_sha256)
     put_result = object_store_client.put_if_absent(
         key=object_path,
         body=payload,
         content_type="application/json",
         checksum_sha256=checksum_sha256,
-        metadata={"triage_hash": casefile.triage_hash},
+        metadata={
+            "triage_hash": casefile.triage_hash,
+            "payload_sha256": payload_sha256,
+        },
     )
     if put_result is PutIfAbsentResult.CREATED:
         return CasefilePersistResult(

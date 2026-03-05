@@ -466,6 +466,22 @@ class _WriteOnceConflictObjectStoreClient(ObjectStoreClientProtocol):
         return b'{"schema_version":"v1","triage_hash":"' + ("0" * 64).encode("utf-8") + b'"}'
 
 
+class _RecordingLogger:
+    def __init__(self) -> None:
+        self.errors: list[dict[str, object]] = []
+        self.criticals: list[dict[str, object]] = []
+        self.infos: list[dict[str, object]] = []
+
+    def error(self, message: str, **kwargs: object) -> None:
+        self.errors.append({"message": message, **kwargs})
+
+    def critical(self, message: str, **kwargs: object) -> None:
+        self.criticals.append({"message": message, **kwargs})
+
+    def info(self, message: str, **kwargs: object) -> None:
+        self.infos.append({"message": message, **kwargs})
+
+
 def test_persist_casefile_and_prepare_outbox_ready_requires_confirmed_write(tmp_path: Path) -> None:
     (
         scope,
@@ -535,6 +551,48 @@ def test_persist_casefile_and_prepare_outbox_ready_fails_fast_when_store_unavail
             casefile=assembled,
             object_store_client=_UnavailableObjectStoreClient(),
         )
+
+
+def test_persist_casefile_and_prepare_outbox_ready_emits_explicit_halt_alert(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (
+        scope,
+        evidence_output,
+        peak_output,
+        topology_output,
+        gate_input,
+        action_decision,
+    ) = _build_scope_inputs(tmp_path)
+    assembled = assemble_casefile_triage_stage(
+        scope=scope,
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        topology_output=topology_output,
+        gate_input=gate_input,
+        action_decision=action_decision,
+        rulebook_policy=_rulebook_policy_for_tests(),
+        peak_policy=_peak_policy_for_tests(),
+        prometheus_metrics_contract=_prometheus_contract_for_tests(),
+        denylist=_denylist_for_tests(),
+        diagnosis_policy_version="v1",
+        triage_timestamp=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
+    )
+    logger = _RecordingLogger()
+    monkeypatch.setattr(
+        "aiops_triage_pipeline.pipeline.stages.casefile.get_logger",
+        lambda _: logger,
+    )
+
+    with pytest.raises(CriticalDependencyError, match="object storage unavailable"):
+        persist_casefile_and_prepare_outbox_ready(
+            casefile=assembled,
+            object_store_client=_UnavailableObjectStoreClient(),
+        )
+
+    assert len(logger.criticals) == 1
+    assert logger.criticals[0]["event_type"] == "DegradedModeEvent"
+    assert logger.criticals[0]["affected_scope"] == "object_storage"
 
 
 def test_persist_casefile_and_prepare_outbox_ready_raises_on_write_once_violation(

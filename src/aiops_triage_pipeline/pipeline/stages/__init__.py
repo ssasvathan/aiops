@@ -8,7 +8,11 @@ from aiops_triage_pipeline.pipeline.stages.gating import (
     GateInputContext,
     collect_gate_inputs_by_scope,
 )
-from aiops_triage_pipeline.pipeline.stages.outbox import build_outbox_ready_transition_payload
+from aiops_triage_pipeline.pipeline.stages.outbox import (
+    build_outbox_ready_record,
+    build_outbox_ready_transition_payload,
+    publish_case_header_after_confirmed_casefile,
+)
 from aiops_triage_pipeline.pipeline.stages.peak import (
     build_sustained_window_state_by_key,
     collect_peak_stage_output,
@@ -28,7 +32,9 @@ from aiops_triage_pipeline.pipeline.stages.topology import (
 __all__ = [
     "assemble_casefile_triage_stage",
     "persist_casefile_and_prepare_outbox_ready",
+    "build_outbox_ready_record",
     "build_outbox_ready_transition_payload",
+    "publish_case_header_after_confirmed_casefile",
     "GateInputContext",
     "collect_gate_inputs_by_scope",
     "TopologyImpactContext",

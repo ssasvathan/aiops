@@ -1,6 +1,6 @@
 # Story 4.2: Write-Once CaseFile to Object Storage (Invariant A)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -307,44 +307,60 @@ GPT-5 Codex
 
 ### Debug Log References
 
-- Workflow runner: `_bmad/core/tasks/workflow.xml` with config `_bmad/bmm/workflows/4-implementation/create-story/workflow.yaml`.
-- Story selected from `artifact/implementation-artifacts/sprint-status.yaml` as first backlog item in order: `4-2-write-once-casefile-to-object-storage-invariant-a`.
-- Epic/story context loaded from planning artifacts, project context, prior story file, and repository source tree.
-- Latest-technology verification performed on March 4, 2026 using official documentation.
-- Implemented S3/MinIO conditional create-only object-store client with explicit `IfNoneMatch="*"` semantics and error mapping into project exception taxonomy.
-- Implemented write-once persistence helper enforcing deterministic object key `cases/{case_id}/triage.json`, idempotent retry acceptance, and mismatch invariant failure.
-- Added Stage 4 persistence orchestration that logs persistence outcomes and emits typed outbox-ready payload only after confirmed object-store write.
-- Added guardrail outbox stage payload builder constrained to confirmed-write payload contract.
+- Workflow runner: `_bmad/core/tasks/workflow.xml` with config `_bmad/bmm/workflows/4-implementation/code-review/workflow.yaml`.
+- Story reviewed: `artifact/implementation-artifacts/4-2-write-once-casefile-to-object-storage-invariant-a.md`.
+- Adversarial review identified and fixed high/medium findings around checksum integrity, outbox record/hash persistence, invariant-A publish sequencing, and explicit halt alerting.
+- Corrected `ChecksumSHA256` semantics to use SHA-256 of persisted payload bytes (not logical `triage_hash`).
+- Added typed outbox record helpers (`OutboxRecordV1`) and state helper functions to carry `triage_hash` in READY records.
+- Added guarded header publish path that verifies object readback + hash consistency before publish evidence is emitted.
+- Added explicit critical alert event logging (`DegradedModeEvent`) for object-storage halt-class failures.
 - Test execution:
-  - `uv run pytest -q tests/unit/storage/test_casefile_io.py tests/unit/pipeline/stages/test_casefile.py` (19 passed)
-  - `uv run pytest -q tests/integration/test_casefile_write.py -m integration` (2 skipped: Docker/MinIO unavailable in environment)
-  - `uv run pytest -q` (324 passed, 3 skipped)
-  - `uv run ruff check` (passed)
+  - `uv run pytest -q tests/unit/storage/test_casefile_io.py tests/unit/pipeline/stages/test_casefile.py tests/unit/pipeline/stages/test_outbox.py tests/unit/outbox/test_state_machine.py tests/unit/outbox/test_publisher.py` (29 passed)
+  - `uv run pytest -q tests/integration/test_casefile_write.py -m integration` (1 passed, 2 skipped: Docker/MinIO unavailable in environment)
+  - `uv run pytest -q` (335 passed, 3 skipped)
+  - `uv run ruff check src tests` (passed)
 
 ### Completion Notes List
 
 - Implemented object-store adapter and persistence primitives for write-once `triage.json` artifacts at `cases/{case_id}/triage.json`.
 - Enforced idempotency semantics: duplicate write with identical bytes succeeds as idempotent; mismatched duplicate raises `InvariantViolation`.
-- Enforced fail-fast behavior for object-store outages via `CriticalDependencyError`; no silent degradation path added.
+- Enforced fail-fast behavior for object-store outages via `CriticalDependencyError` with explicit `DegradedModeEvent` critical alert emission.
 - Added typed `OutboxReadyCasefileV1` contract so READY transition inputs are derived only from confirmed-write metadata (`case_id`, `object_path`, `triage_hash`).
-- Added unit and integration tests covering success, idempotent retry, invariant conflict, and unavailability scenarios; integration tests are containerized via testcontainers MinIO.
+- Added `OutboxRecordV1` + outbox state helper functions to persist hash-bearing READY records used by publish sequencing.
+- Added guarded header publish path that blocks header emission unless persisted CaseFile is readable and hash-valid (Invariant A enforcement).
+- Expanded unit and integration coverage to include checksum correctness, READY-record construction, and publish guardrail success/failure paths.
+
+### Senior Developer Review (AI)
+
+- Review date: 2026-03-05
+- Outcome: **Approved after fixes**
+- Resolved findings:
+  - Fixed S3 checksum mismatch risk by aligning `ChecksumSHA256` with payload bytes.
+  - Added explicit outbox record shape carrying `triage_hash` and object reference.
+  - Enforced readback-before-publish guardrail for case header emission.
+  - Added explicit halt alert event for object-store critical dependency failures.
+  - Added integration coverage that runs even without Docker, while retaining MinIO testcontainers coverage.
 
 ### Change Log
 
 - 2026-03-05: Implemented Story 4.2 Invariant A write-before-ready persistence, typed outbox-ready handoff contract, and storage/stage integration tests.
+- 2026-03-05: Code-review remediation pass: fixed checksum semantics, added outbox READY record + publish guardrail, explicit halt alert event, and expanded test coverage.
 
 ### File List
 
 - `artifact/implementation-artifacts/4-2-write-once-casefile-to-object-storage-invariant-a.md`
 - `artifact/implementation-artifacts/sprint-status.yaml`
-- `src/aiops_triage_pipeline/storage/client.py`
 - `src/aiops_triage_pipeline/storage/casefile_io.py`
-- `src/aiops_triage_pipeline/storage/__init__.py`
+- `src/aiops_triage_pipeline/outbox/__init__.py`
+- `src/aiops_triage_pipeline/outbox/publisher.py`
+- `src/aiops_triage_pipeline/outbox/schema.py`
+- `src/aiops_triage_pipeline/outbox/state_machine.py`
+- `src/aiops_triage_pipeline/pipeline/stages/__init__.py`
 - `src/aiops_triage_pipeline/pipeline/stages/casefile.py`
 - `src/aiops_triage_pipeline/pipeline/stages/outbox.py`
-- `src/aiops_triage_pipeline/pipeline/stages/__init__.py`
-- `src/aiops_triage_pipeline/outbox/schema.py`
-- `src/aiops_triage_pipeline/outbox/__init__.py`
-- `tests/unit/storage/test_casefile_io.py`
-- `tests/unit/pipeline/stages/test_casefile.py`
 - `tests/integration/test_casefile_write.py`
+- `tests/unit/outbox/test_publisher.py`
+- `tests/unit/outbox/test_state_machine.py`
+- `tests/unit/pipeline/stages/test_casefile.py`
+- `tests/unit/pipeline/stages/test_outbox.py`
+- `tests/unit/storage/test_casefile_io.py`

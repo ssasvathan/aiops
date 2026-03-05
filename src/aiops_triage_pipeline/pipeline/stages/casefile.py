@@ -14,7 +14,7 @@ from aiops_triage_pipeline.contracts.prometheus_metrics import PrometheusMetrics
 from aiops_triage_pipeline.contracts.rulebook import RulebookV1
 from aiops_triage_pipeline.denylist.enforcement import apply_denylist
 from aiops_triage_pipeline.denylist.loader import DenylistV1
-from aiops_triage_pipeline.errors.exceptions import IntegrationError
+from aiops_triage_pipeline.errors.exceptions import CriticalDependencyError, IntegrationError
 from aiops_triage_pipeline.logging.setup import get_logger
 from aiops_triage_pipeline.models.case_file import (
     TRIAGE_HASH_PLACEHOLDER,
@@ -26,6 +26,7 @@ from aiops_triage_pipeline.models.case_file import (
     CaseFileTopologyContext,
     CaseFileTriageV1,
 )
+from aiops_triage_pipeline.models.events import DegradedModeEvent
 from aiops_triage_pipeline.models.evidence import EvidenceStageOutput
 from aiops_triage_pipeline.models.peak import PeakStageOutput
 from aiops_triage_pipeline.outbox.schema import OutboxReadyCasefileV1
@@ -248,14 +249,35 @@ def persist_casefile_and_prepare_outbox_ready(
             casefile=casefile,
         )
     except Exception as exc:
-        logger.error(
-            "casefile_persistence_failed",
-            event_type="casefile.persistence_failed",
-            case_id=casefile.case_id,
-            object_path=object_path,
-            reason=str(exc),
-            error_type=type(exc).__name__,
-        )
+        if isinstance(exc, CriticalDependencyError):
+            degraded_event = DegradedModeEvent(
+                affected_scope="object_storage",
+                reason=str(exc),
+                capped_action_level="HALT",
+                estimated_impact_window="unknown",
+                timestamp=datetime.now(tz=UTC),
+            )
+            logger.critical(
+                "casefile_persistence_halt_alert",
+                event_type="DegradedModeEvent",
+                case_id=casefile.case_id,
+                object_path=object_path,
+                affected_scope=degraded_event.affected_scope,
+                reason=degraded_event.reason,
+                capped_action_level=degraded_event.capped_action_level,
+                estimated_impact_window=degraded_event.estimated_impact_window,
+                timestamp=degraded_event.timestamp.isoformat(),
+                error_type=type(exc).__name__,
+            )
+        else:
+            logger.error(
+                "casefile_persistence_failed",
+                event_type="casefile.persistence_failed",
+                case_id=casefile.case_id,
+                object_path=object_path,
+                reason=str(exc),
+                error_type=type(exc).__name__,
+            )
         raise
 
     logger.info(
