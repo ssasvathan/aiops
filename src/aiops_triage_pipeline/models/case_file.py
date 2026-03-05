@@ -8,12 +8,16 @@ from typing import Literal
 from pydantic import AwareDatetime, BaseModel, Field, field_validator
 
 from aiops_triage_pipeline.contracts.action_decision import ActionDecisionV1
+from aiops_triage_pipeline.contracts.diagnosis_report import DiagnosisReportV1
 from aiops_triage_pipeline.contracts.enums import Action, CriticalityTier, EvidenceStatus
 from aiops_triage_pipeline.contracts.gate_input import GateInputV1
 from aiops_triage_pipeline.models.peak import PeakWindowContext
 
 _HEX_64 = re.compile(r"^[0-9a-f]{64}$")
 TRIAGE_HASH_PLACEHOLDER = "0" * 64
+DIAGNOSIS_HASH_PLACEHOLDER = "0" * 64
+LINKAGE_HASH_PLACEHOLDER = "0" * 64
+LABELS_HASH_PLACEHOLDER = "0" * 64
 
 
 class CaseFilePolicyVersions(BaseModel, frozen=True):
@@ -107,4 +111,76 @@ class CaseFileTriageV1(BaseModel, frozen=True):
     def _validate_triage_hash(cls, value: str) -> str:
         if not _HEX_64.fullmatch(value):
             raise ValueError("triage_hash must be a 64-char lowercase SHA-256 hex string")
+        return value
+
+
+class CaseFileDiagnosisV1(BaseModel, frozen=True):
+    """CaseFile diagnosis.json payload with hash-chain dependency on triage.json."""
+
+    schema_version: Literal["v1"] = "v1"
+    case_id: str
+    diagnosis_report: DiagnosisReportV1
+    triage_hash: str
+    diagnosis_hash: str
+
+    @field_validator("triage_hash", "diagnosis_hash")
+    @classmethod
+    def _validate_hash_fields(cls, value: str) -> str:
+        if not _HEX_64.fullmatch(value):
+            raise ValueError("hash fields must be 64-char lowercase SHA-256 hex strings")
+        return value
+
+
+class CaseFileLinkageV1(BaseModel, frozen=True):
+    """CaseFile linkage.json payload with hash-chain dependencies."""
+
+    schema_version: Literal["v1"] = "v1"
+    case_id: str
+    linkage_status: Literal["linked", "not-linked", "skipped", "failed"]
+    linkage_reason: str
+    triage_hash: str
+    diagnosis_hash: str | None = None
+    linkage_hash: str
+
+    @field_validator("triage_hash", "linkage_hash")
+    @classmethod
+    def _validate_required_hash_fields(cls, value: str) -> str:
+        if not _HEX_64.fullmatch(value):
+            raise ValueError("hash fields must be 64-char lowercase SHA-256 hex strings")
+        return value
+
+    @field_validator("diagnosis_hash")
+    @classmethod
+    def _validate_optional_diagnosis_hash(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not _HEX_64.fullmatch(value):
+            raise ValueError("diagnosis_hash must be a 64-char lowercase SHA-256 hex string")
+        return value
+
+
+class CaseFileLabelsV1(BaseModel, frozen=True):
+    """CaseFile labels.json payload with hash-chain dependencies."""
+
+    schema_version: Literal["v1"] = "v1"
+    case_id: str
+    labels: dict[str, str]
+    triage_hash: str
+    diagnosis_hash: str | None = None
+    labels_hash: str
+
+    @field_validator("triage_hash", "labels_hash")
+    @classmethod
+    def _validate_required_hash_fields(cls, value: str) -> str:
+        if not _HEX_64.fullmatch(value):
+            raise ValueError("hash fields must be 64-char lowercase SHA-256 hex strings")
+        return value
+
+    @field_validator("diagnosis_hash")
+    @classmethod
+    def _validate_optional_diagnosis_hash(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if not _HEX_64.fullmatch(value):
+            raise ValueError("diagnosis_hash must be a 64-char lowercase SHA-256 hex string")
         return value

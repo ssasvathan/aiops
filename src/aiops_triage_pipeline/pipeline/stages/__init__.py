@@ -2,7 +2,13 @@
 
 from aiops_triage_pipeline.pipeline.stages.casefile import (
     assemble_casefile_triage_stage,
+    load_casefile_diagnosis_stage_if_present,
+    load_casefile_labels_stage_if_present,
+    load_casefile_linkage_stage_if_present,
     persist_casefile_and_prepare_outbox_ready,
+    persist_casefile_diagnosis_stage,
+    persist_casefile_labels_stage,
+    persist_casefile_linkage_stage,
 )
 from aiops_triage_pipeline.pipeline.stages.gating import (
     GateInputContext,
@@ -31,6 +37,12 @@ from aiops_triage_pipeline.pipeline.stages.topology import (
 
 __all__ = [
     "assemble_casefile_triage_stage",
+    "persist_casefile_diagnosis_stage",
+    "persist_casefile_linkage_stage",
+    "persist_casefile_labels_stage",
+    "load_casefile_diagnosis_stage_if_present",
+    "load_casefile_linkage_stage_if_present",
+    "load_casefile_labels_stage_if_present",
     "persist_casefile_and_prepare_outbox_ready",
     "build_outbox_ready_record",
     "build_outbox_ready_transition_payload",

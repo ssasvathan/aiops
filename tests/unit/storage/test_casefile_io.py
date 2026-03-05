@@ -8,16 +8,20 @@ import pytest
 from pydantic import ValidationError
 
 from aiops_triage_pipeline.contracts.action_decision import ActionDecisionV1
+from aiops_triage_pipeline.contracts.diagnosis_report import DiagnosisReportV1, EvidencePack
 from aiops_triage_pipeline.contracts.enums import (
     Action,
     CriticalityTier,
+    DiagnosisConfidence,
     Environment,
     EvidenceStatus,
 )
 from aiops_triage_pipeline.contracts.gate_input import Finding, GateInputV1
 from aiops_triage_pipeline.errors.exceptions import CriticalDependencyError, InvariantViolation
 from aiops_triage_pipeline.models.case_file import (
+    DIAGNOSIS_HASH_PLACEHOLDER,
     TRIAGE_HASH_PLACEHOLDER,
+    CaseFileDiagnosisV1,
     CaseFileEvidenceSnapshot,
     CaseFilePolicyVersions,
     CaseFileRoutingContext,
@@ -25,12 +29,19 @@ from aiops_triage_pipeline.models.case_file import (
     CaseFileTriageV1,
 )
 from aiops_triage_pipeline.storage.casefile_io import (
+    build_casefile_stage_object_key,
     build_casefile_triage_object_key,
+    compute_casefile_diagnosis_hash,
     compute_casefile_triage_hash,
     compute_sha256_hex,
     has_valid_casefile_triage_hash,
+    list_present_casefile_stages,
+    persist_casefile_diagnosis_write_once,
     persist_casefile_triage_write_once,
+    read_casefile_stage_json_or_none,
+    serialize_casefile_stage,
     serialize_casefile_triage,
+    validate_casefile_diagnosis_json,
     validate_casefile_triage_json,
 )
 from aiops_triage_pipeline.storage.client import (
@@ -105,6 +116,29 @@ def _sample_casefile() -> CaseFileTriageV1:
         triage_hash=TRIAGE_HASH_PLACEHOLDER,
     )
     return base.model_copy(update={"triage_hash": compute_casefile_triage_hash(base)})
+
+
+def _sample_casefile_diagnosis(*, triage_hash: str) -> CaseFileDiagnosisV1:
+    base = CaseFileDiagnosisV1(
+        case_id="case-prod-cluster-a-orders-volume-drop",
+        diagnosis_report=DiagnosisReportV1(
+            case_id="case-prod-cluster-a-orders-volume-drop",
+            verdict="UNKNOWN",
+            fault_domain=None,
+            confidence=DiagnosisConfidence.LOW,
+            evidence_pack=EvidencePack(
+                facts=("topic_messages_in_per_sec dropped sharply",),
+                missing_evidence=("consumer_group_lag",),
+                matched_rules=("AG2",),
+            ),
+            next_checks=("validate producer health",),
+            reason_codes=("LLM_TIMEOUT",),
+            triage_hash=triage_hash,
+        ),
+        triage_hash=triage_hash,
+        diagnosis_hash=DIAGNOSIS_HASH_PLACEHOLDER,
+    )
+    return base.model_copy(update={"diagnosis_hash": compute_casefile_diagnosis_hash(base)})
 
 
 def test_serialize_casefile_triage_is_deterministic_bytes() -> None:
@@ -206,6 +240,18 @@ def test_build_casefile_triage_object_key_uses_required_layout() -> None:
     )
 
 
+def test_build_casefile_stage_object_key_uses_required_layout() -> None:
+    assert (
+        build_casefile_stage_object_key("case-prod-cluster-a-orders", stage="diagnosis")
+        == "cases/case-prod-cluster-a-orders/diagnosis.json"
+    )
+
+
+def test_build_casefile_stage_object_key_rejects_invalid_stage_name() -> None:
+    with pytest.raises(ValueError, match="Unsupported casefile stage"):
+        build_casefile_stage_object_key("case-prod-cluster-a-orders", stage="unexpected")
+
+
 def test_persist_casefile_triage_write_once_creates_object() -> None:
     client = _FakeObjectStoreClient()
     casefile = _sample_casefile()
@@ -269,3 +315,88 @@ def test_persist_casefile_triage_write_once_fails_fast_when_object_store_unavail
             object_store_client=client,
             casefile=casefile,
         )
+
+
+def test_persist_casefile_diagnosis_write_once_creates_object() -> None:
+    client = _FakeObjectStoreClient()
+    triage_casefile = _sample_casefile()
+    diagnosis_casefile = _sample_casefile_diagnosis(triage_hash=triage_casefile.triage_hash)
+
+    persisted = persist_casefile_diagnosis_write_once(
+        object_store_client=client,
+        casefile=diagnosis_casefile,
+    )
+
+    expected_key = build_casefile_stage_object_key(diagnosis_casefile.case_id, stage="diagnosis")
+    assert persisted.stage == "diagnosis"
+    assert persisted.object_path == expected_key
+    assert persisted.stage_hash == diagnosis_casefile.diagnosis_hash
+    assert persisted.write_result == "created"
+    assert client.last_put is not None
+    assert client.last_put[1] == serialize_casefile_stage(diagnosis_casefile)
+    assert client.last_metadata is not None
+    assert client.last_metadata["triage_hash"] == triage_casefile.triage_hash
+    assert client.last_metadata["diagnosis_hash"] == diagnosis_casefile.diagnosis_hash
+
+
+def test_persist_casefile_diagnosis_write_once_rejects_overwrite_payload_mismatch() -> None:
+    client = _FakeObjectStoreClient()
+    triage_casefile = _sample_casefile()
+    diagnosis_casefile = _sample_casefile_diagnosis(triage_hash=triage_casefile.triage_hash)
+    key = build_casefile_stage_object_key(diagnosis_casefile.case_id, stage="diagnosis")
+    client.store[key] = b'{"schema_version":"v1","diagnosis_hash":"%s"}' % (
+        "0" * 64
+    ).encode("utf-8")
+
+    with pytest.raises(InvariantViolation, match="write-once"):
+        persist_casefile_diagnosis_write_once(
+            object_store_client=client,
+            casefile=diagnosis_casefile,
+        )
+
+
+def test_read_casefile_stage_json_or_none_returns_none_for_missing_stage() -> None:
+    client = _FakeObjectStoreClient()
+
+    loaded = read_casefile_stage_json_or_none(
+        object_store_client=client,
+        case_id="case-prod-cluster-a-orders-volume-drop",
+        stage="diagnosis",
+    )
+
+    assert loaded is None
+
+
+def test_read_casefile_stage_json_or_none_round_trips_diagnosis_payload() -> None:
+    client = _FakeObjectStoreClient()
+    triage_casefile = _sample_casefile()
+    diagnosis_casefile = _sample_casefile_diagnosis(triage_hash=triage_casefile.triage_hash)
+    key = build_casefile_stage_object_key(diagnosis_casefile.case_id, stage="diagnosis")
+    client.store[key] = serialize_casefile_stage(diagnosis_casefile)
+
+    loaded = read_casefile_stage_json_or_none(
+        object_store_client=client,
+        case_id=diagnosis_casefile.case_id,
+        stage="diagnosis",
+    )
+
+    assert loaded is not None
+    assert validate_casefile_diagnosis_json(serialize_casefile_stage(diagnosis_casefile)) == loaded
+
+
+def test_list_present_casefile_stages_returns_written_stages_only() -> None:
+    client = _FakeObjectStoreClient()
+    triage_casefile = _sample_casefile()
+    diagnosis_casefile = _sample_casefile_diagnosis(triage_hash=triage_casefile.triage_hash)
+    triage_key = build_casefile_triage_object_key(triage_casefile.case_id)
+    client.store[triage_key] = serialize_casefile_triage(triage_casefile)
+    client.store[
+        build_casefile_stage_object_key(diagnosis_casefile.case_id, stage="diagnosis")
+    ] = serialize_casefile_stage(diagnosis_casefile)
+
+    present = list_present_casefile_stages(
+        object_store_client=client,
+        case_id=triage_casefile.case_id,
+    )
+
+    assert present == ("triage", "diagnosis")

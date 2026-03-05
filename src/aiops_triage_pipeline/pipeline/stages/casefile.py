@@ -14,13 +14,20 @@ from aiops_triage_pipeline.contracts.prometheus_metrics import PrometheusMetrics
 from aiops_triage_pipeline.contracts.rulebook import RulebookV1
 from aiops_triage_pipeline.denylist.enforcement import apply_denylist
 from aiops_triage_pipeline.denylist.loader import DenylistV1
-from aiops_triage_pipeline.errors.exceptions import CriticalDependencyError, IntegrationError
+from aiops_triage_pipeline.errors.exceptions import (
+    CriticalDependencyError,
+    IntegrationError,
+    InvariantViolation,
+)
 from aiops_triage_pipeline.logging.setup import get_logger
 from aiops_triage_pipeline.models.case_file import (
     TRIAGE_HASH_PLACEHOLDER,
+    CaseFileDiagnosisV1,
     CaseFileDownstreamImpact,
     CaseFileEvidenceRow,
     CaseFileEvidenceSnapshot,
+    CaseFileLabelsV1,
+    CaseFileLinkageV1,
     CaseFilePolicyVersions,
     CaseFileRoutingContext,
     CaseFileTopologyContext,
@@ -32,9 +39,17 @@ from aiops_triage_pipeline.models.peak import PeakStageOutput
 from aiops_triage_pipeline.outbox.schema import OutboxReadyCasefileV1
 from aiops_triage_pipeline.pipeline.stages.topology import TopologyStageOutput
 from aiops_triage_pipeline.storage.casefile_io import (
+    build_casefile_stage_object_key,
     build_casefile_triage_object_key,
+    compute_casefile_diagnosis_hash,
+    compute_casefile_labels_hash,
+    compute_casefile_linkage_hash,
     compute_casefile_triage_hash,
+    persist_casefile_diagnosis_write_once,
+    persist_casefile_labels_write_once,
+    persist_casefile_linkage_write_once,
     persist_casefile_triage_write_once,
+    read_casefile_stage_json_or_none,
     serialize_casefile_triage,
     validate_casefile_triage_json,
 )
@@ -299,3 +314,213 @@ def persist_casefile_and_prepare_outbox_ready(
         raise IntegrationError(
             "failed to construct outbox-ready payload from confirmed casefile persistence"
         ) from exc
+
+
+def persist_casefile_diagnosis_stage(
+    *,
+    casefile: CaseFileDiagnosisV1,
+    object_store_client: ObjectStoreClientProtocol,
+) -> str:
+    """Persist diagnosis.json as an append-only stage artifact with dependency checks."""
+    _validate_diagnosis_stage_hashes(
+        casefile=casefile,
+        object_store_client=object_store_client,
+    )
+    persisted = persist_casefile_diagnosis_write_once(
+        object_store_client=object_store_client,
+        casefile=casefile,
+    )
+    return persisted.object_path
+
+
+def persist_casefile_linkage_stage(
+    *,
+    casefile: CaseFileLinkageV1,
+    object_store_client: ObjectStoreClientProtocol,
+) -> str:
+    """Persist linkage.json as an append-only stage artifact with dependency checks."""
+    _validate_linkage_stage_hashes(
+        casefile=casefile,
+        object_store_client=object_store_client,
+    )
+    persisted = persist_casefile_linkage_write_once(
+        object_store_client=object_store_client,
+        casefile=casefile,
+    )
+    return persisted.object_path
+
+
+def persist_casefile_labels_stage(
+    *,
+    casefile: CaseFileLabelsV1,
+    object_store_client: ObjectStoreClientProtocol,
+) -> str:
+    """Persist labels.json as an append-only stage artifact with dependency checks."""
+    _validate_labels_stage_hashes(
+        casefile=casefile,
+        object_store_client=object_store_client,
+    )
+    persisted = persist_casefile_labels_write_once(
+        object_store_client=object_store_client,
+        casefile=casefile,
+    )
+    return persisted.object_path
+
+
+def load_casefile_diagnosis_stage_if_present(
+    *,
+    case_id: str,
+    object_store_client: ObjectStoreClientProtocol,
+) -> CaseFileDiagnosisV1 | None:
+    """Load diagnosis.json and return explicit absence when stage was not written."""
+    payload = read_casefile_stage_json_or_none(
+        object_store_client=object_store_client,
+        case_id=case_id,
+        stage="diagnosis",
+    )
+    if payload is None:
+        _log_casefile_stage_absent(case_id=case_id, stage="diagnosis")
+        return None
+    return payload
+
+
+def load_casefile_linkage_stage_if_present(
+    *,
+    case_id: str,
+    object_store_client: ObjectStoreClientProtocol,
+) -> CaseFileLinkageV1 | None:
+    """Load linkage.json and return explicit absence when stage was not written."""
+    payload = read_casefile_stage_json_or_none(
+        object_store_client=object_store_client,
+        case_id=case_id,
+        stage="linkage",
+    )
+    if payload is None:
+        _log_casefile_stage_absent(case_id=case_id, stage="linkage")
+        return None
+    return payload
+
+
+def load_casefile_labels_stage_if_present(
+    *,
+    case_id: str,
+    object_store_client: ObjectStoreClientProtocol,
+) -> CaseFileLabelsV1 | None:
+    """Load labels.json and return explicit absence when stage was not written."""
+    payload = read_casefile_stage_json_or_none(
+        object_store_client=object_store_client,
+        case_id=case_id,
+        stage="labels",
+    )
+    if payload is None:
+        _log_casefile_stage_absent(case_id=case_id, stage="labels")
+        return None
+    return payload
+
+
+def _validate_diagnosis_stage_hashes(
+    *,
+    casefile: CaseFileDiagnosisV1,
+    object_store_client: ObjectStoreClientProtocol,
+) -> None:
+    expected_diagnosis_hash = compute_casefile_diagnosis_hash(casefile)
+    if casefile.diagnosis_hash != expected_diagnosis_hash:
+        raise InvariantViolation("diagnosis_hash mismatch before stage persistence")
+
+    triage_payload = read_casefile_stage_json_or_none(
+        object_store_client=object_store_client,
+        case_id=casefile.case_id,
+        stage="triage",
+    )
+    if triage_payload is None:
+        raise InvariantViolation("diagnosis stage requires triage.json to exist")
+
+    triage_hash = compute_casefile_triage_hash(triage_payload)
+    if casefile.triage_hash != triage_hash:
+        raise InvariantViolation(
+            "diagnosis stage triage_hash mismatch (tamper or stale dependency)"
+        )
+
+
+def _validate_linkage_stage_hashes(
+    *,
+    casefile: CaseFileLinkageV1,
+    object_store_client: ObjectStoreClientProtocol,
+) -> None:
+    expected_linkage_hash = compute_casefile_linkage_hash(casefile)
+    if casefile.linkage_hash != expected_linkage_hash:
+        raise InvariantViolation("linkage_hash mismatch before stage persistence")
+
+    triage_payload = read_casefile_stage_json_or_none(
+        object_store_client=object_store_client,
+        case_id=casefile.case_id,
+        stage="triage",
+    )
+    if triage_payload is None:
+        raise InvariantViolation("linkage stage requires triage.json to exist")
+
+    triage_hash = compute_casefile_triage_hash(triage_payload)
+    if casefile.triage_hash != triage_hash:
+        raise InvariantViolation("linkage stage triage_hash mismatch (tamper or stale dependency)")
+
+    if casefile.diagnosis_hash is not None:
+        diagnosis_payload = read_casefile_stage_json_or_none(
+            object_store_client=object_store_client,
+            case_id=casefile.case_id,
+            stage="diagnosis",
+        )
+        if diagnosis_payload is None:
+            raise InvariantViolation(
+                "linkage stage diagnosis_hash was provided but diagnosis.json is absent"
+            )
+        diagnosis_hash = compute_casefile_diagnosis_hash(diagnosis_payload)
+        if casefile.diagnosis_hash != diagnosis_hash:
+            raise InvariantViolation("linkage stage diagnosis_hash mismatch")
+
+
+def _validate_labels_stage_hashes(
+    *,
+    casefile: CaseFileLabelsV1,
+    object_store_client: ObjectStoreClientProtocol,
+) -> None:
+    expected_labels_hash = compute_casefile_labels_hash(casefile)
+    if casefile.labels_hash != expected_labels_hash:
+        raise InvariantViolation("labels_hash mismatch before stage persistence")
+
+    triage_payload = read_casefile_stage_json_or_none(
+        object_store_client=object_store_client,
+        case_id=casefile.case_id,
+        stage="triage",
+    )
+    if triage_payload is None:
+        raise InvariantViolation("labels stage requires triage.json to exist")
+
+    triage_hash = compute_casefile_triage_hash(triage_payload)
+    if casefile.triage_hash != triage_hash:
+        raise InvariantViolation("labels stage triage_hash mismatch (tamper or stale dependency)")
+
+    if casefile.diagnosis_hash is not None:
+        diagnosis_payload = read_casefile_stage_json_or_none(
+            object_store_client=object_store_client,
+            case_id=casefile.case_id,
+            stage="diagnosis",
+        )
+        if diagnosis_payload is None:
+            raise InvariantViolation(
+                "labels stage diagnosis_hash was provided but diagnosis.json is absent"
+            )
+        diagnosis_hash = compute_casefile_diagnosis_hash(diagnosis_payload)
+        if casefile.diagnosis_hash != diagnosis_hash:
+            raise InvariantViolation("labels stage diagnosis_hash mismatch")
+
+
+def _log_casefile_stage_absent(*, case_id: str, stage: str) -> None:
+    logger = get_logger("pipeline.stages.casefile")
+    object_path = build_casefile_stage_object_key(case_id=case_id, stage=stage)
+    logger.info(
+        "casefile_stage_absent",
+        event_type="casefile.stage_absent",
+        case_id=case_id,
+        stage=stage,
+        object_path=object_path,
+    )

@@ -136,6 +136,17 @@ Run full suite:
 uv run pytest -q
 ```
 
+Run full suite with Docker-enabled integration execution (recommended):
+
+```bash
+TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs
+```
+
+Notes:
+
+- `tests/integration/conftest.py` auto-configures `DOCKER_HOST` for common local sockets (`/var/run/docker.sock` and Docker Desktop socket) when unset.
+- If Docker is unavailable, integration tests can still skip by design; use the Docker-enabled command above to enforce integration execution.
+
 Lint:
 
 ```bash
