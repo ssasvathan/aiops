@@ -80,15 +80,15 @@ development_status:
   3-3-blast-radius-and-downstream-impact-assessment: done
   3-4-multi-level-ownership-routing: done
   3-5-legacy-v0-compatibility-views: done
-  epic-3-retrospective: optional
+  epic-3-retrospective: done
 
   # ─────────────────────────────────────────────────────────
   # Epic 4: Durable Triage & Reliable Event Publishing
   # Phase: Phase 1A | FRs: FR17-FR26
   # ─────────────────────────────────────────────────────────
   epic-4: in-progress
-  4-1-casefile-triage-stage-assembly: ready-for-dev
-  4-2-write-once-casefile-to-object-storage-invariant-a: backlog
+  4-1-casefile-triage-stage-assembly: done
+  4-2-write-once-casefile-to-object-storage-invariant-a: ready-for-dev
   4-3-append-only-casefile-stage-files: backlog
   4-4-postgres-durable-outbox-state-machine: backlog
   4-5-outbox-to-kafka-event-publishing-invariant-b2: backlog
