@@ -17,12 +17,20 @@ from aiops_triage_pipeline.contracts.enums import (
     EvidenceStatus,
 )
 from aiops_triage_pipeline.contracts.gate_input import Finding, GateInputV1
-from aiops_triage_pipeline.errors.exceptions import CriticalDependencyError, InvariantViolation
+from aiops_triage_pipeline.errors.exceptions import (
+    CriticalDependencyError,
+    InvariantViolation,
+    ObjectNotFoundError,
+)
 from aiops_triage_pipeline.models.case_file import (
     DIAGNOSIS_HASH_PLACEHOLDER,
+    LABELS_HASH_PLACEHOLDER,
+    LINKAGE_HASH_PLACEHOLDER,
     TRIAGE_HASH_PLACEHOLDER,
     CaseFileDiagnosisV1,
     CaseFileEvidenceSnapshot,
+    CaseFileLabelsV1,
+    CaseFileLinkageV1,
     CaseFilePolicyVersions,
     CaseFileRoutingContext,
     CaseFileTopologyContext,
@@ -32,16 +40,22 @@ from aiops_triage_pipeline.storage.casefile_io import (
     build_casefile_stage_object_key,
     build_casefile_triage_object_key,
     compute_casefile_diagnosis_hash,
+    compute_casefile_labels_hash,
+    compute_casefile_linkage_hash,
     compute_casefile_triage_hash,
     compute_sha256_hex,
     has_valid_casefile_triage_hash,
     list_present_casefile_stages,
     persist_casefile_diagnosis_write_once,
+    persist_casefile_labels_write_once,
+    persist_casefile_linkage_write_once,
     persist_casefile_triage_write_once,
     read_casefile_stage_json_or_none,
     serialize_casefile_stage,
     serialize_casefile_triage,
     validate_casefile_diagnosis_json,
+    validate_casefile_labels_json,
+    validate_casefile_linkage_json,
     validate_casefile_triage_json,
 )
 from aiops_triage_pipeline.storage.client import (
@@ -139,6 +153,37 @@ def _sample_casefile_diagnosis(*, triage_hash: str) -> CaseFileDiagnosisV1:
         diagnosis_hash=DIAGNOSIS_HASH_PLACEHOLDER,
     )
     return base.model_copy(update={"diagnosis_hash": compute_casefile_diagnosis_hash(base)})
+
+
+def _sample_casefile_linkage(
+    *,
+    triage_hash: str,
+    diagnosis_hash: str | None = None,
+) -> CaseFileLinkageV1:
+    base = CaseFileLinkageV1(
+        case_id="case-prod-cluster-a-orders-volume-drop",
+        linkage_status="linked",
+        linkage_reason="linked-to-problem",
+        triage_hash=triage_hash,
+        diagnosis_hash=diagnosis_hash,
+        linkage_hash=LINKAGE_HASH_PLACEHOLDER,
+    )
+    return base.model_copy(update={"linkage_hash": compute_casefile_linkage_hash(base)})
+
+
+def _sample_casefile_labels(
+    *,
+    triage_hash: str,
+    diagnosis_hash: str | None = None,
+) -> CaseFileLabelsV1:
+    base = CaseFileLabelsV1(
+        case_id="case-prod-cluster-a-orders-volume-drop",
+        labels={"owner_confirmed": "true", "resolution_category": "UNKNOWN"},
+        triage_hash=triage_hash,
+        diagnosis_hash=diagnosis_hash,
+        labels_hash=LABELS_HASH_PLACEHOLDER,
+    )
+    return base.model_copy(update={"labels_hash": compute_casefile_labels_hash(base)})
 
 
 def test_serialize_casefile_triage_is_deterministic_bytes() -> None:
@@ -355,6 +400,50 @@ def test_persist_casefile_diagnosis_write_once_rejects_overwrite_payload_mismatc
         )
 
 
+def test_persist_casefile_linkage_write_once_creates_object() -> None:
+    client = _FakeObjectStoreClient()
+    triage_casefile = _sample_casefile()
+    linkage_casefile = _sample_casefile_linkage(triage_hash=triage_casefile.triage_hash)
+
+    persisted = persist_casefile_linkage_write_once(
+        object_store_client=client,
+        casefile=linkage_casefile,
+    )
+
+    expected_key = build_casefile_stage_object_key(linkage_casefile.case_id, stage="linkage")
+    assert persisted.stage == "linkage"
+    assert persisted.object_path == expected_key
+    assert persisted.stage_hash == linkage_casefile.linkage_hash
+    assert persisted.write_result == "created"
+    assert client.last_put is not None
+    assert client.last_put[1] == serialize_casefile_stage(linkage_casefile)
+    assert client.last_metadata is not None
+    assert client.last_metadata["triage_hash"] == triage_casefile.triage_hash
+    assert client.last_metadata["linkage_hash"] == linkage_casefile.linkage_hash
+
+
+def test_persist_casefile_labels_write_once_creates_object() -> None:
+    client = _FakeObjectStoreClient()
+    triage_casefile = _sample_casefile()
+    labels_casefile = _sample_casefile_labels(triage_hash=triage_casefile.triage_hash)
+
+    persisted = persist_casefile_labels_write_once(
+        object_store_client=client,
+        casefile=labels_casefile,
+    )
+
+    expected_key = build_casefile_stage_object_key(labels_casefile.case_id, stage="labels")
+    assert persisted.stage == "labels"
+    assert persisted.object_path == expected_key
+    assert persisted.stage_hash == labels_casefile.labels_hash
+    assert persisted.write_result == "created"
+    assert client.last_put is not None
+    assert client.last_put[1] == serialize_casefile_stage(labels_casefile)
+    assert client.last_metadata is not None
+    assert client.last_metadata["triage_hash"] == triage_casefile.triage_hash
+    assert client.last_metadata["labels_hash"] == labels_casefile.labels_hash
+
+
 def test_read_casefile_stage_json_or_none_returns_none_for_missing_stage() -> None:
     client = _FakeObjectStoreClient()
 
@@ -382,6 +471,65 @@ def test_read_casefile_stage_json_or_none_round_trips_diagnosis_payload() -> Non
 
     assert loaded is not None
     assert validate_casefile_diagnosis_json(serialize_casefile_stage(diagnosis_casefile)) == loaded
+
+
+def test_read_casefile_stage_json_or_none_round_trips_linkage_payload() -> None:
+    client = _FakeObjectStoreClient()
+    triage_casefile = _sample_casefile()
+    linkage_casefile = _sample_casefile_linkage(triage_hash=triage_casefile.triage_hash)
+    key = build_casefile_stage_object_key(linkage_casefile.case_id, stage="linkage")
+    client.store[key] = serialize_casefile_stage(linkage_casefile)
+
+    loaded = read_casefile_stage_json_or_none(
+        object_store_client=client,
+        case_id=linkage_casefile.case_id,
+        stage="linkage",
+    )
+
+    assert loaded is not None
+    assert validate_casefile_linkage_json(serialize_casefile_stage(linkage_casefile)) == loaded
+
+
+def test_read_casefile_stage_json_or_none_round_trips_labels_payload() -> None:
+    client = _FakeObjectStoreClient()
+    triage_casefile = _sample_casefile()
+    labels_casefile = _sample_casefile_labels(triage_hash=triage_casefile.triage_hash)
+    key = build_casefile_stage_object_key(labels_casefile.case_id, stage="labels")
+    client.store[key] = serialize_casefile_stage(labels_casefile)
+
+    loaded = read_casefile_stage_json_or_none(
+        object_store_client=client,
+        case_id=labels_casefile.case_id,
+        stage="labels",
+    )
+
+    assert loaded is not None
+    assert validate_casefile_labels_json(serialize_casefile_stage(labels_casefile)) == loaded
+
+
+def test_read_casefile_stage_json_or_none_returns_none_for_typed_not_found_error() -> None:
+    client = _FakeObjectStoreClient()
+    client.fail_get = ObjectNotFoundError("object not found key=cases/case-123/diagnosis.json")
+
+    loaded = read_casefile_stage_json_or_none(
+        object_store_client=client,
+        case_id="case-123",
+        stage="diagnosis",
+    )
+
+    assert loaded is None
+
+
+def test_read_casefile_stage_json_or_none_reraises_unrelated_keyerror() -> None:
+    client = _FakeObjectStoreClient()
+    client.fail_get = KeyError("unexpected")
+
+    with pytest.raises(KeyError, match="unexpected"):
+        read_casefile_stage_json_or_none(
+            object_store_client=client,
+            case_id="case-123",
+            stage="diagnosis",
+        )
 
 
 def test_list_present_casefile_stages_returns_written_stages_only() -> None:

@@ -27,14 +27,22 @@ from aiops_triage_pipeline.denylist.loader import DenylistV1
 from aiops_triage_pipeline.errors.exceptions import CriticalDependencyError, InvariantViolation
 from aiops_triage_pipeline.models.case_file import (
     DIAGNOSIS_HASH_PLACEHOLDER,
+    LABELS_HASH_PLACEHOLDER,
+    LINKAGE_HASH_PLACEHOLDER,
     CaseFileDiagnosisV1,
+    CaseFileLabelsV1,
+    CaseFileLinkageV1,
 )
 from aiops_triage_pipeline.outbox.schema import OutboxReadyCasefileV1
 from aiops_triage_pipeline.pipeline.stages.casefile import (
     assemble_casefile_triage_stage,
     load_casefile_diagnosis_stage_if_present,
+    load_casefile_labels_stage_if_present,
+    load_casefile_linkage_stage_if_present,
     persist_casefile_and_prepare_outbox_ready,
     persist_casefile_diagnosis_stage,
+    persist_casefile_labels_stage,
+    persist_casefile_linkage_stage,
 )
 from aiops_triage_pipeline.pipeline.stages.evidence import collect_evidence_stage_output
 from aiops_triage_pipeline.pipeline.stages.gating import (
@@ -48,6 +56,8 @@ from aiops_triage_pipeline.storage.casefile_io import (
     build_casefile_stage_object_key,
     build_casefile_triage_object_key,
     compute_casefile_diagnosis_hash,
+    compute_casefile_labels_hash,
+    compute_casefile_linkage_hash,
     compute_casefile_triage_hash,
     has_valid_casefile_triage_hash,
 )
@@ -286,6 +296,39 @@ def _sample_diagnosis_casefile(*, case_id: str, triage_hash: str) -> CaseFileDia
         diagnosis_hash=DIAGNOSIS_HASH_PLACEHOLDER,
     )
     return base.model_copy(update={"diagnosis_hash": compute_casefile_diagnosis_hash(base)})
+
+
+def _sample_linkage_casefile(
+    *,
+    case_id: str,
+    triage_hash: str,
+    diagnosis_hash: str | None = None,
+) -> CaseFileLinkageV1:
+    base = CaseFileLinkageV1(
+        case_id=case_id,
+        linkage_status="linked",
+        linkage_reason="linked-to-problem",
+        triage_hash=triage_hash,
+        diagnosis_hash=diagnosis_hash,
+        linkage_hash=LINKAGE_HASH_PLACEHOLDER,
+    )
+    return base.model_copy(update={"linkage_hash": compute_casefile_linkage_hash(base)})
+
+
+def _sample_labels_casefile(
+    *,
+    case_id: str,
+    triage_hash: str,
+    diagnosis_hash: str | None = None,
+) -> CaseFileLabelsV1:
+    base = CaseFileLabelsV1(
+        case_id=case_id,
+        labels={"owner_confirmed": "true", "resolution_category": "UNKNOWN"},
+        triage_hash=triage_hash,
+        diagnosis_hash=diagnosis_hash,
+        labels_hash=LABELS_HASH_PLACEHOLDER,
+    )
+    return base.model_copy(update={"labels_hash": compute_casefile_labels_hash(base)})
 
 
 def test_assemble_casefile_triage_stage_builds_complete_payload(tmp_path: Path) -> None:
@@ -750,6 +793,186 @@ def test_persist_casefile_diagnosis_stage_raises_on_dependency_hash_mismatch(
         )
 
 
+def test_persist_casefile_linkage_stage_writes_independent_file_without_mutating_triage(
+    tmp_path: Path,
+) -> None:
+    (
+        scope,
+        evidence_output,
+        peak_output,
+        topology_output,
+        gate_input,
+        action_decision,
+    ) = _build_scope_inputs(tmp_path)
+    triage_casefile = assemble_casefile_triage_stage(
+        scope=scope,
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        topology_output=topology_output,
+        gate_input=gate_input,
+        action_decision=action_decision,
+        rulebook_policy=_rulebook_policy_for_tests(),
+        peak_policy=_peak_policy_for_tests(),
+        prometheus_metrics_contract=_prometheus_contract_for_tests(),
+        denylist=_denylist_for_tests(),
+        diagnosis_policy_version="v1",
+        triage_timestamp=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
+    )
+    object_store_client = _InMemoryObjectStoreClient()
+    persist_casefile_and_prepare_outbox_ready(
+        casefile=triage_casefile,
+        object_store_client=object_store_client,
+    )
+    triage_key = build_casefile_triage_object_key(triage_casefile.case_id)
+    triage_before = object_store_client.store[triage_key]
+
+    linkage_casefile = _sample_linkage_casefile(
+        case_id=triage_casefile.case_id,
+        triage_hash=triage_casefile.triage_hash,
+    )
+    linkage_path = persist_casefile_linkage_stage(
+        casefile=linkage_casefile,
+        object_store_client=object_store_client,
+    )
+
+    linkage_key = build_casefile_stage_object_key(triage_casefile.case_id, stage="linkage")
+    assert linkage_path == linkage_key
+    assert linkage_key in object_store_client.store
+    assert object_store_client.store[triage_key] == triage_before
+
+
+def test_persist_casefile_linkage_stage_raises_on_dependency_hash_mismatch(
+    tmp_path: Path,
+) -> None:
+    (
+        scope,
+        evidence_output,
+        peak_output,
+        topology_output,
+        gate_input,
+        action_decision,
+    ) = _build_scope_inputs(tmp_path)
+    triage_casefile = assemble_casefile_triage_stage(
+        scope=scope,
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        topology_output=topology_output,
+        gate_input=gate_input,
+        action_decision=action_decision,
+        rulebook_policy=_rulebook_policy_for_tests(),
+        peak_policy=_peak_policy_for_tests(),
+        prometheus_metrics_contract=_prometheus_contract_for_tests(),
+        denylist=_denylist_for_tests(),
+        diagnosis_policy_version="v1",
+        triage_timestamp=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
+    )
+    object_store_client = _InMemoryObjectStoreClient()
+    persist_casefile_and_prepare_outbox_ready(
+        casefile=triage_casefile,
+        object_store_client=object_store_client,
+    )
+
+    linkage_casefile = _sample_linkage_casefile(
+        case_id=triage_casefile.case_id,
+        triage_hash="0" * 64,
+    )
+    with pytest.raises(InvariantViolation, match="triage_hash mismatch"):
+        persist_casefile_linkage_stage(
+            casefile=linkage_casefile,
+            object_store_client=object_store_client,
+        )
+
+
+def test_persist_casefile_labels_stage_writes_independent_file_without_mutating_triage(
+    tmp_path: Path,
+) -> None:
+    (
+        scope,
+        evidence_output,
+        peak_output,
+        topology_output,
+        gate_input,
+        action_decision,
+    ) = _build_scope_inputs(tmp_path)
+    triage_casefile = assemble_casefile_triage_stage(
+        scope=scope,
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        topology_output=topology_output,
+        gate_input=gate_input,
+        action_decision=action_decision,
+        rulebook_policy=_rulebook_policy_for_tests(),
+        peak_policy=_peak_policy_for_tests(),
+        prometheus_metrics_contract=_prometheus_contract_for_tests(),
+        denylist=_denylist_for_tests(),
+        diagnosis_policy_version="v1",
+        triage_timestamp=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
+    )
+    object_store_client = _InMemoryObjectStoreClient()
+    persist_casefile_and_prepare_outbox_ready(
+        casefile=triage_casefile,
+        object_store_client=object_store_client,
+    )
+    triage_key = build_casefile_triage_object_key(triage_casefile.case_id)
+    triage_before = object_store_client.store[triage_key]
+
+    labels_casefile = _sample_labels_casefile(
+        case_id=triage_casefile.case_id,
+        triage_hash=triage_casefile.triage_hash,
+    )
+    labels_path = persist_casefile_labels_stage(
+        casefile=labels_casefile,
+        object_store_client=object_store_client,
+    )
+
+    labels_key = build_casefile_stage_object_key(triage_casefile.case_id, stage="labels")
+    assert labels_path == labels_key
+    assert labels_key in object_store_client.store
+    assert object_store_client.store[triage_key] == triage_before
+
+
+def test_persist_casefile_labels_stage_raises_on_dependency_hash_mismatch(
+    tmp_path: Path,
+) -> None:
+    (
+        scope,
+        evidence_output,
+        peak_output,
+        topology_output,
+        gate_input,
+        action_decision,
+    ) = _build_scope_inputs(tmp_path)
+    triage_casefile = assemble_casefile_triage_stage(
+        scope=scope,
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        topology_output=topology_output,
+        gate_input=gate_input,
+        action_decision=action_decision,
+        rulebook_policy=_rulebook_policy_for_tests(),
+        peak_policy=_peak_policy_for_tests(),
+        prometheus_metrics_contract=_prometheus_contract_for_tests(),
+        denylist=_denylist_for_tests(),
+        diagnosis_policy_version="v1",
+        triage_timestamp=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
+    )
+    object_store_client = _InMemoryObjectStoreClient()
+    persist_casefile_and_prepare_outbox_ready(
+        casefile=triage_casefile,
+        object_store_client=object_store_client,
+    )
+
+    labels_casefile = _sample_labels_casefile(
+        case_id=triage_casefile.case_id,
+        triage_hash="0" * 64,
+    )
+    with pytest.raises(InvariantViolation, match="triage_hash mismatch"):
+        persist_casefile_labels_stage(
+            casefile=labels_casefile,
+            object_store_client=object_store_client,
+        )
+
+
 def test_load_casefile_diagnosis_stage_if_present_returns_none_and_logs_state(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -769,3 +992,45 @@ def test_load_casefile_diagnosis_stage_if_present_returns_none_and_logs_state(
     assert len(logger.infos) == 1
     assert logger.infos[0]["event_type"] == "casefile.stage_absent"
     assert logger.infos[0]["stage"] == "diagnosis"
+
+
+def test_load_casefile_linkage_stage_if_present_returns_none_and_logs_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logger = _RecordingLogger()
+    monkeypatch.setattr(
+        "aiops_triage_pipeline.pipeline.stages.casefile.get_logger",
+        lambda _: logger,
+    )
+    object_store_client = _InMemoryObjectStoreClient()
+
+    loaded = load_casefile_linkage_stage_if_present(
+        case_id="case-prod-cluster-a-orders-volume-drop",
+        object_store_client=object_store_client,
+    )
+
+    assert loaded is None
+    assert len(logger.infos) == 1
+    assert logger.infos[0]["event_type"] == "casefile.stage_absent"
+    assert logger.infos[0]["stage"] == "linkage"
+
+
+def test_load_casefile_labels_stage_if_present_returns_none_and_logs_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    logger = _RecordingLogger()
+    monkeypatch.setattr(
+        "aiops_triage_pipeline.pipeline.stages.casefile.get_logger",
+        lambda _: logger,
+    )
+    object_store_client = _InMemoryObjectStoreClient()
+
+    loaded = load_casefile_labels_stage_if_present(
+        case_id="case-prod-cluster-a-orders-volume-drop",
+        object_store_client=object_store_client,
+    )
+
+    assert loaded is None
+    assert len(logger.infos) == 1
+    assert logger.infos[0]["event_type"] == "casefile.stage_absent"
+    assert logger.infos[0]["stage"] == "labels"

@@ -17,7 +17,11 @@ from botocore.exceptions import (
 )
 
 from aiops_triage_pipeline.config.settings import Settings, get_settings
-from aiops_triage_pipeline.errors.exceptions import CriticalDependencyError, IntegrationError
+from aiops_triage_pipeline.errors.exceptions import (
+    CriticalDependencyError,
+    IntegrationError,
+    ObjectNotFoundError,
+)
 
 _RETRIABLE_CONDITION_STATUS_CODES = frozenset({409, 412})
 _RETRIABLE_CONDITION_ERROR_CODES = frozenset({"PreconditionFailed", "ConditionalRequestConflict"})
@@ -120,7 +124,7 @@ class S3ObjectStoreClient(ObjectStoreClientProtocol):
             code = _extract_error_code(exc)
             status_code = _extract_http_status_code(exc)
             if code in _NOT_FOUND_CODES:
-                raise IntegrationError(f"object not found key={key}") from exc
+                raise ObjectNotFoundError(f"object not found key={key}") from exc
             if status_code is not None and status_code >= 500:
                 raise CriticalDependencyError(
                     f"object storage unavailable during get_object key={key}: {code or status_code}"

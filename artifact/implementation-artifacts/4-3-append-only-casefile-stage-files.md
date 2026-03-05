@@ -1,6 +1,6 @@
 # Story 4.3: Append-Only CaseFile Stage Files
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -243,7 +243,7 @@ Critical rules applied from `artifact/project-context.md`:
 
 - Story context generation complete.
 - Story file: `artifact/implementation-artifacts/4-3-append-only-casefile-stage-files.md`.
-- Target status: `ready-for-dev`.
+- Target status: `done`.
 - Completion note: **Ultimate context engine analysis completed - comprehensive developer guide created**.
 
 ## Dev Agent Record
@@ -277,6 +277,7 @@ GPT-5 Codex
 - Added stage read/list helpers that return explicit absence (`None`) for missing stage files.
 - Added stage orchestration functions for diagnosis/linkage/labels with `InvariantViolation` on dependency-hash mismatch or missing required dependencies.
 - Added/extended unit tests for stage path generation, append-only/idempotent writes, overwrite rejection, dependency-hash mismatch, prior-file immutability, and stage absence logging.
+- Fixed review follow-ups: added linkage/labels unit coverage, hardened typed not-found handling, and removed brittle string-based not-found detection.
 
 ### File List
 
@@ -285,7 +286,9 @@ GPT-5 Codex
 - `src/aiops_triage_pipeline/models/case_file.py`
 - `src/aiops_triage_pipeline/models/__init__.py`
 - `src/aiops_triage_pipeline/storage/casefile_io.py`
+- `src/aiops_triage_pipeline/storage/client.py`
 - `src/aiops_triage_pipeline/storage/__init__.py`
+- `src/aiops_triage_pipeline/errors/exceptions.py`
 - `src/aiops_triage_pipeline/pipeline/stages/casefile.py`
 - `src/aiops_triage_pipeline/pipeline/stages/__init__.py`
 - `tests/unit/storage/test_casefile_io.py`
@@ -294,3 +297,19 @@ GPT-5 Codex
 ### Change Log
 
 - 2026-03-05: Implemented append-only CaseFile stage-file contracts, canonical stage write/read helpers, stage orchestration with dependency-hash verification, and full unit/regression quality gates.
+- 2026-03-05: Senior code review fixes applied for Story 4.3 (linkage/labels coverage, typed not-found exception handling, KeyError narrowing, and story metadata alignment).
+
+### Senior Developer Review (AI)
+
+- Reviewer: Sas (AI)
+- Date: 2026-03-05
+- Outcome: Approved
+- Findings fixed:
+  - Added unit coverage for linkage/labels stage write paths and missing-stage semantics.
+  - Replaced string-prefix not-found checks with typed `ObjectNotFoundError`.
+  - Narrowed `KeyError` handling to only treat matching object-key misses as explicit absence.
+  - Aligned story metadata/status fields to `done`.
+- Verification rerun:
+  - `uv run pytest -q tests/unit/storage/test_casefile_io.py tests/unit/pipeline/stages/test_casefile.py`
+  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
+  - `uv run ruff check`

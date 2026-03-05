@@ -8,7 +8,11 @@ from typing import Literal, TypeVar, cast
 
 from pydantic import BaseModel
 
-from aiops_triage_pipeline.errors.exceptions import IntegrationError, InvariantViolation
+from aiops_triage_pipeline.errors.exceptions import (
+    IntegrationError,
+    InvariantViolation,
+    ObjectNotFoundError,
+)
 from aiops_triage_pipeline.models.case_file import (
     DIAGNOSIS_HASH_PLACEHOLDER,
     LABELS_HASH_PLACEHOLDER,
@@ -30,9 +34,6 @@ _CANONICAL_CASEFILE_STAGE_NAMES: tuple[CaseFileStageName, ...] = (
     "linkage",
     "labels",
 )
-_OBJECT_NOT_FOUND_ERROR_PREFIX = "object not found key="
-
-
 class CasefilePersistResult(BaseModel, frozen=True):
     """Confirmed persistence metadata used by outbox-ready handoff paths."""
 
@@ -356,11 +357,14 @@ def read_casefile_stage_json_or_none(
 
     try:
         payload = object_store_client.get_object_bytes(key=object_path)
-    except KeyError:
-        return None
-    except IntegrationError as exc:
-        if _is_not_found_integration_error(exc):
+    except KeyError as exc:
+        missing_key = exc.args[0] if exc.args else None
+        if missing_key == object_path:
             return None
+        raise
+    except ObjectNotFoundError:
+        return None
+    except IntegrationError:
         raise
 
     return validate_casefile_stage_json(payload, stage=stage_name)
@@ -468,7 +472,3 @@ def _extract_stage_hash(casefile: CaseFileAnyPayload, *, stage: CaseFileStageNam
 def _to_s3_checksum_sha256(sha256_hex_digest: str) -> str:
     """Convert lowercase SHA-256 hex digest into base64 format expected by S3 ChecksumSHA256."""
     return base64.b64encode(bytes.fromhex(sha256_hex_digest)).decode("ascii")
-
-
-def _is_not_found_integration_error(exc: IntegrationError) -> bool:
-    return str(exc).startswith(_OBJECT_NOT_FOUND_ERROR_PREFIX)

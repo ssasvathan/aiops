@@ -34,3 +34,7 @@ class SlackUnavailable(DegradableError):
 # Integration errors
 class IntegrationError(PipelineError):
     """PD/SN/Slack call failures — wraps built-in connection errors."""
+
+
+class ObjectNotFoundError(IntegrationError):
+    """Typed not-found integration error for explicit absence semantics."""
