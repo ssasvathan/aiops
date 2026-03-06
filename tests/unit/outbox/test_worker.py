@@ -13,6 +13,7 @@ from aiops_triage_pipeline.contracts.enums import (
 )
 from aiops_triage_pipeline.contracts.gate_input import Finding, GateInputV1
 from aiops_triage_pipeline.contracts.outbox_policy import OutboxPolicyV1, OutboxRetentionPolicy
+from aiops_triage_pipeline.denylist.loader import DenylistV1
 from aiops_triage_pipeline.errors.exceptions import CriticalDependencyError
 from aiops_triage_pipeline.models.case_file import (
     TRIAGE_HASH_PLACEHOLDER,
@@ -134,6 +135,7 @@ class _InMemoryObjectStoreClient(ObjectStoreClientProtocol):
 class _RecordingPublisher:
     def __init__(self) -> None:
         self.calls = 0
+        self.excerpts: list[object] = []
 
     def publish_case_events(
         self,
@@ -141,8 +143,9 @@ class _RecordingPublisher:
         case_header_event: object,
         triage_excerpt_event: object,
     ) -> None:
-        del case_header_event, triage_excerpt_event
+        del case_header_event
         self.calls += 1
+        self.excerpts.append(triage_excerpt_event)
 
 
 class _FailingPublisher:
@@ -185,8 +188,42 @@ def _policy_with_max_retry(max_retry_attempts: int) -> OutboxPolicyV1:
     )
 
 
+def _denylist_for_tests(*, denied_field_names: tuple[str, ...] = ("password",)) -> DenylistV1:
+    return DenylistV1(
+        denylist_version="v1.0.0",
+        denied_field_names=denied_field_names,
+        denied_value_patterns=("(?i)bearer\\s+[A-Za-z0-9]{10,}",),
+    )
+
+
 def test_outbox_worker_transitions_ready_to_sent_on_success() -> None:
     casefile = _sample_casefile()
+    updated_gate_input = casefile.gate_input.model_copy(
+        update={
+            "evidence_status_map": {
+                "topic_messages_in_per_sec": EvidenceStatus.PRESENT,
+                "password": EvidenceStatus.UNKNOWN,
+            }
+        }
+    )
+    updated_snapshot = casefile.evidence_snapshot.model_copy(
+        update={
+            "evidence_status_map": {
+                "topic_messages_in_per_sec": EvidenceStatus.PRESENT,
+                "password": EvidenceStatus.UNKNOWN,
+            }
+        }
+    )
+    casefile = casefile.model_copy(
+        update={
+            "gate_input": updated_gate_input,
+            "evidence_snapshot": updated_snapshot,
+            "triage_hash": TRIAGE_HASH_PLACEHOLDER,
+        }
+    )
+    casefile = casefile.model_copy(
+        update={"triage_hash": compute_casefile_triage_hash(casefile)}
+    )
     ready_casefile = _ready_casefile(casefile)
     object_store = _InMemoryObjectStoreClient()
     object_store.store[ready_casefile.object_path] = serialize_casefile_triage(casefile)
@@ -195,11 +232,13 @@ def test_outbox_worker_transitions_ready_to_sent_on_success() -> None:
     repository = OutboxSqlRepository(engine=engine)
     repository.insert_pending_object(confirmed_casefile=ready_casefile)
     repository.transition_to_ready(case_id=casefile.case_id)
+    publisher = _RecordingPublisher()
 
     worker = OutboxPublisherWorker(
         outbox_repository=repository,
         object_store_client=object_store,
-        publisher=_RecordingPublisher(),
+        publisher=publisher,
+        denylist=_denylist_for_tests(),
         policy=_policy_with_max_retry(max_retry_attempts=3),
         app_env="local",
     )
@@ -210,6 +249,9 @@ def test_outbox_worker_transitions_ready_to_sent_on_success() -> None:
     assert persisted is not None
     assert persisted.status == "SENT"
     assert persisted.delivery_attempts == 1
+    assert publisher.calls == 1
+    assert publisher.excerpts
+    assert "password" not in publisher.excerpts[0].evidence_status_map
 
 
 def test_outbox_worker_transitions_retry_to_dead_after_max_retries() -> None:
@@ -228,6 +270,7 @@ def test_outbox_worker_transitions_retry_to_dead_after_max_retries() -> None:
         outbox_repository=repository,
         object_store_client=object_store,
         publisher=_FailingPublisher(),
+        denylist=_denylist_for_tests(),
         policy=policy,
         app_env="local",
     )
@@ -262,6 +305,7 @@ def test_outbox_worker_logs_warning_for_old_ready_backlog() -> None:
         outbox_repository=repository,
         object_store_client=object_store,
         publisher=_RecordingPublisher(),
+        denylist=_denylist_for_tests(),
         policy=_policy_with_max_retry(max_retry_attempts=3),
         app_env="local",
         batch_size=1,
@@ -309,6 +353,7 @@ def test_outbox_worker_backlog_health_uses_full_backlog_not_batch_slice() -> Non
         outbox_repository=repository,
         object_store_client=object_store,
         publisher=_RecordingPublisher(),
+        denylist=_denylist_for_tests(),
         policy=_policy_with_max_retry(max_retry_attempts=3),
         app_env="local",
         batch_size=1,
@@ -324,3 +369,122 @@ def test_outbox_worker_backlog_health_uses_full_backlog_not_batch_slice() -> Non
     _, _, fields = backlog_events[0]
     assert fields["ready_count"] == 1
     assert fields["retry_count"] >= 1
+
+
+def test_outbox_worker_logs_denylist_outcome_for_successful_publish() -> None:
+    casefile = _sample_casefile()
+    updated_gate_input = casefile.gate_input.model_copy(
+        update={
+            "evidence_status_map": {
+                "topic_messages_in_per_sec": EvidenceStatus.PRESENT,
+                "password": EvidenceStatus.UNKNOWN,
+            }
+        }
+    )
+    updated_snapshot = casefile.evidence_snapshot.model_copy(
+        update={
+            "evidence_status_map": {
+                "topic_messages_in_per_sec": EvidenceStatus.PRESENT,
+                "password": EvidenceStatus.UNKNOWN,
+            }
+        }
+    )
+    casefile = casefile.model_copy(
+        update={
+            "gate_input": updated_gate_input,
+            "evidence_snapshot": updated_snapshot,
+            "triage_hash": TRIAGE_HASH_PLACEHOLDER,
+        }
+    )
+    casefile = casefile.model_copy(update={"triage_hash": compute_casefile_triage_hash(casefile)})
+    ready_casefile = _ready_casefile(casefile)
+    object_store = _InMemoryObjectStoreClient()
+    object_store.store[ready_casefile.object_path] = serialize_casefile_triage(casefile)
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    create_outbox_table(engine)
+    repository = OutboxSqlRepository(engine=engine)
+    repository.insert_pending_object(confirmed_casefile=ready_casefile)
+    repository.transition_to_ready(case_id=casefile.case_id)
+    logger = _RecordingLogger()
+
+    worker = OutboxPublisherWorker(
+        outbox_repository=repository,
+        object_store_client=object_store,
+        publisher=_RecordingPublisher(),
+        denylist=_denylist_for_tests(),
+        policy=_policy_with_max_retry(max_retry_attempts=3),
+        app_env="local",
+    )
+    worker._logger = logger  # noqa: SLF001
+
+    worker.run_once(now=datetime(2026, 3, 6, 12, 0, tzinfo=UTC))
+
+    denylist_events = [event for event in logger.events if event[1] == "outbox_denylist_applied"]
+    assert denylist_events
+    level, _, fields = denylist_events[0]
+    assert level == "info"
+    assert fields["event_type"] == "outbox.denylist_applied"
+    assert fields["case_id"] == casefile.case_id
+    assert fields["component"] == "outbox.worker"
+    assert fields["outcome"] == "success"
+    assert fields["removed_field_count"] >= 1
+
+
+def test_outbox_worker_logs_denylist_outcome_when_publish_fails_after_sanitization() -> None:
+    casefile = _sample_casefile()
+    updated_gate_input = casefile.gate_input.model_copy(
+        update={
+            "evidence_status_map": {
+                "topic_messages_in_per_sec": EvidenceStatus.PRESENT,
+                "password": EvidenceStatus.UNKNOWN,
+            }
+        }
+    )
+    updated_snapshot = casefile.evidence_snapshot.model_copy(
+        update={
+            "evidence_status_map": {
+                "topic_messages_in_per_sec": EvidenceStatus.PRESENT,
+                "password": EvidenceStatus.UNKNOWN,
+            }
+        }
+    )
+    casefile = casefile.model_copy(
+        update={
+            "gate_input": updated_gate_input,
+            "evidence_snapshot": updated_snapshot,
+            "triage_hash": TRIAGE_HASH_PLACEHOLDER,
+        }
+    )
+    casefile = casefile.model_copy(update={"triage_hash": compute_casefile_triage_hash(casefile)})
+    ready_casefile = _ready_casefile(casefile)
+    object_store = _InMemoryObjectStoreClient()
+    object_store.store[ready_casefile.object_path] = serialize_casefile_triage(casefile)
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    create_outbox_table(engine)
+    repository = OutboxSqlRepository(engine=engine)
+    repository.insert_pending_object(confirmed_casefile=ready_casefile)
+    repository.transition_to_ready(case_id=casefile.case_id)
+    logger = _RecordingLogger()
+
+    worker = OutboxPublisherWorker(
+        outbox_repository=repository,
+        object_store_client=object_store,
+        publisher=_FailingPublisher(),
+        denylist=_denylist_for_tests(),
+        policy=_policy_with_max_retry(max_retry_attempts=3),
+        app_env="local",
+    )
+    worker._logger = logger  # noqa: SLF001
+
+    worker.run_once(now=datetime(2026, 3, 6, 12, 0, tzinfo=UTC))
+
+    denylist_events = [event for event in logger.events if event[1] == "outbox_denylist_applied"]
+    assert denylist_events
+    level, _, fields = denylist_events[0]
+    assert level == "warning"
+    assert fields["event_type"] == "outbox.denylist_applied"
+    assert fields["case_id"] == casefile.case_id
+    assert fields["component"] == "outbox.worker"
+    assert fields["outcome"] == "applied_publish_failed"
+    assert fields["removed_field_count"] >= 1
+    assert fields["error_code"] == "CriticalDependencyError"

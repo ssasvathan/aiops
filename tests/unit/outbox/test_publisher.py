@@ -14,7 +14,13 @@ from aiops_triage_pipeline.contracts.enums import (
 )
 from aiops_triage_pipeline.contracts.gate_input import Finding, GateInputV1
 from aiops_triage_pipeline.contracts.triage_excerpt import TriageExcerptV1
-from aiops_triage_pipeline.errors.exceptions import InvariantViolation
+from aiops_triage_pipeline.denylist.loader import DenylistV1
+from aiops_triage_pipeline.errors.exceptions import (
+    CriticalDependencyError,
+    DenylistSanitizationError,
+    InvariantViolation,
+    PublishAfterDenylistError,
+)
 from aiops_triage_pipeline.models.case_file import (
     TRIAGE_HASH_PLACEHOLDER,
     CaseFileEvidenceSnapshot,
@@ -175,6 +181,25 @@ class _RecordingCaseEventsPublisher(CaseEventPublisherProtocol):
         self.published.append((case_header_event, triage_excerpt_event))
 
 
+class _FailingCaseEventsPublisher(CaseEventPublisherProtocol):
+    def publish_case_events(
+        self,
+        *,
+        case_header_event: CaseHeaderEventV1,
+        triage_excerpt_event: TriageExcerptV1,
+    ) -> None:
+        del case_header_event, triage_excerpt_event
+        raise CriticalDependencyError("kafka unavailable")
+
+
+def _denylist_for_tests(*, denied_field_names: tuple[str, ...] = ("password",)) -> DenylistV1:
+    return DenylistV1(
+        denylist_version="v1.0.0",
+        denied_field_names=denied_field_names,
+        denied_value_patterns=("(?i)bearer\\s+[A-Za-z0-9]{10,}",),
+    )
+
+
 def test_publish_case_header_after_invariant_a_requires_confirmed_object_readback() -> None:
     casefile = _sample_casefile()
     outbox_record = create_ready_outbox_record(confirmed_casefile=_ready_casefile(casefile))
@@ -241,6 +266,7 @@ def test_publish_case_events_after_invariant_a_emits_header_and_excerpt() -> Non
         outbox_record=outbox_record,
         object_store_client=object_store,
         publisher=publisher,
+        denylist=_denylist_for_tests(),
     )
 
     assert evidence.case_id == casefile.case_id
@@ -265,4 +291,123 @@ def test_publish_case_events_after_invariant_a_rejects_non_publishable_status() 
             outbox_record=outbox_record,
             object_store_client=object_store,
             publisher=_RecordingCaseEventsPublisher(),
+            denylist=_denylist_for_tests(),
         )
+
+
+def test_publish_case_events_after_invariant_a_sanitizes_nested_excerpt_fields() -> None:
+    casefile = _sample_casefile()
+    updated_gate_input = casefile.gate_input.model_copy(
+        update={
+            "evidence_status_map": {
+                "topic_messages_in_per_sec": EvidenceStatus.PRESENT,
+                "password": EvidenceStatus.UNKNOWN,
+            }
+        }
+    )
+    updated_snapshot = casefile.evidence_snapshot.model_copy(
+        update={
+            "evidence_status_map": {
+                "topic_messages_in_per_sec": EvidenceStatus.PRESENT,
+                "password": EvidenceStatus.UNKNOWN,
+            }
+        }
+    )
+    updated = casefile.model_copy(
+        update={
+            "gate_input": updated_gate_input,
+            "evidence_snapshot": updated_snapshot,
+            "triage_hash": TRIAGE_HASH_PLACEHOLDER,
+        }
+    )
+    sanitized_casefile = updated.model_copy(
+        update={"triage_hash": compute_casefile_triage_hash(updated)}
+    )
+    outbox_record = create_ready_outbox_record(
+        confirmed_casefile=_ready_casefile(sanitized_casefile)
+    )
+    object_store = _InMemoryObjectStoreClient()
+    object_store.store[outbox_record.casefile_object_path] = serialize_casefile_triage(
+        sanitized_casefile
+    )
+    publisher = _RecordingCaseEventsPublisher()
+
+    evidence = publish_case_events_after_invariant_a(
+        outbox_record=outbox_record,
+        object_store_client=object_store,
+        publisher=publisher,
+        denylist=_denylist_for_tests(denied_field_names=("password",)),
+    )
+
+    _, excerpt = publisher.published[0]
+    assert "password" not in excerpt.evidence_status_map
+    assert excerpt.evidence_status_map["topic_messages_in_per_sec"] == EvidenceStatus.PRESENT
+    assert evidence.removed_field_count >= 1
+
+
+def test_publish_case_events_after_invariant_a_fails_when_denylist_breaks_schema() -> None:
+    casefile = _sample_casefile()
+    outbox_record = create_ready_outbox_record(confirmed_casefile=_ready_casefile(casefile))
+    object_store = _InMemoryObjectStoreClient()
+    object_store.store[outbox_record.casefile_object_path] = serialize_casefile_triage(casefile)
+    publisher = _RecordingCaseEventsPublisher()
+
+    with pytest.raises(DenylistSanitizationError, match="schema-invalid"):
+        publish_case_events_after_invariant_a(
+            outbox_record=outbox_record,
+            object_store_client=object_store,
+            publisher=publisher,
+            denylist=_denylist_for_tests(denied_field_names=("finding_id",)),
+        )
+
+    assert publisher.published == []
+
+
+def test_publish_failure_exposes_denylist_audit_metadata() -> None:
+    casefile = _sample_casefile()
+    updated_gate_input = casefile.gate_input.model_copy(
+        update={
+            "evidence_status_map": {
+                "topic_messages_in_per_sec": EvidenceStatus.PRESENT,
+                "password": EvidenceStatus.UNKNOWN,
+            }
+        }
+    )
+    updated_snapshot = casefile.evidence_snapshot.model_copy(
+        update={
+            "evidence_status_map": {
+                "topic_messages_in_per_sec": EvidenceStatus.PRESENT,
+                "password": EvidenceStatus.UNKNOWN,
+            }
+        }
+    )
+    updated = casefile.model_copy(
+        update={
+            "gate_input": updated_gate_input,
+            "evidence_snapshot": updated_snapshot,
+            "triage_hash": TRIAGE_HASH_PLACEHOLDER,
+        }
+    )
+    sanitized_casefile = updated.model_copy(
+        update={"triage_hash": compute_casefile_triage_hash(updated)}
+    )
+    outbox_record = create_ready_outbox_record(
+        confirmed_casefile=_ready_casefile(sanitized_casefile)
+    )
+    object_store = _InMemoryObjectStoreClient()
+    object_store.store[outbox_record.casefile_object_path] = serialize_casefile_triage(
+        sanitized_casefile
+    )
+
+    with pytest.raises(PublishAfterDenylistError) as exc_info:
+        publish_case_events_after_invariant_a(
+            outbox_record=outbox_record,
+            object_store_client=object_store,
+            publisher=_FailingCaseEventsPublisher(),
+            denylist=_denylist_for_tests(denied_field_names=("password",)),
+        )
+
+    exc = exc_info.value
+    assert exc.boundary_id == "outbox.triage_excerpt.kafka_publish"
+    assert exc.removed_field_count >= 1
+    assert exc.error_code == "CriticalDependencyError"

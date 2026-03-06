@@ -16,6 +16,7 @@ from aiops_triage_pipeline.contracts.enums import (
 )
 from aiops_triage_pipeline.contracts.gate_input import Finding, GateInputV1
 from aiops_triage_pipeline.contracts.outbox_policy import OutboxPolicyV1, OutboxRetentionPolicy
+from aiops_triage_pipeline.denylist.loader import DenylistV1
 from aiops_triage_pipeline.errors.exceptions import CriticalDependencyError
 from aiops_triage_pipeline.models.case_file import (
     TRIAGE_HASH_PLACEHOLDER,
@@ -158,6 +159,7 @@ class _RecordingHeaderPublisher(CaseHeaderPublisherProtocol):
 class _RecordingCaseEventsPublisher:
     def __init__(self) -> None:
         self.calls = 0
+        self.excerpts: list[object] = []
 
     def publish_case_events(
         self,
@@ -165,8 +167,9 @@ class _RecordingCaseEventsPublisher:
         case_header_event: object,
         triage_excerpt_event: object,
     ) -> None:
-        del case_header_event, triage_excerpt_event
+        del case_header_event
         self.calls += 1
+        self.excerpts.append(triage_excerpt_event)
 
 
 class _FailingCaseEventsPublisher:
@@ -192,6 +195,14 @@ def _policy_with_max_retry(max_retry_attempts: int) -> OutboxPolicyV1:
             "uat": OutboxRetentionPolicy(sent_retention_days=7, dead_retention_days=30),
             "prod": OutboxRetentionPolicy(sent_retention_days=14, dead_retention_days=90),
         }
+    )
+
+
+def _denylist_for_tests(*, denied_field_names: tuple[str, ...] = ("password",)) -> DenylistV1:
+    return DenylistV1(
+        denylist_version="v1.0.0",
+        denied_field_names=denied_field_names,
+        denied_value_patterns=("(?i)bearer\\s+[A-Za-z0-9]{10,}",),
     )
 
 
@@ -261,6 +272,30 @@ def test_outbox_publish_after_crash_recovery_transitions_ready_to_sent() -> None
 @pytest.mark.integration
 def test_outbox_worker_recovers_ready_records_and_publishes_after_restart() -> None:
     casefile = _sample_casefile()
+    updated_gate_input = casefile.gate_input.model_copy(
+        update={
+            "evidence_status_map": {
+                "topic_messages_in_per_sec": EvidenceStatus.PRESENT,
+                "password": EvidenceStatus.UNKNOWN,
+            }
+        }
+    )
+    updated_snapshot = casefile.evidence_snapshot.model_copy(
+        update={
+            "evidence_status_map": {
+                "topic_messages_in_per_sec": EvidenceStatus.PRESENT,
+                "password": EvidenceStatus.UNKNOWN,
+            }
+        }
+    )
+    casefile = casefile.model_copy(
+        update={
+            "gate_input": updated_gate_input,
+            "evidence_snapshot": updated_snapshot,
+            "triage_hash": TRIAGE_HASH_PLACEHOLDER,
+        }
+    )
+    casefile = casefile.model_copy(update={"triage_hash": compute_casefile_triage_hash(casefile)})
     object_store = _InMemoryObjectStoreClient()
     publisher = _RecordingCaseEventsPublisher()
     ready_casefile = persist_casefile_and_prepare_outbox_ready(
@@ -288,6 +323,7 @@ def test_outbox_worker_recovers_ready_records_and_publishes_after_restart() -> N
                 outbox_repository=repository,
                 object_store_client=object_store,
                 publisher=publisher,
+                denylist=_denylist_for_tests(),
                 policy=_policy_with_max_retry(max_retry_attempts=3),
                 app_env="local",
             )
@@ -298,6 +334,8 @@ def test_outbox_worker_recovers_ready_records_and_publishes_after_restart() -> N
             assert sent.status == "SENT"
             assert sent.delivery_attempts == 1
             assert publisher.calls == 1
+            assert publisher.excerpts
+            assert "password" not in publisher.excerpts[0].evidence_status_map
     except Exception as exc:  # noqa: BLE001
         if _is_environment_prereq_error(exc):
             pytest.skip(f"Docker/Postgres unavailable for integration test: {exc}")
@@ -333,6 +371,7 @@ def test_outbox_worker_accumulates_retry_records_when_kafka_unavailable() -> Non
                 outbox_repository=repository,
                 object_store_client=object_store,
                 publisher=_FailingCaseEventsPublisher(),
+                denylist=_denylist_for_tests(),
                 policy=_policy_with_max_retry(max_retry_attempts=1),
                 app_env="local",
             )

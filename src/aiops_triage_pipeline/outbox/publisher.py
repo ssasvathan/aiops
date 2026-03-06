@@ -5,15 +5,24 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Protocol
 
-from pydantic import AwareDatetime, BaseModel
+from pydantic import AwareDatetime, BaseModel, ValidationError
 
 from aiops_triage_pipeline.contracts.case_header_event import CaseHeaderEventV1
 from aiops_triage_pipeline.contracts.triage_excerpt import TriageExcerptV1
-from aiops_triage_pipeline.errors.exceptions import CriticalDependencyError, InvariantViolation
+from aiops_triage_pipeline.denylist.enforcement import apply_denylist_with_removed_count
+from aiops_triage_pipeline.denylist.loader import DenylistV1
+from aiops_triage_pipeline.errors.exceptions import (
+    CriticalDependencyError,
+    DenylistSanitizationError,
+    InvariantViolation,
+    PublishAfterDenylistError,
+)
 from aiops_triage_pipeline.models.case_file import CaseFileTriageV1
 from aiops_triage_pipeline.outbox.schema import OutboxRecordV1
 from aiops_triage_pipeline.storage.casefile_io import validate_casefile_triage_json
 from aiops_triage_pipeline.storage.client import ObjectStoreClientProtocol
+
+_TRIAGE_EXCERPT_PUBLISH_BOUNDARY_ID = "outbox.triage_excerpt.kafka_publish"
 
 
 class CaseHeaderPublisherProtocol(Protocol):
@@ -50,6 +59,8 @@ class CaseEventsPublishEvidenceV1(BaseModel, frozen=True):
     triage_hash: str
     published_at: AwareDatetime
     event_count: int = 2
+    boundary_id: str = _TRIAGE_EXCERPT_PUBLISH_BOUNDARY_ID
+    removed_field_count: int = 0
 
 
 def publish_case_header_after_invariant_a(
@@ -90,6 +101,7 @@ def publish_case_events_after_invariant_a(
     outbox_record: OutboxRecordV1,
     object_store_client: ObjectStoreClientProtocol,
     publisher: CaseEventPublisherProtocol,
+    denylist: DenylistV1,
     published_at: datetime | None = None,
 ) -> CaseEventsPublishEvidenceV1:
     """Publish header + excerpt after object-store readback confirms persisted triage artifact."""
@@ -104,10 +116,22 @@ def publish_case_events_after_invariant_a(
         object_store_client=object_store_client,
     )
     case_header_event, triage_excerpt_event = build_outbox_case_events(casefile=persisted_casefile)
-    publisher.publish_case_events(
-        case_header_event=case_header_event,
-        triage_excerpt_event=triage_excerpt_event,
+    sanitization_result = sanitize_triage_excerpt_for_publish(
+        triage_excerpt=triage_excerpt_event,
+        denylist=denylist,
     )
+    try:
+        publisher.publish_case_events(
+            case_header_event=case_header_event,
+            triage_excerpt_event=sanitization_result.triage_excerpt,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise PublishAfterDenylistError(
+            "case events publish failed after denylist sanitization",
+            boundary_id=_TRIAGE_EXCERPT_PUBLISH_BOUNDARY_ID,
+            removed_field_count=sanitization_result.removed_field_count,
+            error_code=type(exc).__name__,
+        ) from exc
 
     resolved_published_at = published_at or datetime.now(tz=UTC)
     if resolved_published_at.tzinfo is None:
@@ -117,6 +141,7 @@ def publish_case_events_after_invariant_a(
         casefile_object_path=outbox_record.casefile_object_path,
         triage_hash=outbox_record.triage_hash,
         published_at=resolved_published_at,
+        removed_field_count=sanitization_result.removed_field_count,
     )
 
 
@@ -154,6 +179,38 @@ def build_outbox_case_events(
         triage_timestamp=casefile.triage_timestamp,
     )
     return case_header, triage_excerpt
+
+
+class SanitizedTriageExcerptV1(BaseModel, frozen=True):
+    """Result bundle for denylist-enforced triage excerpt payloads."""
+
+    triage_excerpt: TriageExcerptV1
+    removed_field_count: int
+
+
+def sanitize_triage_excerpt_for_publish(
+    *,
+    triage_excerpt: TriageExcerptV1,
+    denylist: DenylistV1,
+) -> SanitizedTriageExcerptV1:
+    """Apply shared denylist enforcement and re-validate TriageExcerpt contract."""
+    sanitized_payload, removed_field_count = apply_denylist_with_removed_count(
+        triage_excerpt.model_dump(mode="json"),
+        denylist,
+    )
+    try:
+        sanitized_excerpt = TriageExcerptV1.model_validate(sanitized_payload)
+    except ValidationError as exc:
+        raise DenylistSanitizationError(
+            "triage excerpt denylist sanitization produced schema-invalid payload",
+            boundary_id=_TRIAGE_EXCERPT_PUBLISH_BOUNDARY_ID,
+            removed_field_count=removed_field_count,
+        ) from exc
+
+    return SanitizedTriageExcerptV1(
+        triage_excerpt=sanitized_excerpt,
+        removed_field_count=removed_field_count,
+    )
 
 
 def _readback_casefile_for_outbox_record(

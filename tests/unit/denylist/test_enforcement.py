@@ -1,5 +1,8 @@
 
-from aiops_triage_pipeline.denylist.enforcement import apply_denylist
+from aiops_triage_pipeline.denylist.enforcement import (
+    apply_denylist,
+    apply_denylist_with_removed_count,
+)
 from aiops_triage_pipeline.denylist.loader import DenylistV1
 
 
@@ -93,3 +96,51 @@ def test_empty_patterns_name_denial_still_fires() -> None:
     )
     assert "password" not in result
     assert "auth_header" in result
+
+
+def test_nested_mapping_fields_are_sanitized(minimal_denylist: DenylistV1) -> None:
+    """Nested dict keys and values are enforced recursively."""
+    result = apply_denylist(
+        {
+            "topic": "orders",
+            "nested": {
+                "Password": "hunter2",
+                "token_like": "Bearer AbCdEfGhIjKlMnOpQrSt",
+                "safe": "ok",
+            },
+        },
+        minimal_denylist,
+    )
+    assert result["topic"] == "orders"
+    assert result["nested"] == {"safe": "ok"}
+
+
+def test_nested_list_values_are_sanitized(minimal_denylist: DenylistV1) -> None:
+    """List items matching denied value patterns are removed recursively."""
+    result = apply_denylist(
+        {
+            "findings": [
+                "safe-message",
+                "Bearer AbCdEfGhIjKlMnOpQrSt",
+                {"secret": "x", "note": "kept"},
+            ]
+        },
+        minimal_denylist,
+    )
+    assert result["findings"] == ["safe-message", {"note": "kept"}]
+
+
+def test_removed_count_tracks_nested_list_removals_without_index_shift_loss(
+    minimal_denylist: DenylistV1,
+) -> None:
+    sanitized, removed_count = apply_denylist_with_removed_count(
+        {
+            "findings": [
+                "Bearer AbCdEfGhIjKlMnOpQrSt",
+                {"secret": "x", "note": "kept"},
+            ]
+        },
+        minimal_denylist,
+    )
+    assert sanitized["findings"] == [{"note": "kept"}]
+    assert removed_count == 2

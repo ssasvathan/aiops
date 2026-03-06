@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import re
 from datetime import UTC, datetime
 from typing import Any, Mapping
 
@@ -224,29 +223,8 @@ def _derive_case_id(*, gate_input: GateInputV1) -> str:
 
 def _sanitize_casefile(*, casefile: CaseFileTriageV1, denylist: DenylistV1) -> CaseFileTriageV1:
     payload = casefile.model_dump(mode="json")
-    sanitized_payload = _sanitize_value(payload, denylist=denylist)
+    sanitized_payload = apply_denylist(payload, denylist)
     return CaseFileTriageV1.model_validate(sanitized_payload)
-
-
-def _sanitize_value(value: Any, *, denylist: DenylistV1) -> Any:
-    if isinstance(value, dict):
-        filtered = apply_denylist(value, denylist)
-        return {key: _sanitize_value(item, denylist=denylist) for key, item in filtered.items()}
-    if isinstance(value, list):
-        sanitized_items: list[Any] = []
-        for item in value:
-            sanitized_item = _sanitize_value(item, denylist=denylist)
-            if isinstance(sanitized_item, str) and _value_matches_denylist(
-                sanitized_item, denylist
-            ):
-                continue
-            sanitized_items.append(sanitized_item)
-        return sanitized_items
-    return value
-
-
-def _value_matches_denylist(value: str, denylist: DenylistV1) -> bool:
-    return any(re.search(pattern, value) for pattern in denylist.denied_value_patterns)
 
 
 def persist_casefile_and_prepare_outbox_ready(

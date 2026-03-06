@@ -8,6 +8,11 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 from aiops_triage_pipeline.contracts.outbox_policy import OutboxPolicyV1
+from aiops_triage_pipeline.denylist.loader import DenylistV1
+from aiops_triage_pipeline.errors.exceptions import (
+    DenylistSanitizationError,
+    PublishAfterDenylistError,
+)
 from aiops_triage_pipeline.logging.setup import get_logger
 from aiops_triage_pipeline.outbox.metrics import (
     record_outbox_backlog_health,
@@ -77,6 +82,7 @@ class OutboxPublisherWorker:
         outbox_repository: OutboxRepositoryPublishProtocol,
         object_store_client: ObjectStoreClientProtocol,
         publisher: CaseEventPublisherProtocol,
+        denylist: DenylistV1,
         policy: OutboxPolicyV1,
         app_env: str,
         batch_size: int = 100,
@@ -90,6 +96,7 @@ class OutboxPublisherWorker:
         self._outbox_repository = outbox_repository
         self._object_store_client = object_store_client
         self._publisher = publisher
+        self._denylist = denylist
         self._policy = policy
         self._app_env = app_env
         self._batch_size = batch_size
@@ -114,11 +121,22 @@ class OutboxPublisherWorker:
                     outbox_record=record,
                     object_store_client=self._object_store_client,
                     publisher=self._publisher,
+                    denylist=self._denylist,
                     published_at=resolved_now,
                 )
                 sent_record = self._outbox_repository.transition_to_sent(
                     case_id=record.case_id,
                     now=evidence.published_at,
+                )
+                self._logger.info(
+                    "outbox_denylist_applied",
+                    event_type="outbox.denylist_applied",
+                    case_id=record.case_id,
+                    component="outbox.worker",
+                    boundary_id=evidence.boundary_id,
+                    outcome="success",
+                    severity="info",
+                    removed_field_count=evidence.removed_field_count,
                 )
                 self._logger.info(
                     "outbox_publish_succeeded",
@@ -132,15 +150,19 @@ class OutboxPublisherWorker:
                 record_outbox_publish_outcome(status=sent_record.status, outcome="success")
                 sent_count += 1
             except Exception as exc:  # noqa: BLE001
+                error_code = type(exc).__name__
+                if isinstance(exc, PublishAfterDenylistError):
+                    error_code = exc.error_code
                 failed_record = self._outbox_repository.transition_publish_failure(
                     case_id=record.case_id,
                     policy=self._policy,
                     app_env=self._app_env,
                     error_message=str(exc),
-                    error_code=type(exc).__name__,
+                    error_code=error_code,
                     now=resolved_now,
                 )
                 failed_count += 1
+                self._log_denylist_outcome_on_failure(record=failed_record, exc=exc)
                 self._log_publish_failure(record=failed_record, exc=exc)
                 record_outbox_publish_outcome(status=failed_record.status, outcome="failure")
 
@@ -202,6 +224,33 @@ class OutboxPublisherWorker:
             error_code=record.last_error_code or type(exc).__name__,
             error_message=record.last_error_message or str(exc),
         )
+
+    def _log_denylist_outcome_on_failure(self, *, record: OutboxRecordV1, exc: Exception) -> None:
+        if isinstance(exc, DenylistSanitizationError):
+            self._logger.warning(
+                "outbox_denylist_applied",
+                event_type="outbox.denylist_applied",
+                case_id=record.case_id,
+                component="outbox.worker",
+                boundary_id=exc.boundary_id,
+                outcome="failure",
+                severity="warning",
+                removed_field_count=exc.removed_field_count,
+                error_code=type(exc).__name__,
+            )
+            return
+        if isinstance(exc, PublishAfterDenylistError):
+            self._logger.warning(
+                "outbox_denylist_applied",
+                event_type="outbox.denylist_applied",
+                case_id=record.case_id,
+                component="outbox.worker",
+                boundary_id=exc.boundary_id,
+                outcome="applied_publish_failed",
+                severity="warning",
+                removed_field_count=exc.removed_field_count,
+                error_code=exc.error_code,
+            )
 
 
 def _resolve_now(now: datetime | None) -> datetime:

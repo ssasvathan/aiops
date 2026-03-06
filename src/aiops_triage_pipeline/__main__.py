@@ -7,6 +7,7 @@ from sqlalchemy import create_engine
 
 from aiops_triage_pipeline.config.settings import get_settings, load_policy_yaml
 from aiops_triage_pipeline.contracts.outbox_policy import OutboxPolicyV1
+from aiops_triage_pipeline.denylist.loader import load_denylist
 from aiops_triage_pipeline.integrations.kafka import ConfluentKafkaCaseEventPublisher
 from aiops_triage_pipeline.logging.setup import configure_logging, get_logger
 from aiops_triage_pipeline.outbox.repository import OutboxSqlRepository
@@ -14,6 +15,7 @@ from aiops_triage_pipeline.outbox.worker import OutboxPublisherWorker
 from aiops_triage_pipeline.storage.client import build_s3_object_store_client_from_settings
 
 _OUTBOX_POLICY_PATH = Path(__file__).resolve().parents[2] / "config/policies/outbox-policy-v1.yaml"
+_DENYLIST_PATH = Path(__file__).resolve().parents[2] / "config/denylist.yaml"
 
 
 def main() -> None:
@@ -46,6 +48,7 @@ def _run_outbox_publisher(*, once: bool) -> None:
     settings.log_active_config(logger)
 
     policy = load_policy_yaml(_OUTBOX_POLICY_PATH, OutboxPolicyV1)
+    denylist = load_denylist(_DENYLIST_PATH)
     repository = OutboxSqlRepository(engine=create_engine(settings.DATABASE_URL))
     repository.ensure_schema()
     publisher = ConfluentKafkaCaseEventPublisher(
@@ -57,6 +60,7 @@ def _run_outbox_publisher(*, once: bool) -> None:
         outbox_repository=repository,
         object_store_client=build_s3_object_store_client_from_settings(settings),
         publisher=publisher,
+        denylist=denylist,
         policy=policy,
         app_env=settings.APP_ENV.value,
         batch_size=settings.OUTBOX_PUBLISHER_BATCH_SIZE,
