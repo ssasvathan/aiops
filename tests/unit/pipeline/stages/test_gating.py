@@ -844,3 +844,73 @@ def test_evaluate_rulebook_gates_ag5_skips_remember_on_duplicate() -> None:
 
     assert dedupe_store.remembered == []
     assert dedupe_store.remembered_actions == []
+
+
+# ---------------------------------------------------------------------------
+# AG6: PM_PEAK_SUSTAINED predicate boundary conditions
+# ---------------------------------------------------------------------------
+
+
+def test_evaluate_rulebook_gates_ag6_predicate_fires_when_all_conditions_met() -> None:
+    # Baseline fixture: PROD + TIER_0 + peak=True + sustained=True + PAGE
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval(),
+        rulebook=load_rulebook_policy(),
+        dedupe_store=_DedupeStore(duplicate=False),
+    )
+
+    assert decision.postmortem_required is True
+    assert decision.postmortem_mode == "SOFT"
+    assert decision.postmortem_reason_codes == ("PM_PEAK_SUSTAINED",)
+    assert decision.final_action == Action.PAGE  # AG6 must not change final_action
+
+
+@pytest.mark.parametrize(
+    "update_fields",
+    [
+        {"peak": False},
+        {"peak": None},
+        {"sustained": False},
+        {"env": Environment.DEV},
+        {"env": Environment.UAT},
+        {"criticality_tier": CriticalityTier.TIER_1},
+        {"criticality_tier": CriticalityTier.TIER_2},
+        {"criticality_tier": CriticalityTier.UNKNOWN},
+    ],
+    ids=[
+        "peak_false",
+        "peak_none",
+        "sustained_false",
+        "env_dev",
+        "env_uat",
+        "tier_1",
+        "tier_2",
+        "tier_unknown",
+    ],
+)
+def test_evaluate_rulebook_gates_ag6_predicate_does_not_fire_when_any_condition_missing(
+    update_fields: dict,
+) -> None:
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval().model_copy(update=update_fields),
+        rulebook=load_rulebook_policy(),
+        dedupe_store=_DedupeStore(duplicate=False),
+    )
+
+    assert decision.postmortem_required is False
+    assert decision.postmortem_mode is None
+    assert decision.postmortem_reason_codes == ()
+
+
+def test_evaluate_rulebook_gates_ag6_no_action_escalation_when_predicate_does_not_fire() -> None:
+    # peak=False prevents predicate; all other conditions leave PAGE intact
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval().model_copy(update={"peak": False}),
+        rulebook=load_rulebook_policy(),
+        dedupe_store=_DedupeStore(duplicate=False),
+    )
+
+    assert decision.final_action == Action.PAGE  # AG6 must not change final_action
+    assert decision.postmortem_required is False
+    assert decision.postmortem_mode is None
+    assert decision.postmortem_reason_codes == ()

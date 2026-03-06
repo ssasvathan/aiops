@@ -39,7 +39,7 @@ project_key: NOKEY
 tracking_system: file-system
 story_location: artifact/implementation-artifacts
 development_status:
-  epic-1: in-progress
+  epic-1: done
   1-1-project-initialization-and-repository-structure: done
   1-2-event-contract-models: done
   1-3-policy-and-operational-contract-models: done
@@ -50,7 +50,7 @@ development_status:
   1-8-local-development-environment-docker-compose: done
   1-9-harness-traffic-generation: done
   epic-1-retrospective: done
-  epic-2: in-progress
+  epic-2: done
   2-1-prometheus-metric-collection-and-evaluation-cadence: done
   2-2-anomaly-pattern-detection: done
   2-3-peak-near-peak-classification: done
@@ -59,14 +59,14 @@ development_status:
   2-6-redis-evidence-caching: done
   2-7-prometheus-unavailability-and-telemetrydegradedevent: done
   epic-2-retrospective: done
-  epic-3: in-progress
+  epic-3: done
   3-1-topology-registry-loader-v0-and-v1-formats: done
   3-2-stream-resolution-and-topic-role-classification: done
   3-3-blast-radius-and-downstream-impact-assessment: done
   3-4-multi-level-ownership-routing: done
   3-5-legacy-v0-compatibility-views: done
   epic-3-retrospective: done
-  epic-4: in-progress
+  epic-4: done
   4-1-casefile-triage-stage-assembly: done
   4-2-write-once-casefile-to-object-storage-invariant-a: done
   4-3-append-only-casefile-stage-files: done
@@ -81,7 +81,7 @@ development_status:
   5-3-evidence-sufficiency-and-source-topic-gates-ag2-ag3: done
   5-4-sustained-and-confidence-threshold-gate-ag4: done
   5-5-action-deduplication-and-redis-degraded-mode-ag5: done
-  5-6-postmortem-predicate-evaluation-ag6: backlog
+  5-6-postmortem-predicate-evaluation-ag6: review
   5-7-pagerduty-page-trigger-execution: backlog
   5-8-slack-notification-and-structured-log-fallback: backlog
   5-9-end-to-end-hot-path-pipeline-test: backlog
