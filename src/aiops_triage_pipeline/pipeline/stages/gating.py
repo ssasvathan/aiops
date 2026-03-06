@@ -49,8 +49,8 @@ class GateDedupeStoreProtocol(Protocol):
     def is_duplicate(self, fingerprint: str) -> bool:
         """Return True when the fingerprint is already active in the dedupe window."""
 
-    def remember(self, fingerprint: str) -> None:
-        """Persist fingerprint in dedupe window after successful non-duplicate evaluation."""
+    def remember(self, fingerprint: str, action: Action) -> None:
+        """Persist fingerprint in dedupe window with the per-action TTL."""
 
 
 @dataclass
@@ -156,7 +156,7 @@ def evaluate_rulebook_gates(
                         gate_id=gate_id,
                     )
                 else:
-                    dedupe_store.remember(gate_input.action_fingerprint)
+                    dedupe_store.remember(gate_input.action_fingerprint, state.current_action)
             except Exception:
                 _apply_gate_effect(
                     state=state,

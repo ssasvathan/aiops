@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Mapping, Sequence
 
+from aiops_triage_pipeline.cache.dedupe import HealthTrackableDedupeStore
 from aiops_triage_pipeline.cache.findings_cache import FindingsCacheClientProtocol
 from aiops_triage_pipeline.contracts.action_decision import ActionDecisionV1
 from aiops_triage_pipeline.contracts.enums import Action
@@ -16,8 +17,9 @@ from aiops_triage_pipeline.integrations.prometheus import (
     MetricQueryDefinition,
     PrometheusClientProtocol,
 )
+from aiops_triage_pipeline.integrations.slack import SlackClient
 from aiops_triage_pipeline.logging.setup import get_logger
-from aiops_triage_pipeline.models.events import TelemetryDegradedEvent
+from aiops_triage_pipeline.models.events import DegradedModeEvent, TelemetryDegradedEvent
 from aiops_triage_pipeline.models.evidence import EvidenceStageOutput
 from aiops_triage_pipeline.models.health import HealthStatus
 from aiops_triage_pipeline.models.peak import (
@@ -276,6 +278,76 @@ def run_gate_decision_stage_cycle(
         dedupe_store=dedupe_store,
         latency_warning_threshold_ms=latency_warning_threshold_ms,
     )
+
+
+async def emit_redis_degraded_mode_events(
+    *,
+    dedupe_store: GateDedupeStoreProtocol | None,
+    evaluation_time: datetime,
+    health_registry: HealthRegistry | None = None,
+    slack_client: SlackClient | None = None,
+) -> tuple[DegradedModeEvent, ...]:
+    """Emit DegradedModeEvent and update HealthRegistry when Redis is degraded.
+
+    Mirrors the Prometheus degradation pattern in ``run_evidence_stage_cycle``:
+    - On first Redis failure: update HealthRegistry to DEGRADED, emit event,
+      send to Slack if configured.
+    - On continued failure: suppress duplicate events (registry already DEGRADED).
+    - On recovery: update HealthRegistry back to HEALTHY; no event emitted.
+    - When dedupe_store is None or not health-trackable: no-op.
+
+    Args:
+        dedupe_store:    The AG5 dedupe store used in the previous gate cycle.
+        evaluation_time: UTC timestamp of the current evaluation cycle.
+        health_registry: Registry to update. Defaults to the process singleton.
+        slack_client:    Slack client for degraded-mode notifications.
+
+    Returns:
+        Tuple of emitted DegradedModeEvent instances (0 or 1 per cycle).
+    """
+    if not isinstance(dedupe_store, HealthTrackableDedupeStore):
+        return ()
+
+    registry = health_registry or get_health_registry()
+    previous_redis_status = registry.get("redis")
+    logger = get_logger("pipeline.scheduler")
+
+    if not dedupe_store.is_healthy:
+        if previous_redis_status not in (HealthStatus.DEGRADED, HealthStatus.UNAVAILABLE):
+            await registry.update(
+                "redis",
+                HealthStatus.DEGRADED,
+                reason=dedupe_store.last_error,
+            )
+            event = DegradedModeEvent(
+                affected_scope="redis",
+                reason=dedupe_store.last_error or "Redis dedupe store unavailable",
+                capped_action_level="NOTIFY-only",
+                estimated_impact_window="unknown",
+                timestamp=evaluation_time.astimezone(UTC),
+            )
+            logger.warning(
+                "redis_degraded_mode_event",
+                event_type="DegradedModeEvent",
+                affected_scope=event.affected_scope,
+                reason=event.reason,
+                capped_action_level=event.capped_action_level,
+                estimated_impact_window=event.estimated_impact_window,
+                timestamp=event.timestamp.isoformat(),
+            )
+            if slack_client is not None:
+                slack_client.send_degraded_mode_event(event)
+            return (event,)
+        return ()
+
+    if previous_redis_status in (HealthStatus.DEGRADED, HealthStatus.UNAVAILABLE):
+        await registry.update("redis", HealthStatus.HEALTHY)
+        logger.info(
+            "redis_degraded_mode_recovered",
+            event_type="scheduler.redis_recovery",
+            previous_status=previous_redis_status.value,
+        )
+    return ()
 
 
 def _has_gate_input_context(

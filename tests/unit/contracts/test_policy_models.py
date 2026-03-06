@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from aiops_triage_pipeline.config.settings import load_policy_yaml
 from aiops_triage_pipeline.contracts import (
+    AG5DedupeTtlConfig,
     CasefileRetentionPolicyV1,
     GateEffects,
     GateSpec,
@@ -215,6 +216,33 @@ def test_rulebook_policy_artifact_ag4_reason_codes_are_explicit() -> None:
 
 def test_redis_ttl_prod_dedupe_accessible(minimal_redis_ttl: RedisTtlPolicyV1) -> None:
     assert minimal_redis_ttl.ttls_by_env["prod"].dedupe_seconds > 0
+
+
+def test_redis_ttl_policy_artifact_enforces_fr33_per_action_ttls() -> None:
+    policy_path = Path(__file__).resolve().parents[3] / "config/policies/redis-ttl-policy-v1.yaml"
+    policy = load_policy_yaml(policy_path, RedisTtlPolicyV1)
+
+    for env in ("local", "dev", "uat", "prod"):
+        ttl_config = policy.ttls_by_env[env].dedupe_ttl_by_action
+        assert ttl_config.page_seconds == 7200, f"{env}: PAGE TTL must be 7200s (FR33)"
+        assert ttl_config.ticket_seconds == 14400, f"{env}: TICKET TTL must be 14400s (FR33)"
+        assert ttl_config.notify_seconds == 3600, f"{env}: NOTIFY TTL must be 3600s (FR33)"
+
+
+def test_ag5_dedupe_ttl_config_defaults_match_fr33_spec() -> None:
+    config = AG5DedupeTtlConfig()
+    assert config.page_seconds == 7200    # FR33: PAGE = 120 min
+    assert config.ticket_seconds == 14400  # FR33: TICKET = 240 min
+    assert config.notify_seconds == 3600   # FR33: NOTIFY = 60 min
+
+
+def test_redis_ttl_by_env_has_dedupe_ttl_by_action_with_fr33_defaults(
+    minimal_redis_ttl: RedisTtlPolicyV1,
+) -> None:
+    ttls = minimal_redis_ttl.ttls_by_env["prod"]
+    assert ttls.dedupe_ttl_by_action.page_seconds == 7200
+    assert ttls.dedupe_ttl_by_action.ticket_seconds == 14400
+    assert ttls.dedupe_ttl_by_action.notify_seconds == 3600
 
 
 def test_outbox_prod_retention(minimal_outbox_policy: OutboxPolicyV1) -> None:

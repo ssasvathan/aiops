@@ -5,15 +5,19 @@ from urllib.error import URLError
 
 import pytest
 
+from aiops_triage_pipeline.cache.dedupe import RedisActionDedupeStore
 from aiops_triage_pipeline.contracts.enums import Action, CriticalityTier, EvidenceStatus
 from aiops_triage_pipeline.contracts.gate_input import Finding, GateInputV1
 from aiops_triage_pipeline.contracts.peak_policy import PeakPolicyV1, PeakThresholdPolicy
 from aiops_triage_pipeline.contracts.redis_ttl_policy import RedisTtlPolicyV1, RedisTtlsByEnv
 from aiops_triage_pipeline.health.registry import HealthRegistry
 from aiops_triage_pipeline.integrations.prometheus import MetricQueryDefinition
+from aiops_triage_pipeline.integrations.slack import SlackClient, SlackIntegrationMode
+from aiops_triage_pipeline.models.events import DegradedModeEvent
 from aiops_triage_pipeline.models.health import HealthStatus
 from aiops_triage_pipeline.pipeline.scheduler import (
     SchedulerTick,
+    emit_redis_degraded_mode_events,
     evaluate_scheduler_tick,
     floor_to_interval_boundary,
     next_interval_boundary,
@@ -69,7 +73,7 @@ class _DedupeStore:
     def is_duplicate(self, fingerprint: str) -> bool:  # noqa: ARG002
         return self.duplicate
 
-    def remember(self, fingerprint: str) -> None:
+    def remember(self, fingerprint: str, action: object) -> None:  # noqa: ARG002
         self.remembered.append(fingerprint)
 
 
@@ -1234,3 +1238,168 @@ def test_run_gate_decision_stage_cycle_wires_dedupe_store() -> None:
 def test_run_gate_decision_stage_cycle_requires_explicit_rulebook_policy() -> None:
     with pytest.raises(ValueError, match="rulebook_policy is required"):
         run_gate_decision_stage_cycle(gate_inputs_by_scope={})
+
+
+# ── emit_redis_degraded_mode_events tests ─────────────────────────────────────
+
+
+class _FailingRedis:
+    """Stub Redis that always raises on any operation."""
+
+    def get(self, key: str) -> None:  # noqa: ARG002
+        raise ConnectionError("Redis connection refused")
+
+    def set(self, key: str, value: str, **kwargs: object) -> None:  # noqa: ARG002
+        raise ConnectionError("Redis connection refused")
+
+
+class _HealthyRedis:
+    """Stub Redis that behaves normally."""
+
+    def __init__(self) -> None:
+        self._store: dict[str, str] = {}
+
+    def get(self, key: str) -> str | None:
+        return self._store.get(key)
+
+    def set(self, key: str, value: str, *, nx: bool = False, ex: int | None = None) -> bool:  # noqa: ARG002
+        if nx and key in self._store:
+            return False
+        self._store[key] = value
+        return True
+
+
+async def test_emit_redis_degraded_mode_events_no_op_when_store_is_none() -> None:
+    events = await emit_redis_degraded_mode_events(
+        dedupe_store=None,
+        evaluation_time=datetime(2026, 3, 6, 12, 0, tzinfo=UTC),
+        health_registry=HealthRegistry(),
+    )
+    assert events == ()
+
+
+async def test_emit_redis_degraded_mode_events_no_op_for_non_health_trackable_store() -> None:
+    events = await emit_redis_degraded_mode_events(
+        dedupe_store=_DedupeStore(duplicate=False),
+        evaluation_time=datetime(2026, 3, 6, 12, 0, tzinfo=UTC),
+        health_registry=HealthRegistry(),
+    )
+    assert events == ()
+
+
+async def test_emit_redis_degraded_mode_events_emits_on_first_failure(
+    log_stream: io.StringIO,
+) -> None:
+    redis_client = _FailingRedis()
+    store = RedisActionDedupeStore(redis_client)
+    # Trigger a failure so the store marks itself unhealthy
+    with pytest.raises(ConnectionError):
+        store.is_duplicate("fp-test")
+
+    registry = HealthRegistry()
+    events = await emit_redis_degraded_mode_events(
+        dedupe_store=store,
+        evaluation_time=datetime(2026, 3, 6, 12, 0, tzinfo=UTC),
+        health_registry=registry,
+    )
+
+    assert len(events) == 1
+    assert isinstance(events[0], DegradedModeEvent)
+    assert events[0].affected_scope == "redis"
+    assert events[0].capped_action_level == "NOTIFY-only"
+    assert registry.get("redis") == HealthStatus.DEGRADED
+
+
+async def test_emit_redis_degraded_mode_events_suppresses_duplicate_while_still_degraded() -> None:
+    redis_client = _FailingRedis()
+    store = RedisActionDedupeStore(redis_client)
+    with pytest.raises(ConnectionError):
+        store.is_duplicate("fp-test")
+
+    registry = HealthRegistry()
+    first = await emit_redis_degraded_mode_events(
+        dedupe_store=store,
+        evaluation_time=datetime(2026, 3, 6, 12, 0, tzinfo=UTC),
+        health_registry=registry,
+    )
+    # Second cycle: still failing, registry already DEGRADED
+    second = await emit_redis_degraded_mode_events(
+        dedupe_store=store,
+        evaluation_time=datetime(2026, 3, 6, 12, 5, tzinfo=UTC),
+        health_registry=registry,
+    )
+
+    assert len(first) == 1
+    assert second == ()
+    assert registry.get("redis") == HealthStatus.DEGRADED
+
+
+async def test_emit_redis_degraded_mode_events_restores_health_on_recovery() -> None:
+    failing_store = RedisActionDedupeStore(_FailingRedis())
+    with pytest.raises(ConnectionError):
+        failing_store.is_duplicate("fp-test")
+
+    registry = HealthRegistry()
+    await emit_redis_degraded_mode_events(
+        dedupe_store=failing_store,
+        evaluation_time=datetime(2026, 3, 6, 12, 0, tzinfo=UTC),
+        health_registry=registry,
+    )
+    assert registry.get("redis") == HealthStatus.DEGRADED
+
+    # Recovery: a fresh store with a working Redis backend
+    recovered_store = RedisActionDedupeStore(_HealthyRedis())
+    recovered_store.is_duplicate("fp-test")  # succeeds → is_healthy = True
+
+    recovery_events = await emit_redis_degraded_mode_events(
+        dedupe_store=recovered_store,
+        evaluation_time=datetime(2026, 3, 6, 12, 5, tzinfo=UTC),
+        health_registry=registry,
+    )
+
+    assert recovery_events == ()
+    assert registry.get("redis") == HealthStatus.HEALTHY
+
+
+async def test_emit_redis_degraded_mode_events_dispatches_to_slack_on_first_failure() -> None:
+    dispatched: list[DegradedModeEvent] = []
+
+    class _CaptureSlack(SlackClient):
+        def send_degraded_mode_event(self, event: DegradedModeEvent) -> None:
+            dispatched.append(event)
+
+    store = RedisActionDedupeStore(_FailingRedis())
+    with pytest.raises(ConnectionError):
+        store.is_duplicate("fp-test")
+
+    slack = _CaptureSlack(mode=SlackIntegrationMode.LOG)
+    await emit_redis_degraded_mode_events(
+        dedupe_store=store,
+        evaluation_time=datetime(2026, 3, 6, 12, 0, tzinfo=UTC),
+        health_registry=HealthRegistry(),
+        slack_client=slack,
+    )
+
+    assert len(dispatched) == 1
+    assert dispatched[0].affected_scope == "redis"
+
+
+async def test_emit_redis_degraded_mode_events_emits_structured_log(
+    log_stream: io.StringIO,
+) -> None:
+    store = RedisActionDedupeStore(_FailingRedis())
+    with pytest.raises(ConnectionError):
+        store.is_duplicate("fp-test")
+
+    await emit_redis_degraded_mode_events(
+        dedupe_store=store,
+        evaluation_time=datetime(2026, 3, 6, 12, 0, tzinfo=UTC),
+        health_registry=HealthRegistry(),
+    )
+
+    log_entries = _parse_logs(log_stream)
+    degraded_entries = [e for e in log_entries if e.get("event") == "redis_degraded_mode_event"]
+    assert len(degraded_entries) == 1
+    assert degraded_entries[0]["event_type"] == "DegradedModeEvent"
+    assert degraded_entries[0]["affected_scope"] == "redis"
+    assert degraded_entries[0]["capped_action_level"] == "NOTIFY-only"

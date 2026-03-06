@@ -97,14 +97,16 @@ class _DedupeStore:
         self.duplicate = duplicate
         self.fail_on_check = fail_on_check
         self.remembered: list[str] = []
+        self.remembered_actions: list[Action] = []
 
     def is_duplicate(self, fingerprint: str) -> bool:  # noqa: ARG002
         if self.fail_on_check:
             raise RuntimeError("dedupe store unavailable")
         return self.duplicate
 
-    def remember(self, fingerprint: str) -> None:
+    def remember(self, fingerprint: str, action: Action) -> None:
         self.remembered.append(fingerprint)
+        self.remembered_actions.append(action)
 
 
 def _gate_input_for_eval() -> GateInputV1:
@@ -800,3 +802,44 @@ def test_evaluate_rulebook_gates_micro_benchmark_guardrail() -> None:
     p99_index = int(len(durations_ms) * 0.99) - 1
     p99_duration_ms = durations_ms[max(p99_index, 0)]
     assert p99_duration_ms <= 500.0
+
+
+def test_evaluate_rulebook_gates_ag5_remember_receives_current_action() -> None:
+    dedupe_store = _DedupeStore(duplicate=False)
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval(),
+        rulebook=load_rulebook_policy(),
+        dedupe_store=dedupe_store,
+    )
+
+    assert decision.final_action == Action.PAGE
+    assert len(dedupe_store.remembered_actions) == 1
+    assert dedupe_store.remembered_actions[0] == Action.PAGE
+
+
+def test_evaluate_rulebook_gates_ag5_remember_receives_capped_action_after_ag1() -> None:
+    dedupe_store = _DedupeStore(duplicate=False)
+    # DEV env caps PAGE → NOTIFY via AG1; AG5 remember should receive NOTIFY
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval().model_copy(
+            update={"env": Environment.DEV, "diagnosis_confidence": 0.95, "sustained": True}
+        ),
+        rulebook=load_rulebook_policy(),
+        dedupe_store=dedupe_store,
+    )
+
+    assert decision.final_action == Action.NOTIFY
+    assert len(dedupe_store.remembered_actions) == 1
+    assert dedupe_store.remembered_actions[0] == Action.NOTIFY
+
+
+def test_evaluate_rulebook_gates_ag5_skips_remember_on_duplicate() -> None:
+    dedupe_store = _DedupeStore(duplicate=True)
+    _ = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval(),
+        rulebook=load_rulebook_policy(),
+        dedupe_store=dedupe_store,
+    )
+
+    assert dedupe_store.remembered == []
+    assert dedupe_store.remembered_actions == []

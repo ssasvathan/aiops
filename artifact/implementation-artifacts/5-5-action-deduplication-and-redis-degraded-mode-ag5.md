@@ -1,6 +1,6 @@
 # Story 5.5: Action Deduplication & Redis Degraded Mode (AG5)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -26,41 +26,41 @@ so that repeat actions are suppressed (preventing paging storms) and Redis failu
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Implement production AG5 dedupe store with Redis TTL semantics (AC: 1, 2, 3)
-  - [ ] Implement `RedisActionDedupeStore` in `src/aiops_triage_pipeline/cache/dedupe.py` behind `GateDedupeStoreProtocol`.
-  - [ ] Use Redis atomic claim semantics (`SET ... NX EX`) so duplicate detection and TTL registration are race-safe.
-  - [ ] Ensure key format follows `dedupe:{fingerprint}` and supports action-specific TTL behavior required by FR33.
+- [x] Task 1: Implement production AG5 dedupe store with Redis TTL semantics (AC: 1, 2, 3)
+  - [x] Implement `RedisActionDedupeStore` in `src/aiops_triage_pipeline/cache/dedupe.py` behind `GateDedupeStoreProtocol`.
+  - [x] Use Redis atomic claim semantics (`SET ... NX EX`) so duplicate detection and TTL registration are race-safe.
+  - [x] Ensure key format follows `dedupe:{fingerprint}` and supports action-specific TTL behavior required by FR33.
 
-- [ ] Task 2: Align AG5 policy/configuration with FR33 per-action TTL requirements (AC: 1)
-  - [ ] Add explicit AG5 TTL mapping for `PAGE=120m`, `TICKET=240m`, `NOTIFY=60m` in the policy path consumed by Stage 6 (rulebook or dedicated AG5 policy section).
-  - [ ] Keep policy contracts and validators consistent with any new policy fields (`contracts/rulebook.py` and related tests).
-  - [ ] Preserve backward compatibility for existing policy artifacts where feasible and fail loudly on invalid/missing AG5 TTL config.
+- [x] Task 2: Align AG5 policy/configuration with FR33 per-action TTL requirements (AC: 1)
+  - [x] Add explicit AG5 TTL mapping for `PAGE=120m`, `TICKET=240m`, `NOTIFY=60m` in the policy path consumed by Stage 6 (rulebook or dedicated AG5 policy section).
+  - [x] Keep policy contracts and validators consistent with any new policy fields (`contracts/rulebook.py` and related tests).
+  - [x] Preserve backward compatibility for existing policy artifacts where feasible and fail loudly on invalid/missing AG5 TTL config.
 
-- [ ] Task 3: Harden Stage 6 AG5 logic for action-aware dedupe and safe degradation (AC: 1, 2, 4)
-  - [ ] Update `src/aiops_triage_pipeline/pipeline/stages/gating.py` AG5 path to dedupe by fingerprint in a way that satisfies glossary intent (anomaly identity + action behavior).
-  - [ ] Keep gate evaluation monotonic and deterministic; AG5 must only suppress or cap, never escalate.
-  - [ ] Preserve AG0-AG6 order and existing AG4/AG6 behavior while integrating real dedupe I/O.
+- [x] Task 3: Harden Stage 6 AG5 logic for action-aware dedupe and safe degradation (AC: 1, 2, 4)
+  - [x] Update `src/aiops_triage_pipeline/pipeline/stages/gating.py` AG5 path to dedupe by fingerprint in a way that satisfies glossary intent (anomaly identity + action behavior).
+  - [x] Keep gate evaluation monotonic and deterministic; AG5 must only suppress or cap, never escalate.
+  - [x] Preserve AG0-AG6 order and existing AG4/AG6 behavior while integrating real dedupe I/O.
 
-- [ ] Task 4: Emit degraded-mode operational signals on Redis failures (AC: 4, 5, 6, 7)
-  - [ ] On AG5 Redis lookup/write failures, emit `DegradedModeEvent` with required fields and structured logging (`event_type="DegradedModeEvent"`).
-  - [ ] Update `HealthRegistry` component status for Redis degradation and recovery.
-  - [ ] Route degraded notification through Slack integration mode behavior (`OFF|LOG|MOCK|LIVE`) with log fallback.
+- [x] Task 4: Emit degraded-mode operational signals on Redis failures (AC: 4, 5, 6, 7)
+  - [x] On AG5 Redis lookup/write failures, emit `DegradedModeEvent` with required fields and structured logging (`event_type="DegradedModeEvent"`).
+  - [x] Update `HealthRegistry` component status for Redis degradation and recovery.
+  - [x] Route degraded notification through Slack integration mode behavior (`OFF|LOG|MOCK|LIVE`) with log fallback.
 
-- [ ] Task 5: Wire AG5 dedupe store through scheduler/runtime boundaries (AC: 1, 4, 7)
-  - [ ] Ensure `run_gate_decision_stage_cycle(...)` call sites receive a concrete dedupe store in runtime code paths.
-  - [ ] Avoid hidden file/network side effects in pure evaluation paths; keep explicit dependency injection.
-  - [ ] Verify recovery path restores normal AG5 behavior once Redis connectivity returns.
+- [x] Task 5: Wire AG5 dedupe store through scheduler/runtime boundaries (AC: 1, 4, 7)
+  - [x] Ensure `run_gate_decision_stage_cycle(...)` call sites receive a concrete dedupe store in runtime code paths.
+  - [x] Avoid hidden file/network side effects in pure evaluation paths; keep explicit dependency injection.
+  - [x] Verify recovery path restores normal AG5 behavior once Redis connectivity returns.
 
-- [ ] Task 6: Expand unit and integration coverage for AG5 and degraded mode (AC: 1-8)
-  - [ ] Extend `tests/unit/pipeline/stages/test_gating.py` for per-action TTL behavior, duplicate suppression, store errors, and reason codes.
-  - [ ] Extend `tests/unit/pipeline/test_scheduler.py` for degraded-mode event/health behavior and recovery.
-  - [ ] Add focused tests for dedupe store implementation (`tests/unit/cache/test_dedupe.py` or equivalent).
-  - [ ] Add/extend integration tests to verify Redis failure -> NOTIFY-only cap + `DegradedModeEvent` and post-recovery behavior (NFR-T4).
+- [x] Task 6: Expand unit and integration coverage for AG5 and degraded mode (AC: 1-8)
+  - [x] Extend `tests/unit/pipeline/stages/test_gating.py` for per-action TTL behavior, duplicate suppression, store errors, and reason codes.
+  - [x] Extend `tests/unit/pipeline/test_scheduler.py` for degraded-mode event/health behavior and recovery.
+  - [x] Add focused tests for dedupe store implementation (`tests/unit/cache/test_dedupe.py` or equivalent).
+  - [x] Add/extend integration tests to verify Redis failure -> NOTIFY-only cap + `DegradedModeEvent` and post-recovery behavior (NFR-T4).
 
-- [ ] Task 7: Run quality gates with zero skips
-  - [ ] `uv run pytest -q tests/unit/pipeline/stages/test_gating.py tests/unit/pipeline/test_scheduler.py tests/unit/contracts/test_policy_models.py`
-  - [ ] `uv run ruff check`
-  - [ ] `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
+- [x] Task 7: Run quality gates with zero skips
+  - [x] `uv run pytest -q tests/unit/pipeline/stages/test_gating.py tests/unit/pipeline/test_scheduler.py tests/unit/contracts/test_policy_models.py`
+  - [x] `uv run ruff check`
+  - [x] `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
 
 ## Dev Notes
 
@@ -269,7 +269,7 @@ Applied rules from `artifact/project-context.md`:
 
 ### Agent Model Used
 
-GPT-5 Codex
+claude-sonnet-4-6
 
 ### Debug Log References
 
@@ -292,8 +292,28 @@ GPT-5 Codex
 - Analyzed Epic 5 context, Story 5.5 ACs, architecture constraints, previous story implementation learnings, and recent commit patterns.
 - Added explicit implementation guardrails for AG5 TTL, Redis degraded mode, DegradedModeEvent signaling, and regression protection.
 - Included current-technology notes for Redis/redis-py and atomic dedupe command semantics.
+- **Implementation (2026-03-06):**
+  - Task 1: Implemented `RedisActionDedupeStore` in `cache/dedupe.py` with `HealthTrackableDedupeStore` protocol. Uses atomic `SET NX EX` semantics. Per-action TTLs: PAGE=7200s, TICKET=14400s, NOTIFY=3600s (FR33 defaults). Tracks `is_healthy`/`last_error` for scheduler-level event emission.
+  - Task 2: Added `AG5DedupeTtlConfig` Pydantic model to `contracts/redis_ttl_policy.py` with FR33 defaults. Added `dedupe_ttl_by_action` field to `RedisTtlsByEnv` (backward-compat default). Updated `redis-ttl-policy-v1.yaml` all envs. Exported from `contracts/__init__.py`.
+  - Task 3: Updated `GateDedupeStoreProtocol.remember` to `remember(fingerprint, action)`. AG5 gate now passes `state.current_action` to `remember` so TTL matches the action being taken. Gate monotonicity and AG0-AG6 order unchanged.
+  - Task 4: Implemented `SlackClient` in `integrations/slack.py` with `SlackIntegrationMode` (OFF/LOG/MOCK/LIVE). All modes emit structured log first (log fallback per FR51 AC6). Added `emit_redis_degraded_mode_events()` async function to `scheduler.py` mirroring Prometheus degradation pattern: updates HealthRegistry, emits DegradedModeEvent, dispatches to Slack, suppresses duplicate events on sustained failure.
+  - Task 5: `run_gate_decision_stage_cycle` already accepts `dedupe_store`; pure evaluation stays sync. Scheduler-level health checks in `emit_redis_degraded_mode_events` handle async side-effects cleanly (explicit DI, no hidden I/O in gate evaluation).
+  - Task 6: 521 tests total (0 skipped). Added 30+ new tests across `tests/unit/cache/test_dedupe.py`, `test_gating.py`, `test_scheduler.py`, `test_policy_models.py`, and `tests/integration/test_degraded_modes.py`.
+  - Task 7: All quality gates passed: `ruff check` clean, full regression 521 tests / 0 skipped.
 
 ### File List
 
+- `src/aiops_triage_pipeline/cache/dedupe.py`
+- `src/aiops_triage_pipeline/contracts/redis_ttl_policy.py`
+- `src/aiops_triage_pipeline/contracts/__init__.py`
+- `src/aiops_triage_pipeline/integrations/slack.py`
+- `src/aiops_triage_pipeline/pipeline/stages/gating.py`
+- `src/aiops_triage_pipeline/pipeline/scheduler.py`
+- `config/policies/redis-ttl-policy-v1.yaml`
+- `tests/unit/cache/test_dedupe.py`
+- `tests/unit/pipeline/stages/test_gating.py`
+- `tests/unit/pipeline/test_scheduler.py`
+- `tests/unit/contracts/test_policy_models.py`
+- `tests/integration/test_degraded_modes.py`
 - `artifact/implementation-artifacts/5-5-action-deduplication-and-redis-degraded-mode-ag5.md`
 - `artifact/implementation-artifacts/sprint-status.yaml`

@@ -27,7 +27,11 @@ from aiops_triage_pipeline.contracts.prometheus_metrics import (
     PrometheusMetricsContractV1,
     TruthfulnessConfig,
 )
-from aiops_triage_pipeline.contracts.redis_ttl_policy import RedisTtlPolicyV1, RedisTtlsByEnv
+from aiops_triage_pipeline.contracts.redis_ttl_policy import (
+    AG5DedupeTtlConfig,
+    RedisTtlPolicyV1,
+    RedisTtlsByEnv,
+)
 from aiops_triage_pipeline.contracts.rulebook import (
     GateCheck,
     GateEffect,
@@ -72,6 +76,7 @@ __all__ = [
     "MetricIdentityConfig",
     "PrometheusMetricsContractV1",
     "TruthfulnessConfig",
+    "AG5DedupeTtlConfig",
     "RedisTtlPolicyV1",
     "RedisTtlsByEnv",
     "OutboxPolicyV1",
