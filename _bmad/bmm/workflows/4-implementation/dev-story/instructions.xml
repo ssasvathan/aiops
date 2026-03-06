@@ -267,6 +267,7 @@
     <action>Validate implementation meets ALL story acceptance criteria; enforce quantitative thresholds explicitly</action>
     <action if="regression tests fail">STOP and fix before continuing - identify breaking changes immediately</action>
     <action if="new tests fail">STOP and fix before continuing - ensure implementation correctness</action>
+    <action if="any tests are skipped">STOP and fix environment/dependency prerequisites before continuing - skips are not allowed for sprint quality gates</action>
   </step>
 
   <step n="8" goal="Validate and mark task complete ONLY when fully done">
@@ -335,6 +336,7 @@
       - Integration tests for component interactions added when required
       - End-to-end tests for critical flows added when story demands them
       - All tests pass (no regressions, new tests successful)
+      - Full regression run has zero skipped tests
       - Code quality checks pass (linting, static analysis if configured)
       - File List includes every new/modified/deleted file (relative paths)
       - Dev Agent Record contains implementation notes

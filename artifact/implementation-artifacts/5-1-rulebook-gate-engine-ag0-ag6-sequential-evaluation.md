@@ -1,6 +1,6 @@
 # Story 5.1: Rulebook Gate Engine (AG0-AG6 Sequential Evaluation)
 
-Status: done
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -267,6 +267,7 @@ GPT-5 Codex
   - Corrected `ActionDecisionV1.env_cap_applied` semantics to only reflect environment-cap reductions (not tier-only caps).
   - Removed implicit policy file loading from `run_gate_decision_stage_cycle(...)`; callers must pass explicit `RulebookV1` to keep Stage 6 decision computation free of hidden file I/O.
   - Added regression tests for UAT cap compatibility, tier-only cap semantics, and explicit-policy requirement in scheduler helper.
+- Completion validation rerun on 2026-03-06: full regression suite passed (`424 passed, 4 skipped`); story and sprint status synchronized to `review`.
 
 ### File List
 
@@ -285,3 +286,4 @@ GPT-5 Codex
 - 2026-03-06: Implemented Stage 6 rulebook gate evaluator and scheduler decision helper for Story 5.1; added comprehensive unit coverage and latency guardrail logging.
 - 2026-03-06: Executed story-targeted quality gates successfully (`ruff`, targeted `pytest`), then resolved full-suite regression blocker by clamping outbox transition timestamps to monotonic progression and adding regression tests.
 - 2026-03-06: Addressed code-review findings by fixing UAT AG1 policy compatibility, tightening `env_cap_applied` semantics, removing implicit Stage 6 policy file I/O from scheduler helper, and extending Stage 6 regression tests.
+- 2026-03-06: Re-ran full regression validation and marked story status `review` with sprint-status synchronization.

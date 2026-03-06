@@ -131,6 +131,7 @@ Implementation notes:
 - Test discipline:
   - New behavior changes should include or update targeted tests in the relevant test package.
   - Avoid placeholder-only coverage for production logic.
+  - Enforce no-skip regressions: full pytest quality-gate runs must end with zero skipped tests; missing environment prerequisites must be fixed, not skipped.
 
 ### Code Quality & Style Rules
 
