@@ -79,7 +79,7 @@ development_status:
   5-1-rulebook-gate-engine-ag0-ag6-sequential-evaluation: done
   5-2-environment-and-criticality-tier-caps-ag1: done
   5-3-evidence-sufficiency-and-source-topic-gates-ag2-ag3: done
-  5-4-sustained-and-confidence-threshold-gate-ag4: backlog
+  5-4-sustained-and-confidence-threshold-gate-ag4: ready-for-dev
   5-5-action-deduplication-and-redis-degraded-mode-ag5: backlog
   5-6-postmortem-predicate-evaluation-ag6: backlog
   5-7-pagerduty-page-trigger-execution: backlog
