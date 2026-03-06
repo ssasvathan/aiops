@@ -56,6 +56,7 @@ class GateDedupeStoreProtocol(Protocol):
 @dataclass
 class _EvaluationState:
     current_action: Action
+    input_valid: bool = True
     env_cap_applied: bool = False
     gate_reason_codes: list[str] = field(default_factory=list)
     postmortem_required: bool = False
@@ -83,6 +84,7 @@ def evaluate_rulebook_gates(
 
         if gate_id == "AG0":
             if not _ag0_is_valid(gate_input):
+                state.input_valid = False
                 _apply_gate_effect(
                     state=state,
                     effect=gate_spec.effect.on_fail,
@@ -134,6 +136,11 @@ def evaluate_rulebook_gates(
             if _ACTION_PRIORITY[state.current_action] <= _ACTION_PRIORITY[Action.OBSERVE]:
                 continue
             if dedupe_store is None:
+                _apply_gate_effect(
+                    state=state,
+                    effect=gate_spec.effect.on_store_error,
+                    gate_id=gate_id,
+                )
                 continue
             try:
                 if dedupe_store.is_duplicate(gate_input.action_fingerprint):
@@ -154,7 +161,8 @@ def evaluate_rulebook_gates(
 
         if gate_id == "AG6":
             if (
-                gate_input.env == Environment.PROD
+                state.input_valid
+                and gate_input.env == Environment.PROD
                 and gate_input.criticality_tier == CriticalityTier.TIER_0
             ):
                 if gate_input.peak is True and gate_input.sustained:
@@ -374,9 +382,13 @@ def _evaluate_ag1(
 
 
 def _ag2_has_insufficient_evidence(gate_input: GateInputV1) -> bool:
-    findings_to_check = [finding for finding in gate_input.findings if finding.is_primary]
+    anomalous_findings = [finding for finding in gate_input.findings if finding.is_anomalous]
+    if not anomalous_findings:
+        return False
+
+    findings_to_check = [finding for finding in anomalous_findings if finding.is_primary]
     if not findings_to_check:
-        findings_to_check = list(gate_input.findings)
+        findings_to_check = anomalous_findings
 
     for finding in findings_to_check:
         for required_evidence in finding.evidence_required:

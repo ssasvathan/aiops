@@ -1,6 +1,6 @@
 # Story 5.1: Rulebook Gate Engine (AG0-AG6 Sequential Evaluation)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -221,7 +221,7 @@ Applied rules from `artifact/project-context.md`:
 
 - Story context generated with implementation guardrails for Epic 5 Story 5.1.
 - Story file: `artifact/implementation-artifacts/5-1-rulebook-gate-engine-ag0-ag6-sequential-evaluation.md`.
-- Story status set to: `ready-for-dev`.
+- Story status set to: `done`.
 - Completion note: Ultimate context engine analysis completed - comprehensive developer guide created.
 
 ## Dev Agent Record
@@ -261,13 +261,27 @@ GPT-5 Codex
 - Story quality gates pass: targeted pytest suite + `ruff check`.
 - Fixed full-suite blocker by enforcing monotonic outbox transition timestamps in state-machine transitions (prevents `updated_at` from moving backward when caller `now` is earlier than persisted row timestamps).
 - Added outbox state-machine regression tests for backward-time transition inputs.
-- Full regression suite now passes: `414 passed, 10 skipped` via `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`.
 - Code review fixes applied for Story 5.1:
   - Added AG1 environment-policy fallback mapping for `uat` -> `stage` compatibility so Stage 6 does not fail when policy artifacts still use `stage`.
   - Corrected `ActionDecisionV1.env_cap_applied` semantics to only reflect environment-cap reductions (not tier-only caps).
   - Removed implicit policy file loading from `run_gate_decision_stage_cycle(...)`; callers must pass explicit `RulebookV1` to keep Stage 6 decision computation free of hidden file I/O.
   - Added regression tests for UAT cap compatibility, tier-only cap semantics, and explicit-policy requirement in scheduler helper.
-- Completion validation rerun on 2026-03-06: full regression suite passed (`424 passed, 4 skipped`); story and sprint status synchronized to `review`.
+- Additional code-review remediation applied on 2026-03-06:
+  - AG5 now maps missing dedupe dependency (`dedupe_store=None`) to safe-cap behavior (`AG5_DEDUPE_STORE_ERROR`) instead of bypassing storm-control degradation.
+  - AG0 invalid inputs now block AG6 postmortem-trigger side effects, preventing contradictory `postmortem_required=true` outputs on invalid inputs.
+  - AG2 now enforces anomalous-only evidence checks and ignores non-anomalous primary findings, aligning implementation to policy selector intent.
+  - Added targeted regression tests for the above guardrails in Stage 6 and scheduler pathways.
+- Completion validation rerun on 2026-03-06: full regression suite passed (`431 passed, 0 skipped`); story and sprint status synchronized to `done`.
+
+### Senior Developer Review (AI)
+
+- Review date: 2026-03-06
+- Outcome: **Approved (after fixes)**
+- Findings resolved:
+  - **HIGH** AG5 degraded-mode bypass when dedupe hook missing.
+  - **HIGH** AG0 invalid input still allowed AG6 postmortem trigger.
+  - **HIGH** AG2 evidence selector incorrectly considered non-anomalous primary findings.
+  - **MEDIUM** Story completion notes/states contained stale skip-count results.
 
 ### File List
 
@@ -286,4 +300,4 @@ GPT-5 Codex
 - 2026-03-06: Implemented Stage 6 rulebook gate evaluator and scheduler decision helper for Story 5.1; added comprehensive unit coverage and latency guardrail logging.
 - 2026-03-06: Executed story-targeted quality gates successfully (`ruff`, targeted `pytest`), then resolved full-suite regression blocker by clamping outbox transition timestamps to monotonic progression and adding regression tests.
 - 2026-03-06: Addressed code-review findings by fixing UAT AG1 policy compatibility, tightening `env_cap_applied` semantics, removing implicit Stage 6 policy file I/O from scheduler helper, and extending Stage 6 regression tests.
-- 2026-03-06: Re-ran full regression validation and marked story status `review` with sprint-status synchronization.
+- 2026-03-06: Applied additional adversarial-review remediations (AG5 missing-store safe cap, AG0/AG6 invalid-input guard, AG2 anomalous-only selector), re-ran full regression with 0 skips, and marked story status `done` with sprint-status synchronization.

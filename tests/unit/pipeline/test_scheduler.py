@@ -642,6 +642,7 @@ def test_run_gate_decision_stage_cycle_returns_decisions_by_scope() -> None:
     decisions_by_scope = run_gate_decision_stage_cycle(
         gate_inputs_by_scope=gate_inputs_by_scope,
         rulebook_policy=load_rulebook_policy(),
+        dedupe_store=_DedupeStore(duplicate=False),
     )
 
     assert scope in decisions_by_scope

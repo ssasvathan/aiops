@@ -316,6 +316,7 @@ def test_evaluate_rulebook_gates_emits_complete_decision_and_ordered_gate_ids() 
     decision = evaluate_rulebook_gates(
         gate_input=_gate_input_for_eval(),
         rulebook=load_rulebook_policy(),
+        dedupe_store=_DedupeStore(duplicate=False),
     )
 
     assert decision.gate_rule_ids == ("AG0", "AG1", "AG2", "AG3", "AG4", "AG5", "AG6")
@@ -397,6 +398,17 @@ def test_evaluate_rulebook_gates_ag5_store_error_applies_safe_cap() -> None:
     assert "AG5_DEDUPE_STORE_ERROR" in decision.gate_reason_codes
 
 
+def test_evaluate_rulebook_gates_ag5_missing_store_applies_safe_cap() -> None:
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval(),
+        rulebook=load_rulebook_policy(),
+        dedupe_store=None,
+    )
+
+    assert decision.final_action == Action.NOTIFY
+    assert "AG5_DEDUPE_STORE_ERROR" in decision.gate_reason_codes
+
+
 def test_evaluate_rulebook_gates_ag5_non_duplicate_keeps_action_and_records_fingerprint() -> None:
     dedupe_store = _DedupeStore(duplicate=False)
     decision = evaluate_rulebook_gates(
@@ -413,11 +425,56 @@ def test_evaluate_rulebook_gates_ag6_sets_postmortem_without_action_escalation()
     decision = evaluate_rulebook_gates(
         gate_input=_gate_input_for_eval().model_copy(update={"proposed_action": Action.OBSERVE}),
         rulebook=load_rulebook_policy(),
+        dedupe_store=_DedupeStore(duplicate=False),
     )
 
     assert decision.final_action == Action.OBSERVE
     assert decision.postmortem_required is True
     assert decision.postmortem_reason_codes == ("PM_PEAK_SUSTAINED",)
+
+
+def test_evaluate_rulebook_gates_ag0_invalid_input_prevents_postmortem_trigger() -> None:
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval().model_copy(update={"action_fingerprint": "   "}),
+        rulebook=load_rulebook_policy(),
+        dedupe_store=_DedupeStore(duplicate=False),
+    )
+
+    assert decision.final_action == Action.OBSERVE
+    assert "AG0_INVALID_INPUT" in decision.gate_reason_codes
+    assert decision.postmortem_required is False
+    assert decision.postmortem_mode is None
+    assert decision.postmortem_reason_codes == ()
+
+
+def test_evaluate_rulebook_gates_ag2_ignores_non_anomalous_primary_findings() -> None:
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval().model_copy(
+            update={
+                "findings": (
+                    Finding(
+                        finding_id="anomalous",
+                        name="volume-drop",
+                        is_anomalous=True,
+                        evidence_required=("topic_messages_in_per_sec",),
+                        is_primary=False,
+                    ),
+                    Finding(
+                        finding_id="non-anomalous-primary",
+                        name="non-anomalous",
+                        is_anomalous=False,
+                        evidence_required=("missing_metric",),
+                        is_primary=True,
+                    ),
+                )
+            }
+        ),
+        rulebook=load_rulebook_policy(),
+        dedupe_store=_DedupeStore(duplicate=False),
+    )
+
+    assert decision.final_action == Action.PAGE
+    assert "AG2_INSUFFICIENT_EVIDENCE" not in decision.gate_reason_codes
 
 
 def test_evaluate_rulebook_gates_marks_env_cap_applied_and_records_reason() -> None:
@@ -450,6 +507,7 @@ def test_evaluate_rulebook_gates_keeps_env_cap_applied_false_for_tier_only_cap()
             update={"criticality_tier": CriticalityTier.TIER_1}
         ),
         rulebook=load_rulebook_policy(),
+        dedupe_store=_DedupeStore(duplicate=False),
     )
 
     assert decision.final_action == Action.TICKET
