@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
+from sqlalchemy import create_engine
+
 from aiops_triage_pipeline.contracts.action_decision import ActionDecisionV1
 from aiops_triage_pipeline.contracts.case_header_event import CaseHeaderEventV1
 from aiops_triage_pipeline.contracts.enums import (
@@ -11,6 +14,7 @@ from aiops_triage_pipeline.contracts.enums import (
     EvidenceStatus,
 )
 from aiops_triage_pipeline.contracts.gate_input import Finding, GateInputV1
+from aiops_triage_pipeline.errors.exceptions import CriticalDependencyError
 from aiops_triage_pipeline.models.case_file import (
     TRIAGE_HASH_PLACEHOLDER,
     CaseFileEvidenceSnapshot,
@@ -20,7 +24,13 @@ from aiops_triage_pipeline.models.case_file import (
     CaseFileTriageV1,
 )
 from aiops_triage_pipeline.outbox.publisher import CaseHeaderPublisherProtocol
-from aiops_triage_pipeline.outbox.schema import OutboxReadyCasefileV1
+from aiops_triage_pipeline.outbox.repository import OutboxSqlRepository
+from aiops_triage_pipeline.outbox.schema import (
+    OutboxReadyCasefileV1,
+    OutboxRecordV1,
+    create_outbox_table,
+)
+from aiops_triage_pipeline.outbox.state_machine import create_ready_outbox_record
 from aiops_triage_pipeline.pipeline.stages.outbox import (
     build_outbox_ready_record,
     build_outbox_ready_transition_payload,
@@ -154,6 +164,71 @@ class _RecordingPublisher(CaseHeaderPublisherProtocol):
         self.call_count += 1
 
 
+class _RecordingOutboxRepository:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
+        self._pending: OutboxRecordV1 | None = None
+        self._ready: OutboxRecordV1 | None = None
+
+    def insert_pending_object(
+        self,
+        *,
+        confirmed_casefile: OutboxReadyCasefileV1,
+    ) -> OutboxRecordV1:
+        self.calls.append(("insert_pending_object", confirmed_casefile.case_id))
+        self._pending = create_ready_outbox_record(
+            confirmed_casefile=confirmed_casefile
+        ).model_copy(update={"status": "PENDING_OBJECT"})
+        return self._pending
+
+    def transition_to_ready(
+        self,
+        *,
+        case_id: str,
+    ) -> OutboxRecordV1:
+        self.calls.append(("transition_to_ready", case_id))
+        if self._pending is None:
+            raise AssertionError("pending record must exist before READY transition")
+        self._ready = self._pending.model_copy(update={"status": "READY"})
+        return self._ready
+
+    def transition_to_sent(
+        self,
+        *,
+        case_id: str,
+    ) -> OutboxRecordV1:
+        self.calls.append(("transition_to_sent", case_id))
+        if self._ready is None:
+            raise AssertionError("ready record must exist before SENT transition")
+        return self._ready.model_copy(update={"status": "SENT", "delivery_attempts": 1})
+
+
+class _FailingOutboxRepository:
+    def insert_pending_object(
+        self,
+        *,
+        confirmed_casefile: OutboxReadyCasefileV1,
+    ) -> OutboxRecordV1:
+        del confirmed_casefile
+        raise CriticalDependencyError("postgres unavailable")
+
+    def transition_to_ready(
+        self,
+        *,
+        case_id: str,
+    ) -> OutboxRecordV1:
+        del case_id
+        raise AssertionError("should not be called")
+
+    def transition_to_sent(
+        self,
+        *,
+        case_id: str,
+    ) -> OutboxRecordV1:
+        del case_id
+        raise AssertionError("should not be called")
+
+
 def test_build_outbox_ready_transition_payload_includes_triage_hash() -> None:
     ready_casefile = _ready_casefile(_sample_casefile())
 
@@ -176,6 +251,82 @@ def test_build_outbox_ready_record_sets_ready_state() -> None:
     assert outbox_record.triage_hash == ready_casefile.triage_hash
 
 
+def test_build_outbox_ready_record_persists_pending_then_ready_with_repository() -> None:
+    ready_casefile = _ready_casefile(_sample_casefile())
+    repository = _RecordingOutboxRepository()
+
+    outbox_record = build_outbox_ready_record(
+        confirmed_casefile=ready_casefile,
+        outbox_repository=repository,
+    )
+
+    assert outbox_record.status == "READY"
+    assert repository.calls == [
+        ("insert_pending_object", ready_casefile.case_id),
+        ("transition_to_ready", ready_casefile.case_id),
+    ]
+
+
+def test_build_outbox_ready_record_raises_halt_error_on_repository_failure() -> None:
+    ready_casefile = _ready_casefile(_sample_casefile())
+
+    with pytest.raises(CriticalDependencyError, match="postgres unavailable"):
+        build_outbox_ready_record(
+            confirmed_casefile=ready_casefile,
+            outbox_repository=_FailingOutboxRepository(),
+        )
+
+
+def test_build_outbox_ready_record_persists_with_sql_repository() -> None:
+    ready_casefile = _ready_casefile(_sample_casefile())
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    create_outbox_table(engine)
+    repository = OutboxSqlRepository(engine=engine)
+
+    outbox_record = build_outbox_ready_record(
+        confirmed_casefile=ready_casefile,
+        outbox_repository=repository,
+    )
+    persisted = repository.get_by_case_id(ready_casefile.case_id)
+
+    assert outbox_record.status == "READY"
+    assert persisted is not None
+    assert persisted.status == "READY"
+    assert persisted.case_id == ready_casefile.case_id
+
+
+def test_sql_repository_transition_to_ready_is_idempotent() -> None:
+    ready_casefile = _ready_casefile(_sample_casefile())
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    create_outbox_table(engine)
+    repository = OutboxSqlRepository(engine=engine)
+
+    repository.insert_pending_object(confirmed_casefile=ready_casefile)
+    first = repository.transition_to_ready(case_id=ready_casefile.case_id)
+    second = repository.transition_to_ready(case_id=ready_casefile.case_id)
+
+    assert first.status == "READY"
+    assert second.status == "READY"
+    assert second.delivery_attempts == first.delivery_attempts
+
+
+def test_sql_repository_transition_to_sent_is_idempotent() -> None:
+    ready_casefile = _ready_casefile(_sample_casefile())
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    create_outbox_table(engine)
+    repository = OutboxSqlRepository(engine=engine)
+
+    repository.insert_pending_object(confirmed_casefile=ready_casefile)
+    repository.transition_to_ready(case_id=ready_casefile.case_id)
+    first = repository.transition_to_sent(case_id=ready_casefile.case_id)
+    second = repository.transition_to_sent(case_id=ready_casefile.case_id)
+
+    assert first.status == "SENT"
+    assert first.delivery_attempts == 1
+    assert second.status == "SENT"
+    assert second.delivery_attempts == 1
+
+
 def test_publish_case_header_after_confirmed_casefile_uses_ready_record_guardrail() -> None:
     casefile = _sample_casefile()
     ready_casefile = _ready_casefile(casefile)
@@ -189,3 +340,25 @@ def test_publish_case_header_after_confirmed_casefile_uses_ready_record_guardrai
     )
 
     assert publisher.call_count == 1
+
+
+def test_publish_case_header_after_confirmed_casefile_transitions_to_sent_with_repository() -> None:
+    casefile = _sample_casefile()
+    ready_casefile = _ready_casefile(casefile)
+    publisher = _RecordingPublisher()
+    repository = _RecordingOutboxRepository()
+
+    publish_case_header_after_confirmed_casefile(
+        confirmed_casefile=ready_casefile,
+        case_header_event=_sample_header_event(casefile.case_id),
+        object_store_client=_InMemoryObjectStoreClient(payload=serialize_casefile_triage(casefile)),
+        publisher=publisher,
+        outbox_repository=repository,
+    )
+
+    assert publisher.call_count == 1
+    assert repository.calls == [
+        ("insert_pending_object", ready_casefile.case_id),
+        ("transition_to_ready", ready_casefile.case_id),
+        ("transition_to_sent", ready_casefile.case_id),
+    ]
