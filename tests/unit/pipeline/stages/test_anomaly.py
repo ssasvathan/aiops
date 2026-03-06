@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 import pytest
 from pydantic import ValidationError
 
+from aiops_triage_pipeline.contracts.enums import EvidenceStatus
 from aiops_triage_pipeline.contracts.redis_ttl_policy import RedisTtlPolicyV1, RedisTtlsByEnv
 from aiops_triage_pipeline.models.anomaly import (
     AnomalyDetectionResult,
@@ -11,7 +12,10 @@ from aiops_triage_pipeline.models.anomaly import (
     group_findings_by_scope,
 )
 from aiops_triage_pipeline.models.evidence import EvidenceRow
-from aiops_triage_pipeline.pipeline.stages.anomaly import detect_anomaly_findings
+from aiops_triage_pipeline.pipeline.stages.anomaly import (
+    build_gate_findings_by_scope,
+    detect_anomaly_findings,
+)
 
 
 class _FakeRedis:
@@ -69,6 +73,55 @@ def test_anomaly_finding_is_frozen() -> None:
         finding.severity = "LOW"  # type: ignore[misc]
 
 
+def test_anomaly_finding_allowed_non_present_statuses_is_immutable() -> None:
+    finding = AnomalyFinding(
+        finding_id="f-immutable",
+        anomaly_family="VOLUME_DROP",
+        scope=("prod", "cluster-1", "topic-a"),
+        severity="MEDIUM",
+        reason_codes=("VOLUME_DROP_VS_BASELINE",),
+        evidence_required=("topic_messages_in_per_sec",),
+        allowed_non_present_statuses_by_evidence={
+            "topic_messages_in_per_sec": (EvidenceStatus.UNKNOWN,)
+        },
+    )
+
+    with pytest.raises(TypeError):
+        finding.allowed_non_present_statuses_by_evidence["topic_messages_in_per_sec"] = (
+            EvidenceStatus.STALE,
+        )
+
+
+def test_anomaly_finding_rejects_present_as_allowed_non_present_status() -> None:
+    with pytest.raises(ValidationError):
+        AnomalyFinding(
+            finding_id="f-invalid-present",
+            anomaly_family="VOLUME_DROP",
+            scope=("prod", "cluster-1", "topic-a"),
+            severity="MEDIUM",
+            reason_codes=("VOLUME_DROP_VS_BASELINE",),
+            evidence_required=("topic_messages_in_per_sec",),
+            allowed_non_present_statuses_by_evidence={
+                "topic_messages_in_per_sec": (EvidenceStatus.PRESENT,)
+            },
+        )
+
+
+def test_anomaly_finding_rejects_allowances_for_non_required_evidence() -> None:
+    with pytest.raises(ValidationError):
+        AnomalyFinding(
+            finding_id="f-invalid-key",
+            anomaly_family="VOLUME_DROP",
+            scope=("prod", "cluster-1", "topic-a"),
+            severity="MEDIUM",
+            reason_codes=("VOLUME_DROP_VS_BASELINE",),
+            evidence_required=("topic_messages_in_per_sec",),
+            allowed_non_present_statuses_by_evidence={
+                "failed_produce_requests_per_sec": (EvidenceStatus.UNKNOWN,)
+            },
+        )
+
+
 def test_group_findings_by_scope_is_deterministic() -> None:
     findings = (
         AnomalyFinding(
@@ -97,6 +150,28 @@ def test_group_findings_by_scope_is_deterministic() -> None:
 
     assert list(grouped.keys()) == [("prod", "cluster-1", "topic-a")]
     assert [f.finding_id for f in grouped[("prod", "cluster-1", "topic-a")]] == ["f-2", "f-3"]
+
+
+def test_build_gate_findings_by_scope_preserves_allowed_non_present_statuses() -> None:
+    finding = AnomalyFinding(
+        finding_id="f-allow-unknown",
+        anomaly_family="VOLUME_DROP",
+        scope=("prod", "cluster-1", "topic-a"),
+        severity="MEDIUM",
+        reason_codes=("VOLUME_DROP_VS_BASELINE",),
+        evidence_required=("topic_messages_in_per_sec",),
+        allowed_non_present_statuses_by_evidence={
+            "topic_messages_in_per_sec": (EvidenceStatus.UNKNOWN,)
+        },
+        is_primary=True,
+    )
+    result = AnomalyDetectionResult(findings=(finding,))
+
+    gate_findings_by_scope = build_gate_findings_by_scope(result)
+    gate_finding = gate_findings_by_scope[("prod", "cluster-1", "topic-a")][0]
+    assert gate_finding.allowed_non_present_statuses_by_evidence == {
+        "topic_messages_in_per_sec": (EvidenceStatus.UNKNOWN,)
+    }
 
 
 def test_detection_result_keeps_findings_and_scope_map() -> None:

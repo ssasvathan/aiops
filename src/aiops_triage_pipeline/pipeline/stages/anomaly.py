@@ -153,6 +153,7 @@ def _to_gate_finding(finding: AnomalyFinding) -> Finding:
         name=finding.anomaly_family.lower(),
         is_anomalous=True,
         evidence_required=finding.evidence_required,
+        allowed_non_present_statuses_by_evidence=finding.allowed_non_present_statuses_by_evidence,
         is_primary=finding.is_primary,
         severity=finding.severity,
         reason_codes=finding.reason_codes,

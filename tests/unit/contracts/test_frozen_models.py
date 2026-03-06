@@ -61,6 +61,63 @@ class TestFinding:
         assert finding.is_primary is None
         assert finding.severity is None
         assert finding.reason_codes == ()
+        assert finding.allowed_non_present_statuses_by_evidence == {}
+
+    def test_finding_allowed_non_present_statuses_round_trip(self):
+        finding = Finding(
+            finding_id="f3",
+            name="volume-drop",
+            is_anomalous=True,
+            evidence_required=("topic_messages_in_per_sec",),
+            allowed_non_present_statuses_by_evidence={
+                "topic_messages_in_per_sec": (EvidenceStatus.UNKNOWN,)
+            },
+        )
+
+        reconstructed = Finding.model_validate_json(finding.model_dump_json())
+        assert reconstructed.allowed_non_present_statuses_by_evidence == {
+            "topic_messages_in_per_sec": (EvidenceStatus.UNKNOWN,)
+        }
+
+    def test_finding_allowed_non_present_statuses_is_immutable(self):
+        finding = Finding(
+            finding_id="f4",
+            name="volume-drop",
+            is_anomalous=True,
+            evidence_required=("topic_messages_in_per_sec",),
+            allowed_non_present_statuses_by_evidence={
+                "topic_messages_in_per_sec": (EvidenceStatus.UNKNOWN,)
+            },
+        )
+
+        with pytest.raises(TypeError):
+            finding.allowed_non_present_statuses_by_evidence["topic_messages_in_per_sec"] = (
+                EvidenceStatus.STALE,
+            )
+
+    def test_finding_rejects_present_as_allowed_non_present_status(self):
+        with pytest.raises(ValidationError):
+            Finding(
+                finding_id="f5",
+                name="volume-drop",
+                is_anomalous=True,
+                evidence_required=("topic_messages_in_per_sec",),
+                allowed_non_present_statuses_by_evidence={
+                    "topic_messages_in_per_sec": (EvidenceStatus.PRESENT,)
+                },
+            )
+
+    def test_finding_rejects_allowances_for_non_required_evidence(self):
+        with pytest.raises(ValidationError):
+            Finding(
+                finding_id="f6",
+                name="volume-drop",
+                is_anomalous=True,
+                evidence_required=("topic_messages_in_per_sec",),
+                allowed_non_present_statuses_by_evidence={
+                    "failed_produce_requests_per_sec": (EvidenceStatus.UNKNOWN,)
+                },
+            )
 
 
 # ---------------------------------------------------------------------------

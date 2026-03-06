@@ -392,9 +392,16 @@ def _ag2_has_insufficient_evidence(gate_input: GateInputV1) -> bool:
 
     for finding in findings_to_check:
         for required_evidence in finding.evidence_required:
-            status = gate_input.evidence_status_map.get(required_evidence)
-            if status != EvidenceStatus.PRESENT:
-                return True
+            status = gate_input.evidence_status_map.get(required_evidence, EvidenceStatus.UNKNOWN)
+            if status == EvidenceStatus.PRESENT:
+                continue
+            allowed_non_present_statuses = finding.allowed_non_present_statuses_by_evidence.get(
+                required_evidence,
+                (),
+            )
+            if status in allowed_non_present_statuses:
+                continue
+            return True
     return False
 
 

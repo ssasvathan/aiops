@@ -483,6 +483,81 @@ def test_evaluate_rulebook_gates_ag2_ignores_non_anomalous_primary_findings() ->
     assert "AG2_INSUFFICIENT_EVIDENCE" not in decision.gate_reason_codes
 
 
+@pytest.mark.parametrize(
+    "status",
+    (EvidenceStatus.UNKNOWN, EvidenceStatus.ABSENT, EvidenceStatus.STALE),
+)
+def test_evaluate_rulebook_gates_ag2_downgrades_for_all_insufficient_statuses(
+    status: EvidenceStatus,
+) -> None:
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval().model_copy(
+            update={"evidence_status_map": {"topic_messages_in_per_sec": status}}
+        ),
+        rulebook=load_rulebook_policy(),
+        dedupe_store=_DedupeStore(duplicate=False),
+    )
+
+    assert decision.final_action == Action.NOTIFY
+    assert "AG2_INSUFFICIENT_EVIDENCE" in decision.gate_reason_codes
+
+
+def test_evaluate_rulebook_gates_ag2_allows_explicit_non_present_status_per_finding() -> None:
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval().model_copy(
+            update={
+                "findings": (
+                    Finding(
+                        finding_id="f-allow-unknown",
+                        name="volume-drop",
+                        is_anomalous=True,
+                        evidence_required=("topic_messages_in_per_sec",),
+                        is_primary=True,
+                        allowed_non_present_statuses_by_evidence={
+                            "topic_messages_in_per_sec": (EvidenceStatus.UNKNOWN,)
+                        },
+                    ),
+                ),
+                "evidence_status_map": {"topic_messages_in_per_sec": EvidenceStatus.UNKNOWN},
+            }
+        ),
+        rulebook=load_rulebook_policy(),
+        dedupe_store=_DedupeStore(duplicate=False),
+    )
+
+    assert decision.final_action == Action.PAGE
+    assert "AG2_INSUFFICIENT_EVIDENCE" not in decision.gate_reason_codes
+
+
+def test_evaluate_rulebook_gates_ag3_denies_page_for_source_topic() -> None:
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval().model_copy(update={"topic_role": "SOURCE_TOPIC"}),
+        rulebook=load_rulebook_policy(),
+        dedupe_store=_DedupeStore(duplicate=False),
+    )
+
+    assert decision.final_action == Action.TICKET
+    assert "AG3_PAGING_DENIED_SOURCE_TOPIC" in decision.gate_reason_codes
+    assert "AG2_INSUFFICIENT_EVIDENCE" not in decision.gate_reason_codes
+
+
+def test_evaluate_rulebook_gates_ag2_short_circuits_page_before_ag3_for_source_topic() -> None:
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval().model_copy(
+            update={
+                "topic_role": "SOURCE_TOPIC",
+                "evidence_status_map": {"topic_messages_in_per_sec": EvidenceStatus.UNKNOWN},
+            }
+        ),
+        rulebook=load_rulebook_policy(),
+        dedupe_store=_DedupeStore(duplicate=False),
+    )
+
+    assert decision.final_action == Action.NOTIFY
+    assert "AG2_INSUFFICIENT_EVIDENCE" in decision.gate_reason_codes
+    assert "AG3_PAGING_DENIED_SOURCE_TOPIC" not in decision.gate_reason_codes
+
+
 def test_evaluate_rulebook_gates_marks_env_cap_applied_and_records_reason() -> None:
     decision = evaluate_rulebook_gates(
         gate_input=_gate_input_for_eval().model_copy(
