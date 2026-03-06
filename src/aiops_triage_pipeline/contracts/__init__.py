@@ -3,6 +3,10 @@
 # ── Event Contracts (Story 1.2) ─────────────────────────────────────────────
 from aiops_triage_pipeline.contracts.action_decision import ActionDecisionV1
 from aiops_triage_pipeline.contracts.case_header_event import CaseHeaderEventV1
+from aiops_triage_pipeline.contracts.casefile_retention_policy import (
+    CasefileRetentionPolicy,
+    CasefileRetentionPolicyV1,
+)
 from aiops_triage_pipeline.contracts.diagnosis_report import DiagnosisReportV1, EvidencePack
 from aiops_triage_pipeline.contracts.enums import (
     Action,
@@ -46,6 +50,8 @@ __all__ = [
     "EvidenceStatus",
     # Event contracts (Story 1.2)
     "ActionDecisionV1",
+    "CasefileRetentionPolicy",
+    "CasefileRetentionPolicyV1",
     "CaseHeaderEventV1",
     "DiagnosisReportV1",
     "EvidencePack",

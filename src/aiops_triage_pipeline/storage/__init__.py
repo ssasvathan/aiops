@@ -29,16 +29,29 @@ from aiops_triage_pipeline.storage.casefile_io import (
     validate_casefile_triage_json,
 )
 from aiops_triage_pipeline.storage.client import (
+    DeleteObjectsResult,
     ObjectStoreClientProtocol,
+    ObjectStoreListPage,
+    ObjectSummary,
     PutIfAbsentResult,
     S3ObjectStoreClient,
     build_s3_object_store_client_from_settings,
+)
+from aiops_triage_pipeline.storage.lifecycle import (
+    CasefileLifecycleRunner,
+    CasefileLifecycleRunResult,
+    resolve_retention_cutoff,
 )
 
 __all__ = [
     "CasefilePersistResult",
     "CasefileStagePersistResult",
+    "CasefileLifecycleRunResult",
+    "CasefileLifecycleRunner",
+    "DeleteObjectsResult",
+    "ObjectStoreListPage",
     "ObjectStoreClientProtocol",
+    "ObjectSummary",
     "PutIfAbsentResult",
     "S3ObjectStoreClient",
     "build_casefile_stage_object_key",
@@ -66,4 +79,5 @@ __all__ = [
     "validate_casefile_linkage_json",
     "validate_casefile_stage_json",
     "validate_casefile_triage_json",
+    "resolve_retention_cutoff",
 ]

@@ -76,6 +76,10 @@ class Settings(BaseSettings):
     INTEGRATION_MODE_LLM: IntegrationMode = IntegrationMode.LOG
     OUTBOX_PUBLISHER_POLL_INTERVAL_SECONDS: float = 5.0
     OUTBOX_PUBLISHER_BATCH_SIZE: int = 100
+    CASEFILE_LIFECYCLE_POLL_INTERVAL_SECONDS: float = 3600.0
+    CASEFILE_LIFECYCLE_DELETE_BATCH_SIZE: int = 500
+    CASEFILE_LIFECYCLE_LIST_PAGE_SIZE: int = 500
+    CASEFILE_RETENTION_GOVERNANCE_APPROVAL: str | None = None
 
     @property
     def max_action(self) -> str:
@@ -100,6 +104,12 @@ class Settings(BaseSettings):
                 )
             if not Path(self.KRB5_CONF_PATH).exists():
                 raise ValueError(f"KRB5 config file not found: {self.KRB5_CONF_PATH}")
+        if self.CASEFILE_LIFECYCLE_POLL_INTERVAL_SECONDS <= 0:
+            raise ValueError("CASEFILE_LIFECYCLE_POLL_INTERVAL_SECONDS must be > 0")
+        if not 1 <= self.CASEFILE_LIFECYCLE_DELETE_BATCH_SIZE <= 1000:
+            raise ValueError("CASEFILE_LIFECYCLE_DELETE_BATCH_SIZE must be between 1 and 1000")
+        if not 1 <= self.CASEFILE_LIFECYCLE_LIST_PAGE_SIZE <= 1000:
+            raise ValueError("CASEFILE_LIFECYCLE_LIST_PAGE_SIZE must be between 1 and 1000")
         return self
 
     def log_active_config(self, logger: structlog.BoundLogger) -> None:
@@ -119,6 +129,12 @@ class Settings(BaseSettings):
             INTEGRATION_MODE_SLACK=self.INTEGRATION_MODE_SLACK.value,
             INTEGRATION_MODE_SN=self.INTEGRATION_MODE_SN.value,
             INTEGRATION_MODE_LLM=self.INTEGRATION_MODE_LLM.value,
+            OUTBOX_PUBLISHER_POLL_INTERVAL_SECONDS=self.OUTBOX_PUBLISHER_POLL_INTERVAL_SECONDS,
+            OUTBOX_PUBLISHER_BATCH_SIZE=self.OUTBOX_PUBLISHER_BATCH_SIZE,
+            CASEFILE_LIFECYCLE_POLL_INTERVAL_SECONDS=self.CASEFILE_LIFECYCLE_POLL_INTERVAL_SECONDS,
+            CASEFILE_LIFECYCLE_DELETE_BATCH_SIZE=self.CASEFILE_LIFECYCLE_DELETE_BATCH_SIZE,
+            CASEFILE_LIFECYCLE_LIST_PAGE_SIZE=self.CASEFILE_LIFECYCLE_LIST_PAGE_SIZE,
+            CASEFILE_RETENTION_GOVERNANCE_APPROVAL=self.CASEFILE_RETENTION_GOVERNANCE_APPROVAL,
             max_action=self.max_action,
         )
 

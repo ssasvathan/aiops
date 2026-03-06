@@ -7,6 +7,8 @@ import pytest
 from aiops_triage_pipeline.contracts import (
     Action,
     ActionDecisionV1,
+    CasefileRetentionPolicy,
+    CasefileRetentionPolicyV1,
     CaseHeaderEventV1,
     CriticalityTier,
     DiagnosisConfidence,
@@ -256,6 +258,19 @@ def minimal_outbox_policy() -> OutboxPolicyV1:
             "dev": base,
             "uat": base,
             "prod": OutboxRetentionPolicy(sent_retention_days=14, dead_retention_days=90),
+        }
+    )
+
+
+@pytest.fixture()
+def minimal_casefile_retention_policy() -> CasefileRetentionPolicyV1:
+    base = CasefileRetentionPolicy(retention_months=1)
+    return CasefileRetentionPolicyV1(
+        retention_by_env={
+            "local": base,
+            "dev": CasefileRetentionPolicy(retention_months=3),
+            "uat": CasefileRetentionPolicy(retention_months=12),
+            "prod": CasefileRetentionPolicy(retention_months=25),
         }
     )
 

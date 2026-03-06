@@ -1,0 +1,10 @@
+schema_version: "v1"
+retention_by_env:
+  local:
+    retention_months: 1
+  dev:
+    retention_months: 6
+  uat:
+    retention_months: 18
+  prod:
+    retention_months: 25

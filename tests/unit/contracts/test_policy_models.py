@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from aiops_triage_pipeline.contracts import (
+    CasefileRetentionPolicyV1,
     GateEffects,
     GateSpec,
     LocalDevContractV1,
@@ -44,6 +45,13 @@ def test_redis_ttl_is_frozen(minimal_redis_ttl: RedisTtlPolicyV1) -> None:
 def test_outbox_policy_is_frozen(minimal_outbox_policy: OutboxPolicyV1) -> None:
     with pytest.raises(ValidationError):
         minimal_outbox_policy.retention_by_env = {}  # type: ignore[misc]
+
+
+def test_casefile_retention_policy_is_frozen(
+    minimal_casefile_retention_policy: CasefileRetentionPolicyV1,
+) -> None:
+    with pytest.raises(ValidationError):
+        minimal_casefile_retention_policy.retention_by_env = {}  # type: ignore[misc]
 
 
 def test_sn_linkage_is_frozen(minimal_sn_linkage: ServiceNowLinkageContractV1) -> None:
@@ -98,6 +106,14 @@ def test_outbox_policy_round_trip(minimal_outbox_policy: OutboxPolicyV1) -> None
     assert minimal_outbox_policy == reconstructed
 
 
+def test_casefile_retention_policy_round_trip(
+    minimal_casefile_retention_policy: CasefileRetentionPolicyV1,
+) -> None:
+    json_str = minimal_casefile_retention_policy.model_dump_json()
+    reconstructed = CasefileRetentionPolicyV1.model_validate_json(json_str)
+    assert minimal_casefile_retention_policy == reconstructed
+
+
 def test_sn_linkage_round_trip(minimal_sn_linkage: ServiceNowLinkageContractV1) -> None:
     json_str = minimal_sn_linkage.model_dump_json()
     reconstructed = ServiceNowLinkageContractV1.model_validate_json(json_str)
@@ -127,6 +143,7 @@ def test_all_policy_contracts_have_schema_version_v1(
     minimal_prometheus_metrics: PrometheusMetricsContractV1,
     minimal_redis_ttl: RedisTtlPolicyV1,
     minimal_outbox_policy: OutboxPolicyV1,
+    minimal_casefile_retention_policy: CasefileRetentionPolicyV1,
     minimal_sn_linkage: ServiceNowLinkageContractV1,
     minimal_local_dev: LocalDevContractV1,
     minimal_topology_registry: TopologyRegistryLoaderRulesV1,
@@ -137,6 +154,7 @@ def test_all_policy_contracts_have_schema_version_v1(
         minimal_prometheus_metrics,
         minimal_redis_ttl,
         minimal_outbox_policy,
+        minimal_casefile_retention_policy,
         minimal_sn_linkage,
         minimal_local_dev,
         minimal_topology_registry,
@@ -159,6 +177,12 @@ def test_redis_ttl_prod_dedupe_accessible(minimal_redis_ttl: RedisTtlPolicyV1) -
 def test_outbox_prod_retention(minimal_outbox_policy: OutboxPolicyV1) -> None:
     assert minimal_outbox_policy.retention_by_env["prod"].sent_retention_days == 14
     assert minimal_outbox_policy.retention_by_env["prod"].dead_retention_days == 90
+
+
+def test_casefile_retention_prod_months(
+    minimal_casefile_retention_policy: CasefileRetentionPolicyV1,
+) -> None:
+    assert minimal_casefile_retention_policy.retention_by_env["prod"].retention_months == 25
 
 
 def test_sn_mi_creation_not_allowed(minimal_sn_linkage: ServiceNowLinkageContractV1) -> None:
