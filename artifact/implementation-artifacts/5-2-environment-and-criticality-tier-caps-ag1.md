@@ -1,6 +1,6 @@
 # Story 5.2: Environment & Criticality Tier Caps (AG1)
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -24,31 +24,31 @@ so that local/dev/uat environments cannot trigger production-level actions and o
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Align AG1 environment cap policy artifacts with FR28/FR29 (AC: 1, 2, 3, 4, 7)
-  - [ ] Update `config/policies/rulebook-v1.yaml` `caps.max_action_by_env` to align with requirements: `local=OBSERVE`, `dev=NOTIFY`, `uat=TICKET`, `prod=PAGE`.
-  - [ ] Preserve compatibility only where required during migration (legacy `stage` mapping), but keep `Environment` enum (`local|dev|uat|prod`) as source of truth.
-  - [ ] Ensure policy-level prod tier map remains `TIER_0=PAGE`, `TIER_1=TICKET`, `TIER_2=NOTIFY`, `UNKNOWN=NOTIFY`.
+- [x] Task 1: Align AG1 environment cap policy artifacts with FR28/FR29 (AC: 1, 2, 3, 4, 7)
+  - [x] Update `config/policies/rulebook-v1.yaml` `caps.max_action_by_env` to align with requirements: `local=OBSERVE`, `dev=NOTIFY`, `uat=TICKET`, `prod=PAGE`.
+  - [x] Preserve compatibility only where required during migration (legacy `stage` mapping), but keep `Environment` enum (`local|dev|uat|prod`) as source of truth.
+  - [x] Ensure policy-level prod tier map remains `TIER_0=PAGE`, `TIER_1=TICKET`, `TIER_2=NOTIFY`, `UNKNOWN=NOTIFY`.
 
-- [ ] Task 2: Harden AG1 evaluator behavior in Stage 6 (AC: 1, 2, 3, 4, 5, 6)
-  - [ ] In `src/aiops_triage_pipeline/pipeline/stages/gating.py::_evaluate_ag1`, keep evaluation order deterministic: environment cap first, prod tier cap second.
-  - [ ] Keep action changes monotonic downward only (`OBSERVE < NOTIFY < TICKET < PAGE`) with no escalation path.
-  - [ ] Set `env_cap_applied=True` only when environment cap reduced the action (not when only tier cap reduced it).
-  - [ ] Ensure AG1 reason codes are appended when either env or tier cap reduces action.
-  - [ ] Keep AG1 behavior pure computation (no external I/O).
+- [x] Task 2: Harden AG1 evaluator behavior in Stage 6 (AC: 1, 2, 3, 4, 5, 6)
+  - [x] In `src/aiops_triage_pipeline/pipeline/stages/gating.py::_evaluate_ag1`, keep evaluation order deterministic: environment cap first, prod tier cap second.
+  - [x] Keep action changes monotonic downward only (`OBSERVE < NOTIFY < TICKET < PAGE`) with no escalation path.
+  - [x] Set `env_cap_applied=True` only when environment cap reduced the action (not when only tier cap reduced it).
+  - [x] Ensure AG1 reason codes are appended when either env or tier cap reduces action.
+  - [x] Keep AG1 behavior pure computation (no external I/O).
 
-- [ ] Task 3: Add AG1-focused regression coverage (AC: 1, 2, 3, 4, 5, 6, 7)
-  - [ ] Extend `tests/unit/pipeline/stages/test_gating.py` with explicit matrix tests for `local`, `dev`, `uat`, `prod` + prod tier variants (`TIER_0`, `TIER_1`, `TIER_2`, `UNKNOWN`).
-  - [ ] Verify `env_cap_applied` semantics for env-only cap vs tier-only cap.
-  - [ ] Verify AG1 reason code inclusion and ordered gate IDs in all cap scenarios.
-  - [ ] Keep/adjust migration-compatibility test for `uat` fallback behavior if legacy `stage` policy entries still exist.
+- [x] Task 3: Add AG1-focused regression coverage (AC: 1, 2, 3, 4, 5, 6, 7)
+  - [x] Extend `tests/unit/pipeline/stages/test_gating.py` with explicit matrix tests for `local`, `dev`, `uat`, `prod` + prod tier variants (`TIER_0`, `TIER_1`, `TIER_2`, `UNKNOWN`).
+  - [x] Verify `env_cap_applied` semantics for env-only cap vs tier-only cap.
+  - [x] Verify AG1 reason code inclusion and ordered gate IDs in all cap scenarios.
+  - [x] Keep/adjust migration-compatibility test for `uat` fallback behavior if legacy `stage` policy entries still exist.
 
-- [ ] Task 4: Verify scheduler integration surfaces AG1 outcomes correctly (AC: 5, 6, 7)
-  - [ ] Extend `tests/unit/pipeline/test_scheduler.py` to assert AG1 decision outputs are returned by scope with explicit rulebook input.
-  - [ ] Keep explicit `rulebook_policy` requirement in `run_gate_decision_stage_cycle(...)` (no implicit file I/O regression).
+- [x] Task 4: Verify scheduler integration surfaces AG1 outcomes correctly (AC: 5, 6, 7)
+  - [x] Extend `tests/unit/pipeline/test_scheduler.py` to assert AG1 decision outputs are returned by scope with explicit rulebook input.
+  - [x] Keep explicit `rulebook_policy` requirement in `run_gate_decision_stage_cycle(...)` (no implicit file I/O regression).
 
-- [ ] Task 5: Run quality gates for AG1 change set
-  - [ ] `uv run pytest -q tests/unit/pipeline/stages/test_gating.py tests/unit/pipeline/test_scheduler.py tests/unit/contracts/test_policy_models.py`
-  - [ ] `uv run ruff check`
+- [x] Task 5: Run quality gates for AG1 change set
+  - [x] `uv run pytest -q tests/unit/pipeline/stages/test_gating.py tests/unit/pipeline/test_scheduler.py tests/unit/contracts/test_policy_models.py`
+  - [x] `uv run ruff check`
 
 ## Dev Notes
 
@@ -70,9 +70,9 @@ so that local/dev/uat environments cannot trigger production-level actions and o
 - Preserve strict AG0..AG6 order and deterministic outputs from Story 5.1.
 - Keep `ActionDecisionV1` contract unchanged; only refine policy/evaluation semantics.
 - Keep all AG1 behavior in Stage 6 deterministic code and policy models; do not duplicate cap logic elsewhere.
-- Resolve current policy mismatch before implementation:
-  - `rulebook-v1.yaml` currently defines `dev: OBSERVE` and `stage: NOTIFY`.
-  - `Environment` and FRs require `dev` and `uat` semantics.
+- Policy alignment note:
+  - Canonical policy now defines `local|dev|uat|prod` caps matching FR28.
+  - Legacy `stage` is treated as migration compatibility behavior in evaluator/tests only.
 - Maintain backward compatibility intentionally and test it explicitly if migration aliasing remains.
 
 ### Architecture Compliance
@@ -204,7 +204,7 @@ Applied rules from `artifact/project-context.md`:
 
 - Story context generated for Epic 5 Story 5.2.
 - Story file: `artifact/implementation-artifacts/5-2-environment-and-criticality-tier-caps-ag1.md`.
-- Story status set to: `ready-for-dev`.
+- Story status set to: `done`.
 - Completion note: Ultimate context engine analysis completed - comprehensive developer guide created.
 
 ## Dev Agent Record
@@ -216,7 +216,7 @@ GPT-5 Codex
 ### Debug Log References
 
 - Workflow engine: `_bmad/core/tasks/workflow.xml`
-- Workflow config: `_bmad/bmm/workflows/4-implementation/create-story/workflow.yaml`
+- Workflow config: `_bmad/bmm/workflows/4-implementation/dev-story/workflow.yaml`
 - Story selection source: `artifact/implementation-artifacts/sprint-status.yaml`
 - Core source artifacts:
   - `artifact/planning-artifacts/epics.md`
@@ -225,6 +225,11 @@ GPT-5 Codex
   - `artifact/planning-artifacts/prd/non-functional-requirements.md`
   - `artifact/planning-artifacts/prd/glossary-terminology.md`
   - `artifact/project-context.md`
+- Story 5.2 implementation checks:
+  - `uv run pytest -q tests/unit/contracts/test_policy_models.py -k 'fr28_env_caps or fr29_prod_tier_caps'`
+  - `uv run pytest -q tests/unit/pipeline/stages/test_gating.py tests/unit/pipeline/test_scheduler.py tests/unit/contracts/test_policy_models.py`
+  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
+  - `uv run ruff check`
 
 ### Implementation Plan
 
@@ -235,15 +240,46 @@ GPT-5 Codex
 
 ### Completion Notes List
 
-- Story file created for `5-2-environment-and-criticality-tier-caps-ag1`.
-- Story prepared for `dev-story` execution with explicit technical and testing guardrails.
-- Sprint status updated to `ready-for-dev` for story key `5-2-environment-and-criticality-tier-caps-ag1`.
+- Updated AG1 policy caps in `config/policies/rulebook-v1.yaml` to FR28/FR29 values: `local=OBSERVE`, `dev=NOTIFY`, `uat=TICKET`, `prod=PAGE`.
+- Confirmed Stage 6 AG1 implementation remains deterministic env-first then prod-tier evaluation, monotonic-only action reduction, and pure computation with no external I/O.
+- Expanded AG1 regression coverage in `tests/unit/pipeline/stages/test_gating.py` with explicit environment+tier matrix tests (including `UNKNOWN` tier), `env_cap_applied` semantics, ordered gate IDs, and legacy `stage` alias fallback behavior.
+- Added scheduler-level AG1 surfacing coverage in `tests/unit/pipeline/test_scheduler.py` verifying capped decisions by scope under explicit `rulebook_policy` injection.
+- Added policy artifact contract tests in `tests/unit/contracts/test_policy_models.py` to assert FR28 env caps and FR29 prod-tier cap map.
+- Applied code-review fixes:
+  - Added fail-fast Rulebook contract validation for required AG1 env/tier cap keys and action literals.
+  - Removed legacy `stage` key from canonical `config/policies/rulebook-v1.yaml` while retaining runtime alias compatibility in evaluator/tests.
+  - Updated contract and stage fixtures to FR28/FR29-consistent cap maps.
+  - Corrected story metadata/status consistency and synced sprint status to `done`.
+- Quality gates passed:
+  - `uv run pytest -q tests/unit/pipeline/stages/test_gating.py tests/unit/pipeline/test_scheduler.py tests/unit/contracts/test_policy_models.py` (`77 passed`)
+  - `uv run pytest -q tests/unit/pipeline/stages/test_peak.py tests/unit/pipeline/stages/test_casefile.py tests/unit/contracts/conftest.py` (`36 passed`)
+  - `uv run ruff check` (`All checks passed`)
+  - Full regression: `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs` (`441 passed`, zero skipped)
+
+### Senior Developer Review (AI)
+
+- Review date: 2026-03-06
+- Outcome: Changes requested issues resolved.
+- Fixed findings:
+  - Added Rulebook fail-fast validation for missing/invalid AG1 cap keys and cap action values (`src/aiops_triage_pipeline/contracts/rulebook.py`).
+  - Removed hard dependency on legacy `stage` key in canonical policy/tests while preserving backward-compatible evaluator aliasing.
+  - Corrected story metadata drift (`Status`/completion notes) and synchronized sprint tracking status.
 
 ### File List
 
-- `artifact/implementation-artifacts/5-2-environment-and-criticality-tier-caps-ag1.md`
 - `artifact/implementation-artifacts/sprint-status.yaml`
+- `artifact/implementation-artifacts/5-2-environment-and-criticality-tier-caps-ag1.md`
+- `config/policies/rulebook-v1.yaml`
+- `src/aiops_triage_pipeline/contracts/rulebook.py`
+- `tests/unit/contracts/conftest.py`
+- `tests/unit/contracts/test_policy_models.py`
+- `tests/unit/pipeline/stages/test_casefile.py`
+- `tests/unit/pipeline/stages/test_gating.py`
+- `tests/unit/pipeline/stages/test_peak.py`
+- `tests/unit/pipeline/test_scheduler.py`
 
 ## Change Log
 
 - 2026-03-06: Created Story 5.2 context document with AG1 implementation guardrails, artifact references, test plan, and latest-technology checks.
+- 2026-03-06: Implemented Story 5.2 AG1 caps refinement (FR28/FR29), expanded AG1 regression coverage, and validated zero-skip full regression.
+- 2026-03-06: Resolved code-review findings with Rulebook contract validation hardening, canonical policy cleanup, fixture alignment, and status metadata synchronization.

@@ -13,8 +13,8 @@ defaults:
 caps:
   max_action_by_env:
     local: OBSERVE
-    dev: OBSERVE
-    stage: NOTIFY
+    dev: NOTIFY
+    uat: TICKET
     prod: PAGE
   max_action_by_tier_in_prod:
     TIER_0: PAGE

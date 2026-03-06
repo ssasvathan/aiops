@@ -162,7 +162,13 @@ def _rulebook_policy_for_tests(required: int = 5) -> RulebookV1:
         missing_sustained_policy="DOWNGRADE",
     )
     caps = RulebookCaps(
-        max_action_by_env={"local": "OBSERVE", "dev": "OBSERVE", "stage": "NOTIFY", "prod": "PAGE"},
+        max_action_by_env={
+            "local": "OBSERVE",
+            "dev": "NOTIFY",
+            "uat": "TICKET",
+            "stage": "TICKET",
+            "prod": "PAGE",
+        },
         max_action_by_tier_in_prod={
             "TIER_0": "PAGE",
             "TIER_1": "TICKET",

@@ -56,7 +56,13 @@ def _rulebook_policy_for_tests(required: int = 5) -> RulebookV1:
         missing_sustained_policy="DOWNGRADE",
     )
     caps = RulebookCaps(
-        max_action_by_env={"local": "OBSERVE", "dev": "OBSERVE", "stage": "NOTIFY", "prod": "PAGE"},
+        max_action_by_env={
+            "local": "OBSERVE",
+            "dev": "NOTIFY",
+            "uat": "TICKET",
+            "stage": "TICKET",
+            "prod": "PAGE",
+        },
         max_action_by_tier_in_prod={
             "TIER_0": "PAGE",
             "TIER_1": "TICKET",
@@ -491,13 +497,26 @@ def test_evaluate_rulebook_gates_marks_env_cap_applied_and_records_reason() -> N
 
 
 def test_evaluate_rulebook_gates_uses_stage_alias_for_uat_env_cap() -> None:
+    rulebook = load_rulebook_policy()
+    legacy_caps = dict(rulebook.caps.max_action_by_env)
+    legacy_caps.pop("uat", None)
+    legacy_caps["stage"] = "TICKET"
+    legacy_rulebook = rulebook.model_copy(
+        update={
+            "caps": rulebook.caps.model_copy(
+                update={"max_action_by_env": legacy_caps}
+            )
+        }
+    )
+
     decision = evaluate_rulebook_gates(
         gate_input=_gate_input_for_eval().model_copy(update={"env": Environment.UAT}),
-        rulebook=load_rulebook_policy(),
+        rulebook=legacy_rulebook,
+        dedupe_store=_DedupeStore(duplicate=False),
     )
 
     assert decision.env_cap_applied is True
-    assert decision.final_action == Action.NOTIFY
+    assert decision.final_action == Action.TICKET
     assert "AG1_ENV_OR_TIER_CAP" in decision.gate_reason_codes
 
 
@@ -522,8 +541,47 @@ def test_evaluate_rulebook_gates_applies_dev_env_cap() -> None:
     )
 
     assert decision.env_cap_applied is True
-    assert decision.final_action == Action.OBSERVE
+    assert decision.final_action == Action.NOTIFY
     assert "AG1_ENV_OR_TIER_CAP" in decision.gate_reason_codes
+
+
+@pytest.mark.parametrize(
+    ("env", "tier", "expected_action", "expected_env_cap_applied", "expect_ag1_reason"),
+    [
+        (Environment.LOCAL, CriticalityTier.TIER_0, Action.OBSERVE, True, True),
+        (Environment.DEV, CriticalityTier.TIER_0, Action.NOTIFY, True, True),
+        (Environment.UAT, CriticalityTier.TIER_0, Action.TICKET, True, True),
+        (Environment.PROD, CriticalityTier.TIER_0, Action.PAGE, False, False),
+        (Environment.PROD, CriticalityTier.TIER_1, Action.TICKET, False, True),
+        (Environment.PROD, CriticalityTier.TIER_2, Action.NOTIFY, False, True),
+        (Environment.PROD, CriticalityTier.UNKNOWN, Action.NOTIFY, False, True),
+    ],
+)
+def test_evaluate_rulebook_gates_ag1_matrix(
+    env: Environment,
+    tier: CriticalityTier,
+    expected_action: Action,
+    expected_env_cap_applied: bool,
+    expect_ag1_reason: bool,
+) -> None:
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval().model_copy(
+            update={
+                "env": env,
+                "criticality_tier": tier,
+            }
+        ),
+        rulebook=load_rulebook_policy(),
+        dedupe_store=_DedupeStore(duplicate=False),
+    )
+
+    assert decision.gate_rule_ids == ("AG0", "AG1", "AG2", "AG3", "AG4", "AG5", "AG6")
+    assert decision.final_action == expected_action
+    assert decision.env_cap_applied is expected_env_cap_applied
+    if expect_ag1_reason:
+        assert "AG1_ENV_OR_TIER_CAP" in decision.gate_reason_codes
+    else:
+        assert "AG1_ENV_OR_TIER_CAP" not in decision.gate_reason_codes
 
 
 def test_evaluate_rulebook_gates_is_deterministic_for_same_input() -> None:

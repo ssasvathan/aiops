@@ -178,8 +178,18 @@ def minimal_rulebook() -> RulebookV1:
             missing_sustained_policy="DOWNGRADE",
         ),
         caps=RulebookCaps(
-            max_action_by_env={"local": "OBSERVE", "dev": "OBSERVE", "prod": "PAGE"},
-            max_action_by_tier_in_prod={"TIER_0": "PAGE", "TIER_1": "TICKET", "TIER_2": "NOTIFY"},
+            max_action_by_env={
+                "local": "OBSERVE",
+                "dev": "NOTIFY",
+                "uat": "TICKET",
+                "prod": "PAGE",
+            },
+            max_action_by_tier_in_prod={
+                "TIER_0": "PAGE",
+                "TIER_1": "TICKET",
+                "TIER_2": "NOTIFY",
+                "UNKNOWN": "NOTIFY",
+            },
             paging_denied_topic_roles=("SOURCE_TOPIC",),
         ),
         gates=(

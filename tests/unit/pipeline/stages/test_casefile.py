@@ -120,8 +120,9 @@ def _rulebook_policy_for_tests() -> RulebookV1:
     caps = RulebookCaps(
         max_action_by_env={
             "local": "OBSERVE",
-            "dev": "OBSERVE",
-            "stage": "NOTIFY",
+            "dev": "NOTIFY",
+            "uat": "TICKET",
+            "stage": "TICKET",
             "prod": "PAGE",
         },
         max_action_by_tier_in_prod={

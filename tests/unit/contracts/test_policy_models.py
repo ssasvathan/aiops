@@ -173,6 +173,31 @@ def test_rulebook_caps_paging_denied_roles(minimal_rulebook: RulebookV1) -> None
     assert "SOURCE_TOPIC" in minimal_rulebook.caps.paging_denied_topic_roles
 
 
+def test_rulebook_policy_artifact_enforces_fr28_env_caps() -> None:
+    policy_path = Path(__file__).resolve().parents[3] / "config/policies/rulebook-v1.yaml"
+    policy = load_policy_yaml(policy_path, RulebookV1)
+
+    assert set(policy.caps.max_action_by_env) >= {"local", "dev", "uat", "prod"}
+    assert policy.caps.max_action_by_env["local"] == "OBSERVE"
+    assert policy.caps.max_action_by_env["dev"] == "NOTIFY"
+    assert policy.caps.max_action_by_env["uat"] == "TICKET"
+    assert policy.caps.max_action_by_env["prod"] == "PAGE"
+    if "stage" in policy.caps.max_action_by_env:
+        assert policy.caps.max_action_by_env["stage"] == policy.caps.max_action_by_env["uat"]
+
+
+def test_rulebook_policy_artifact_enforces_fr29_prod_tier_caps() -> None:
+    policy_path = Path(__file__).resolve().parents[3] / "config/policies/rulebook-v1.yaml"
+    policy = load_policy_yaml(policy_path, RulebookV1)
+
+    assert policy.caps.max_action_by_tier_in_prod == {
+        "TIER_0": "PAGE",
+        "TIER_1": "TICKET",
+        "TIER_2": "NOTIFY",
+        "UNKNOWN": "NOTIFY",
+    }
+
+
 def test_redis_ttl_prod_dedupe_accessible(minimal_redis_ttl: RedisTtlPolicyV1) -> None:
     assert minimal_redis_ttl.ttls_by_env["prod"].dedupe_seconds > 0
 
@@ -223,8 +248,18 @@ def test_rulebook_model_validate_from_dict() -> None:
             "missing_sustained_policy": "DOWNGRADE",
         },
         "caps": {
-            "max_action_by_env": {"local": "OBSERVE", "dev": "OBSERVE", "prod": "PAGE"},
-            "max_action_by_tier_in_prod": {"TIER_0": "PAGE", "TIER_1": "TICKET"},
+            "max_action_by_env": {
+                "local": "OBSERVE",
+                "dev": "NOTIFY",
+                "uat": "TICKET",
+                "prod": "PAGE",
+            },
+            "max_action_by_tier_in_prod": {
+                "TIER_0": "PAGE",
+                "TIER_1": "TICKET",
+                "TIER_2": "NOTIFY",
+                "UNKNOWN": "NOTIFY",
+            },
             "paging_denied_topic_roles": ["SOURCE_TOPIC"],
         },
         "gates": [
