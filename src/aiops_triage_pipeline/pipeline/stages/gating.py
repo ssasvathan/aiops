@@ -170,11 +170,15 @@ def evaluate_rulebook_gates(
             continue
 
         if gate_id == "AG6":
+            # AG6 only evaluates PM_PEAK_SUSTAINED for PROD + TIER_0 inputs.
+            # For other envs/tiers, neither on_pass nor on_fail is applied;
+            # postmortem fields retain their _EvaluationState defaults (False/None/()).
             if (
                 state.input_valid
                 and gate_input.env == Environment.PROD
                 and gate_input.criticality_tier == CriticalityTier.TIER_0
             ):
+                # peak is True uses strict identity: peak=None (UNKNOWN) must not fire.
                 if gate_input.peak is True and gate_input.sustained:
                     _apply_gate_effect(
                         state=state,
@@ -524,12 +528,19 @@ def _apply_gate_effect(
         state.current_action = reduced_action
 
     state.gate_reason_codes.extend(effect.set_reason_codes)
+    # NOTE: effect.confidence_floor is parsed by GateEffect but not enforced here;
+    # it is reserved for a future gate-input mutation mechanism.
 
     if effect.force_postmortem_mode is not None:
         mode = effect.force_postmortem_mode.strip().upper()
         state.postmortem_mode = None if mode in {"", "NONE"} else mode
     if effect.set_postmortem_required is not None:
         state.postmortem_required = effect.set_postmortem_required
+        if not effect.set_postmortem_required:
+            # Clear accumulated codes immediately when required=False; post-processing
+            # in evaluate_rulebook_gates provides a second safety net but this makes
+            # the invariant self-contained within _apply_gate_effect.
+            state.postmortem_reason_codes.clear()
     state.postmortem_reason_codes.extend(effect.set_postmortem_reason_codes)
 
 

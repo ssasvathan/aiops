@@ -1,6 +1,6 @@
 # Story 5.6: Postmortem Predicate Evaluation (AG6)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -245,8 +245,27 @@ claude-sonnet-4-6
 
 ### File List
 
-- `tests/unit/pipeline/stages/test_gating.py` (modified — added AG6 boundary condition tests)
+- `tests/unit/pipeline/stages/test_gating.py` (modified — added AG6 boundary condition tests; code-review: added final_action assertions to parametrized test)
+- `src/aiops_triage_pipeline/pipeline/stages/gating.py` (modified — code-review: added AG6 scope comment, peak is True comment, defensive postmortem_reason_codes.clear(), confidence_floor note)
+
+## Senior Developer Review (AI)
+
+Reviewed: 2026-03-06
+
+**Outcome: APPROVED** — 0 High, 4 Medium, 3 Low findings. All HIGH and MEDIUM issues fixed.
+
+**Fixes applied:**
+- **M1** — `test_evaluate_rulebook_gates_ag6_predicate_does_not_fire_when_any_condition_missing`: added `expected_final_action` parameter to parametrize with per-case assertions, completing AC4 coverage for all 8 boundary variants.
+- **M2** — `gating.py` AG6 block: added comment clarifying that `on_fail` only fires for PROD+TIER_0 and that non-PROD/non-TIER_0 paths rely on `_EvaluationState` defaults.
+- **M3** — `_apply_gate_effect`: added defensive `postmortem_reason_codes.clear()` when `set_postmortem_required=False`, making the invariant self-contained rather than relying solely on post-processing.
+- **M4** — `_apply_gate_effect`: added comment that `confidence_floor` is parsed but not yet enforced (reserved for future mechanism).
+
+Low findings (L1 duplicate test, L2 asymmetry comment, L3 fingerprint inconsistency) left as accepted — L2 comment added inline with the M2 fix.
+
+**Post-fix quality gates:** 53/53 `test_gating.py`, ruff clean, 514/514 unit suite. Integration tests skipped due to Docker unavailable in review environment (pre-existing).
 
 ## Change Log
 
 - 2026-03-06: Story 5.6 implementation complete. AG6 audit confirmed no gaps; added 11 new boundary-condition tests covering all PM_PEAK_SUSTAINED predicate conditions (peak=False/None, sustained=False, env=DEV/UAT, tier=TIER_1/TIER_2/UNKNOWN) plus predicate-fires and no-action-escalation assertions. Full regression suite: 538 passed, 0 skipped.
+- 2026-03-06: Code review complete. Applied 4 medium fixes: added final_action assertions to parametrized AG6 test, clarified AG6 on_fail scope with comments, added defensive postmortem_reason_codes.clear() in _apply_gate_effect, noted confidence_floor is unimplemented. Story → done.
+- 2026-03-06: Applied 2 low fixes: removed duplicate test_ag6_predicate_fires_when_all_conditions_met (covered by test_emits_complete_decision_and_ordered_gate_ids), added isolation comment to hardcoded action_fingerprint in _gate_input_for_eval fixture.

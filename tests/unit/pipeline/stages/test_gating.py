@@ -134,6 +134,8 @@ def _gate_input_for_eval() -> GateInputV1:
             ),
         ),
         evidence_status_map={"topic_messages_in_per_sec": EvidenceStatus.PRESENT},
+        # Fingerprint is hardcoded for unit test isolation — it intentionally does not
+        # reflect env/tier mutations applied via model_copy() in derived fixtures.
         action_fingerprint="prod/cluster-a/stream-orders/SHARED_TOPIC/orders/VOLUME_DROP/TIER_0",
         peak=True,
     )
@@ -851,31 +853,20 @@ def test_evaluate_rulebook_gates_ag5_skips_remember_on_duplicate() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_evaluate_rulebook_gates_ag6_predicate_fires_when_all_conditions_met() -> None:
-    # Baseline fixture: PROD + TIER_0 + peak=True + sustained=True + PAGE
-    decision = evaluate_rulebook_gates(
-        gate_input=_gate_input_for_eval(),
-        rulebook=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
-    )
-
-    assert decision.postmortem_required is True
-    assert decision.postmortem_mode == "SOFT"
-    assert decision.postmortem_reason_codes == ("PM_PEAK_SUSTAINED",)
-    assert decision.final_action == Action.PAGE  # AG6 must not change final_action
-
 
 @pytest.mark.parametrize(
-    "update_fields",
+    ("update_fields", "expected_final_action"),
     [
-        {"peak": False},
-        {"peak": None},
-        {"sustained": False},
-        {"env": Environment.DEV},
-        {"env": Environment.UAT},
-        {"criticality_tier": CriticalityTier.TIER_1},
-        {"criticality_tier": CriticalityTier.TIER_2},
-        {"criticality_tier": CriticalityTier.UNKNOWN},
+        # PROD + TIER_0: outer guard passes, predicate fails — action unchanged by AG6
+        ({"peak": False}, Action.PAGE),
+        ({"peak": None}, Action.PAGE),
+        ({"sustained": False}, Action.OBSERVE),  # AG4 caps PAGE→OBSERVE first
+        # Non-PROD / non-TIER_0: outer guard never reached — action set by AG1 cap
+        ({"env": Environment.DEV}, Action.NOTIFY),
+        ({"env": Environment.UAT}, Action.TICKET),
+        ({"criticality_tier": CriticalityTier.TIER_1}, Action.TICKET),
+        ({"criticality_tier": CriticalityTier.TIER_2}, Action.NOTIFY),
+        ({"criticality_tier": CriticalityTier.UNKNOWN}, Action.NOTIFY),
     ],
     ids=[
         "peak_false",
@@ -890,6 +881,7 @@ def test_evaluate_rulebook_gates_ag6_predicate_fires_when_all_conditions_met() -
 )
 def test_evaluate_rulebook_gates_ag6_predicate_does_not_fire_when_any_condition_missing(
     update_fields: dict,
+    expected_final_action: Action,
 ) -> None:
     decision = evaluate_rulebook_gates(
         gate_input=_gate_input_for_eval().model_copy(update=update_fields),
@@ -900,6 +892,7 @@ def test_evaluate_rulebook_gates_ag6_predicate_does_not_fire_when_any_condition_
     assert decision.postmortem_required is False
     assert decision.postmortem_mode is None
     assert decision.postmortem_reason_codes == ()
+    assert decision.final_action == expected_final_action  # AC4: AG6 must not change final_action
 
 
 def test_evaluate_rulebook_gates_ag6_no_action_escalation_when_predicate_does_not_fire() -> None:
