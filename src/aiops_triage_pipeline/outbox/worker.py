@@ -9,6 +9,10 @@ from typing import Protocol
 
 from aiops_triage_pipeline.contracts.outbox_policy import OutboxPolicyV1
 from aiops_triage_pipeline.logging.setup import get_logger
+from aiops_triage_pipeline.outbox.metrics import (
+    record_outbox_backlog_health,
+    record_outbox_publish_outcome,
+)
 from aiops_triage_pipeline.outbox.publisher import (
     CaseEventPublisherProtocol,
     publish_case_events_after_invariant_a,
@@ -47,6 +51,12 @@ class OutboxRepositoryPublishProtocol(Protocol):
         error_code: str | None = None,
         now: datetime | None = None,
     ) -> OutboxRecordV1: ...
+
+    def select_backlog_health(
+        self,
+        *,
+        now: datetime | None = None,
+    ) -> tuple[int, int, float]: ...
 
 
 @dataclass(frozen=True)
@@ -93,7 +103,7 @@ class OutboxPublisherWorker:
             now=resolved_now,
             limit=self._batch_size,
         )
-        self._emit_backlog_health_logs(now=resolved_now, records=publishable)
+        self._emit_backlog_health_logs(now=resolved_now)
 
         sent_count = 0
         failed_count = 0
@@ -119,6 +129,7 @@ class OutboxPublisherWorker:
                     event_count=evidence.event_count,
                     published_at=evidence.published_at.isoformat(),
                 )
+                record_outbox_publish_outcome(status=sent_record.status, outcome="success")
                 sent_count += 1
             except Exception as exc:  # noqa: BLE001
                 failed_record = self._outbox_repository.transition_publish_failure(
@@ -131,6 +142,7 @@ class OutboxPublisherWorker:
                 )
                 failed_count += 1
                 self._log_publish_failure(record=failed_record, exc=exc)
+                record_outbox_publish_outcome(status=failed_record.status, outcome="failure")
 
         return OutboxWorkerIterationResult(
             scanned_count=len(publishable),
@@ -144,13 +156,9 @@ class OutboxPublisherWorker:
             self.run_once()
             time.sleep(self._poll_interval_seconds)
 
-    def _emit_backlog_health_logs(self, *, now: datetime, records: list[OutboxRecordV1]) -> None:
-        ready_records = [record for record in records if record.status == "READY"]
-        retry_records = [record for record in records if record.status == "RETRY"]
-        oldest_ready_age_seconds = (
-            max((now - record.updated_at).total_seconds() for record in ready_records)
-            if ready_records
-            else 0.0
+    def _emit_backlog_health_logs(self, *, now: datetime) -> None:
+        ready_count, retry_count, oldest_ready_age_seconds = (
+            self._outbox_repository.select_backlog_health(now=now)
         )
 
         if oldest_ready_age_seconds >= _READY_CRITICAL_AGE_SECONDS:
@@ -166,10 +174,15 @@ class OutboxPublisherWorker:
         log_fn(
             "outbox_backlog_health",
             event_type="outbox.backlog_health",
-            ready_count=len(ready_records),
-            retry_count=len(retry_records),
+            ready_count=ready_count,
+            retry_count=retry_count,
             oldest_ready_age_seconds=oldest_ready_age_seconds,
             threshold_state=severity,
+        )
+        record_outbox_backlog_health(
+            ready_count=ready_count,
+            retry_count=retry_count,
+            oldest_ready_age_seconds=oldest_ready_age_seconds,
         )
 
     def _log_publish_failure(self, *, record: OutboxRecordV1, exc: Exception) -> None:

@@ -1,6 +1,6 @@
 # Story 4.5: Outbox-to-Kafka Event Publishing (Invariant B2)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -17,7 +17,7 @@ so that no confirmed CaseFile is ever lost in transit and hot-path consumers nee
    **Then** it publishes `CaseHeaderEvent.v1` + `TriageExcerpt.v1` to Kafka as JSON via confluent-kafka synchronous producer.
 2. **And** hot-path consumers receive only header/excerpt — no object-store reads required for routing/paging decisions (FR24).
 3. **And** after a crash between CaseFile write and Kafka publish, the publisher recovers READY records and publishes them (Invariant B2).
-4. **And** if Kafka is unavailable, outbox accumulates READY records and alerts on READY age thresholds.
+4. **And** if Kafka is unavailable, outbox accumulates `READY`/`RETRY` backlog and alerts on READY age thresholds.
 5. **And** the publisher runs as a separate entrypoint (`--mode outbox-publisher`).
 6. **And** integration tests verify Invariant B2: simulate crash between CaseFile write and Kafka publish, verify publish occurs on recovery (NFR-T2).
 
@@ -32,7 +32,7 @@ so that no confirmed CaseFile is ever lost in transit and hot-path consumers nee
 - [x] Task 2: Extend outbox publish contract to include excerpt emission (AC: 1, 2)
   - [x] Extend `src/aiops_triage_pipeline/outbox/publisher.py` protocol and helpers so publish step emits header + excerpt as one durable action.
   - [x] Preserve Invariant A readback + hash checks before any publish call.
-  - [x] Keep guardrails for `READY`-only publish and case/hash identity checks.
+  - [x] Keep guardrails for `READY`/`RETRY` publish and case/hash identity checks.
   - [x] Keep publish evidence structure auditable (event count, timestamps, case_id).
 
 - [x] Task 3: Add durable recovery loop for outbox publisher mode (AC: 3, 4, 5)
@@ -282,7 +282,9 @@ GPT-5 Codex
 - `src/aiops_triage_pipeline/config/settings.py`
 - `src/aiops_triage_pipeline/integrations/kafka.py`
 - `src/aiops_triage_pipeline/outbox/__init__.py`
+- `src/aiops_triage_pipeline/outbox/metrics.py`
 - `src/aiops_triage_pipeline/outbox/publisher.py`
+- `src/aiops_triage_pipeline/outbox/repository.py`
 - `src/aiops_triage_pipeline/outbox/worker.py`
 - `tests/integration/test_outbox_publish.py`
 - `tests/unit/integrations/test_kafka.py`
@@ -292,3 +294,26 @@ GPT-5 Codex
 ### Change Log
 
 - 2026-03-06: Implemented Story 4.5 outbox-to-Kafka dual-event publisher flow, durable worker recovery loop, runtime outbox-publisher entrypoint wiring, and expanded unit/integration coverage for Invariant B2 and retry/dead failure semantics.
+- 2026-03-06: Senior code review remediation applied: batch dual-event publish path, backlog-health query across full READY/RETRY set, outbox OTLP metrics emission, and additional unit coverage for delivery-callback failures + backlog threshold logging.
+
+## Senior Developer Review (AI)
+
+### Outcome
+
+Approved after fixes.
+
+### Findings Resolved
+
+- Updated story wording to match implemented durability model (`READY` + `RETRY` backlog semantics).
+- Reduced partial dual-event publish risk by publishing both records in one producer batch + single flush.
+- Added producer-purge best effort on publish exceptions to reduce leaked partial messages.
+- Added explicit outbox OTLP metrics for backlog health and publish outcomes.
+- Corrected backlog health calculation to use full outbox backlog instead of current publish batch slice.
+- Expanded unit coverage:
+  - Kafka delivery callback failure handling for dual-event publish.
+  - Worker backlog threshold logging and full-backlog health behavior with limited batch size.
+
+### Validation Commands (Review Remediation)
+
+- `uv run pytest -q tests/unit/integrations/test_kafka.py tests/unit/outbox/test_publisher.py tests/unit/outbox/test_worker.py`
+- `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs tests/integration/test_outbox_publish.py -m integration`

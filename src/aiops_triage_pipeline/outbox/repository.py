@@ -205,6 +205,44 @@ class OutboxSqlRepository:
         except Exception as exc:  # noqa: BLE001
             raise self._wrap_repo_exc(exc)
 
+    def select_backlog_health(
+        self,
+        *,
+        now: datetime | None = None,
+    ) -> tuple[int, int, float]:
+        resolved_now = _resolve_now(now)
+        try:
+            with self._tx() as conn:
+                rows = (
+                    conn.execute(
+                        select(
+                            outbox_table.c.status,
+                            outbox_table.c.updated_at,
+                        ).where(outbox_table.c.status.in_(("READY", "RETRY")))
+                    )
+                    .mappings()
+                    .all()
+                )
+
+                ready_count = 0
+                retry_count = 0
+                oldest_ready_age_seconds = 0.0
+                for row in rows:
+                    status = str(row["status"])
+                    if status == "READY":
+                        ready_count += 1
+                        updated_at = _as_aware_datetime(row["updated_at"])
+                        ready_age_seconds = (resolved_now - updated_at).total_seconds()
+                        oldest_ready_age_seconds = max(oldest_ready_age_seconds, ready_age_seconds)
+                    elif status == "RETRY":
+                        retry_count += 1
+
+                return ready_count, retry_count, oldest_ready_age_seconds
+        except CriticalDependencyError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise self._wrap_repo_exc(exc)
+
     def select_expired_for_cleanup(
         self,
         *,

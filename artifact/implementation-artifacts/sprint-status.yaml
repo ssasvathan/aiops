@@ -91,7 +91,7 @@ development_status:
   4-2-write-once-casefile-to-object-storage-invariant-a: done
   4-3-append-only-casefile-stage-files: done
   4-4-postgres-durable-outbox-state-machine: done
-  4-5-outbox-to-kafka-event-publishing-invariant-b2: review
+  4-5-outbox-to-kafka-event-publishing-invariant-b2: done
   4-6-triageexcerpt-exposure-denylist-enforcement: backlog
   4-7-casefile-retention-and-lifecycle-management: backlog
   epic-4-retrospective: optional

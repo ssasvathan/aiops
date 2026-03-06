@@ -32,7 +32,7 @@ from aiops_triage_pipeline.storage.casefile_io import (
 from aiops_triage_pipeline.storage.client import ObjectStoreClientProtocol, PutIfAbsentResult
 
 
-def _sample_casefile() -> CaseFileTriageV1:
+def _sample_casefile(case_id: str = "case-prod-cluster-a-orders-volume-drop") -> CaseFileTriageV1:
     gate_input = GateInputV1(
         env=Environment.PROD,
         cluster_id="cluster-a",
@@ -56,7 +56,7 @@ def _sample_casefile() -> CaseFileTriageV1:
         action_fingerprint=(
             "prod/cluster-a/stream-orders/SOURCE_TOPIC/orders/VOLUME_DROP/TIER_1"
         ),
-        case_id="case-prod-cluster-a-orders-volume-drop",
+        case_id=case_id,
     )
     action_decision = ActionDecisionV1(
         final_action=Action.TICKET,
@@ -67,7 +67,7 @@ def _sample_casefile() -> CaseFileTriageV1:
         postmortem_required=False,
     )
     base = CaseFileTriageV1(
-        case_id="case-prod-cluster-a-orders-volume-drop",
+        case_id=case_id,
         scope=("prod", "cluster-a", "orders"),
         triage_timestamp=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
         evidence_snapshot=CaseFileEvidenceSnapshot(
@@ -156,6 +156,20 @@ class _FailingPublisher:
         raise CriticalDependencyError("kafka unavailable")
 
 
+class _RecordingLogger:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, str, dict[str, object]]] = []
+
+    def info(self, event: str, **kwargs: object) -> None:
+        self.events.append(("info", event, kwargs))
+
+    def warning(self, event: str, **kwargs: object) -> None:
+        self.events.append(("warning", event, kwargs))
+
+    def critical(self, event: str, **kwargs: object) -> None:
+        self.events.append(("critical", event, kwargs))
+
+
 def _policy_with_max_retry(max_retry_attempts: int) -> OutboxPolicyV1:
     return OutboxPolicyV1(
         retention_by_env={
@@ -230,3 +244,83 @@ def test_outbox_worker_transitions_retry_to_dead_after_max_retries() -> None:
     assert after_second is not None
     assert after_second.status == "DEAD"
     assert after_second.delivery_attempts == 2
+
+
+def test_outbox_worker_logs_warning_for_old_ready_backlog() -> None:
+    casefile = _sample_casefile(case_id="case-warning")
+    ready_casefile = _ready_casefile(casefile)
+    object_store = _InMemoryObjectStoreClient()
+    object_store.store[ready_casefile.object_path] = serialize_casefile_triage(casefile)
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    create_outbox_table(engine)
+    repository = OutboxSqlRepository(engine=engine)
+    old_time = datetime(2026, 3, 6, 12, 0, tzinfo=UTC)
+    repository.insert_pending_object(confirmed_casefile=ready_casefile, now=old_time)
+    repository.transition_to_ready(case_id=casefile.case_id, now=old_time)
+
+    worker = OutboxPublisherWorker(
+        outbox_repository=repository,
+        object_store_client=object_store,
+        publisher=_RecordingPublisher(),
+        policy=_policy_with_max_retry(max_retry_attempts=3),
+        app_env="local",
+        batch_size=1,
+    )
+    logger = _RecordingLogger()
+    worker._logger = logger  # noqa: SLF001
+
+    worker.run_once(now=datetime(2026, 3, 6, 12, 3, tzinfo=UTC))
+
+    backlog_events = [event for event in logger.events if event[1] == "outbox_backlog_health"]
+    assert backlog_events
+    level, _, fields = backlog_events[0]
+    assert level == "warning"
+    assert fields["threshold_state"] == "warning"
+    assert fields["ready_count"] == 1
+
+
+def test_outbox_worker_backlog_health_uses_full_backlog_not_batch_slice() -> None:
+    ready_casefile = _ready_casefile(_sample_casefile(case_id="case-ready"))
+    retry_casefile = _ready_casefile(_sample_casefile(case_id="case-retry"))
+    object_store = _InMemoryObjectStoreClient()
+    object_store.store[ready_casefile.object_path] = serialize_casefile_triage(
+        _sample_casefile(case_id="case-ready")
+    )
+    object_store.store[retry_casefile.object_path] = serialize_casefile_triage(
+        _sample_casefile(case_id="case-retry")
+    )
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    create_outbox_table(engine)
+    repository = OutboxSqlRepository(engine=engine)
+    base_time = datetime(2026, 3, 6, 12, 0, tzinfo=UTC)
+    repository.insert_pending_object(confirmed_casefile=ready_casefile, now=base_time)
+    repository.transition_to_ready(case_id="case-ready", now=base_time)
+    repository.insert_pending_object(confirmed_casefile=retry_casefile, now=base_time)
+    repository.transition_to_ready(case_id="case-retry", now=base_time)
+    repository.transition_publish_failure(
+        case_id="case-retry",
+        policy=_policy_with_max_retry(max_retry_attempts=3),
+        app_env="local",
+        error_message="kafka unavailable",
+        now=base_time,
+    )
+
+    worker = OutboxPublisherWorker(
+        outbox_repository=repository,
+        object_store_client=object_store,
+        publisher=_RecordingPublisher(),
+        policy=_policy_with_max_retry(max_retry_attempts=3),
+        app_env="local",
+        batch_size=1,
+    )
+    logger = _RecordingLogger()
+    worker._logger = logger  # noqa: SLF001
+
+    # Retry row may fill the batch window first; READY must still be counted in backlog health.
+    worker.run_once(now=datetime(2026, 3, 6, 12, 3, tzinfo=UTC))
+
+    backlog_events = [event for event in logger.events if event[1] == "outbox_backlog_health"]
+    assert backlog_events
+    _, _, fields = backlog_events[0]
+    assert fields["ready_count"] == 1
+    assert fields["retry_count"] >= 1

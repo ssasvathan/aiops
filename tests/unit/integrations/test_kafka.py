@@ -49,6 +49,24 @@ class _RecordingProducer:
         return 0
 
 
+class _DeliveryErrorProducer(_RecordingProducer):
+    def __init__(self, *, fail_call_index: int) -> None:
+        super().__init__()
+        self._fail_call_index = fail_call_index
+
+    def flush(self, timeout: float) -> int:
+        self.flush_calls.append(timeout)
+        for idx, call in enumerate(self.calls):
+            callback = call["on_delivery"]
+            if callback is None:
+                continue
+            if idx == self._fail_call_index:
+                callback(RuntimeError("delivery failed"), object())
+            else:
+                callback(None, object())
+        return 0
+
+
 class _FailingProducer(_RecordingProducer):
     def produce(
         self,
@@ -122,14 +140,26 @@ def test_publish_case_events_uses_deterministic_topics_keys_and_json_payloads() 
     assert producer.calls[1]["key"] == triage_excerpt.case_id.encode("utf-8")
     assert producer.calls[0]["value"] == case_header.model_dump_json().encode("utf-8")
     assert producer.calls[1]["value"] == triage_excerpt.model_dump_json().encode("utf-8")
-    assert producer.polled == [0.0, 0.0]
-    assert producer.flush_calls == [10.0, 10.0]
+    assert producer.polled == [0.0]
+    assert producer.flush_calls == [10.0]
 
 
 def test_publish_case_events_wraps_producer_errors_as_critical_dependency() -> None:
     publisher = ConfluentKafkaCaseEventPublisher(producer=_FailingProducer())
 
     with pytest.raises(CriticalDependencyError, match="kafka publish failed"):
+        publisher.publish_case_events(
+            case_header_event=_sample_case_header(),
+            triage_excerpt_event=_sample_triage_excerpt(),
+        )
+
+
+def test_publish_case_events_raises_when_any_delivery_callback_fails() -> None:
+    publisher = ConfluentKafkaCaseEventPublisher(
+        producer=_DeliveryErrorProducer(fail_call_index=1)
+    )
+
+    with pytest.raises(CriticalDependencyError, match="kafka delivery failed"):
         publisher.publish_case_events(
             case_header_event=_sample_case_header(),
             triage_excerpt_event=_sample_triage_excerpt(),

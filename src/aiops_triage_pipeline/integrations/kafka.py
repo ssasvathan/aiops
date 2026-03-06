@@ -59,11 +59,15 @@ class ConfluentKafkaCaseEventPublisher(CaseEventPublisherProtocol, CaseHeaderPub
 
     def publish_case_header(self, *, event: CaseHeaderEventV1) -> None:
         """Compatibility path for existing single-header publishing tests."""
-        self._publish_one(
-            topic=self._case_header_topic,
-            key=event.case_id.encode("utf-8"),
-            value=event.model_dump_json().encode("utf-8"),
-            contract_id=CASE_HEADER_CONTRACT_ID,
+        self._publish_batch(
+            messages=(
+                (
+                    self._case_header_topic,
+                    event.case_id.encode("utf-8"),
+                    event.model_dump_json().encode("utf-8"),
+                    CASE_HEADER_CONTRACT_ID,
+                ),
+            ),
         )
 
     def publish_case_events(
@@ -75,60 +79,80 @@ class ConfluentKafkaCaseEventPublisher(CaseEventPublisherProtocol, CaseHeaderPub
         if case_header_event.case_id != triage_excerpt_event.case_id:
             raise InvariantViolation("header/excerpt case_id mismatch for Kafka publish")
 
-        self._publish_one(
-            topic=self._case_header_topic,
-            key=case_header_event.case_id.encode("utf-8"),
-            value=case_header_event.model_dump_json().encode("utf-8"),
-            contract_id=CASE_HEADER_CONTRACT_ID,
-        )
-        self._publish_one(
-            topic=self._triage_excerpt_topic,
-            key=triage_excerpt_event.case_id.encode("utf-8"),
-            value=triage_excerpt_event.model_dump_json().encode("utf-8"),
-            contract_id=TRIAGE_EXCERPT_CONTRACT_ID,
+        self._publish_batch(
+            messages=(
+                (
+                    self._case_header_topic,
+                    case_header_event.case_id.encode("utf-8"),
+                    case_header_event.model_dump_json().encode("utf-8"),
+                    CASE_HEADER_CONTRACT_ID,
+                ),
+                (
+                    self._triage_excerpt_topic,
+                    triage_excerpt_event.case_id.encode("utf-8"),
+                    triage_excerpt_event.model_dump_json().encode("utf-8"),
+                    TRIAGE_EXCERPT_CONTRACT_ID,
+                ),
+            )
         )
 
-    def _publish_one(
+    def _publish_batch(
         self,
         *,
-        topic: str,
-        key: bytes,
-        value: bytes,
-        contract_id: str,
+        messages: tuple[tuple[str, bytes, bytes, str], ...],
     ) -> None:
-        delivery_error: str | None = None
+        delivery_errors: list[str] = []
 
-        def _delivery_callback(err: Any, msg: Any) -> None:  # noqa: ANN401
+        def _delivery_callback(contract_id: str, err: Any, msg: Any) -> None:  # noqa: ANN401
             del msg
-            nonlocal delivery_error
             if err is not None:
-                delivery_error = str(err)
+                delivery_errors.append(f"{contract_id}: {err}")
 
         try:
-            self._producer.produce(
-                topic,
-                key=key,
-                value=value,
-                on_delivery=_delivery_callback,
-            )
+            for topic, key, value, contract_id in messages:
+                self._producer.produce(
+                    topic,
+                    key=key,
+                    value=value,
+                    on_delivery=lambda err, msg, cid=contract_id: _delivery_callback(
+                        cid,
+                        err,
+                        msg,
+                    ),
+                )
             self._producer.poll(0.0)
             pending_count = self._producer.flush(self._flush_timeout_seconds)
         except CriticalDependencyError:
             raise
         except Exception as exc:  # noqa: BLE001
+            self._purge_if_supported()
+            contract_ids = ", ".join(contract_id for _, _, _, contract_id in messages)
             raise CriticalDependencyError(
-                f"kafka publish failed for {contract_id} on topic={topic}: {exc}"
+                f"kafka publish failed for contracts=[{contract_ids}]: {exc}"
             ) from exc
 
-        if delivery_error is not None:
+        if delivery_errors:
+            contract_ids = ", ".join(contract_id for _, _, _, contract_id in messages)
+            delivery_errors_text = "; ".join(delivery_errors)
             raise CriticalDependencyError(
-                f"kafka delivery failed for {contract_id} on topic={topic}: {delivery_error}"
+                "kafka delivery failed for "
+                f"contracts=[{contract_ids}]: {delivery_errors_text}"
             )
         if pending_count not in (0, None):
+            contract_ids = ", ".join(contract_id for _, _, _, contract_id in messages)
             raise CriticalDependencyError(
-                f"kafka flush timeout for {contract_id} on topic={topic}; "
+                f"kafka flush timeout for contracts=[{contract_ids}]; "
                 f"pending_messages={pending_count}"
             )
+
+    def _purge_if_supported(self) -> None:
+        purge = getattr(self._producer, "purge", None)
+        if not callable(purge):
+            return
+        try:
+            purge(in_queue=True, in_flight=True, blocking=False)
+        except Exception:
+            return
 
     @staticmethod
     def _build_producer(settings: Settings) -> KafkaProducerProtocol:
