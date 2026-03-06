@@ -54,6 +54,8 @@ class Settings(BaseSettings):
     KAFKA_SECURITY_PROTOCOL: str = "PLAINTEXT"
     KAFKA_KERBEROS_KEYTAB_PATH: str | None = None
     KRB5_CONF_PATH: str | None = None
+    KAFKA_CASE_HEADER_TOPIC: str = "aiops-case-header"
+    KAFKA_TRIAGE_EXCERPT_TOPIC: str = "aiops-triage-excerpt"
 
     # Postgres
     DATABASE_URL: str = "postgresql+psycopg://aiops:aiops@localhost:5432/aiops"
@@ -72,6 +74,8 @@ class Settings(BaseSettings):
     INTEGRATION_MODE_SLACK: IntegrationMode = IntegrationMode.LOG
     INTEGRATION_MODE_SN: IntegrationMode = IntegrationMode.LOG
     INTEGRATION_MODE_LLM: IntegrationMode = IntegrationMode.LOG
+    OUTBOX_PUBLISHER_POLL_INTERVAL_SECONDS: float = 5.0
+    OUTBOX_PUBLISHER_BATCH_SIZE: int = 100
 
     @property
     def max_action(self) -> str:

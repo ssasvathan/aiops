@@ -13,6 +13,7 @@ from aiops_triage_pipeline.contracts.enums import (
     EvidenceStatus,
 )
 from aiops_triage_pipeline.contracts.gate_input import Finding, GateInputV1
+from aiops_triage_pipeline.contracts.triage_excerpt import TriageExcerptV1
 from aiops_triage_pipeline.errors.exceptions import InvariantViolation
 from aiops_triage_pipeline.models.case_file import (
     TRIAGE_HASH_PLACEHOLDER,
@@ -23,7 +24,9 @@ from aiops_triage_pipeline.models.case_file import (
     CaseFileTriageV1,
 )
 from aiops_triage_pipeline.outbox.publisher import (
+    CaseEventPublisherProtocol,
     CaseHeaderPublisherProtocol,
+    publish_case_events_after_invariant_a,
     publish_case_header_after_invariant_a,
 )
 from aiops_triage_pipeline.outbox.schema import OutboxReadyCasefileV1
@@ -159,6 +162,19 @@ class _RecordingPublisher(CaseHeaderPublisherProtocol):
         self.published.append(event)
 
 
+class _RecordingCaseEventsPublisher(CaseEventPublisherProtocol):
+    def __init__(self) -> None:
+        self.published: list[tuple[CaseHeaderEventV1, TriageExcerptV1]] = []
+
+    def publish_case_events(
+        self,
+        *,
+        case_header_event: CaseHeaderEventV1,
+        triage_excerpt_event: TriageExcerptV1,
+    ) -> None:
+        self.published.append((case_header_event, triage_excerpt_event))
+
+
 def test_publish_case_header_after_invariant_a_requires_confirmed_object_readback() -> None:
     casefile = _sample_casefile()
     outbox_record = create_ready_outbox_record(confirmed_casefile=_ready_casefile(casefile))
@@ -212,3 +228,41 @@ def test_publish_case_header_after_invariant_a_blocks_hash_mismatch() -> None:
         )
 
     assert publisher.published == []
+
+
+def test_publish_case_events_after_invariant_a_emits_header_and_excerpt() -> None:
+    casefile = _sample_casefile()
+    outbox_record = create_ready_outbox_record(confirmed_casefile=_ready_casefile(casefile))
+    object_store = _InMemoryObjectStoreClient()
+    object_store.store[outbox_record.casefile_object_path] = serialize_casefile_triage(casefile)
+    publisher = _RecordingCaseEventsPublisher()
+
+    evidence = publish_case_events_after_invariant_a(
+        outbox_record=outbox_record,
+        object_store_client=object_store,
+        publisher=publisher,
+    )
+
+    assert evidence.case_id == casefile.case_id
+    assert evidence.triage_hash == casefile.triage_hash
+    assert evidence.event_count == 2
+    assert len(publisher.published) == 1
+    header_event, excerpt_event = publisher.published[0]
+    assert header_event.case_id == casefile.case_id
+    assert excerpt_event.case_id == casefile.case_id
+    assert excerpt_event.routing_key == casefile.topology_context.routing.routing_key
+
+
+def test_publish_case_events_after_invariant_a_rejects_non_publishable_status() -> None:
+    casefile = _sample_casefile()
+    ready_record = create_ready_outbox_record(confirmed_casefile=_ready_casefile(casefile))
+    outbox_record = ready_record.model_copy(update={"status": "PENDING_OBJECT"})
+    object_store = _InMemoryObjectStoreClient()
+    object_store.store[ready_record.casefile_object_path] = serialize_casefile_triage(casefile)
+
+    with pytest.raises(InvariantViolation, match="cannot publish case events from outbox status"):
+        publish_case_events_after_invariant_a(
+            outbox_record=outbox_record,
+            object_store_client=object_store,
+            publisher=_RecordingCaseEventsPublisher(),
+        )
