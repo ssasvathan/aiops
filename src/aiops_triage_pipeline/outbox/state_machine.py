@@ -60,7 +60,7 @@ def mark_outbox_record_ready(
     """Transition a PENDING_OBJECT outbox record to READY after write confirmation."""
     if record.status != "PENDING_OBJECT":
         raise InvariantViolation(f"cannot mark record READY from status={record.status}")
-    resolved_now = _resolve_now(now=now)
+    resolved_now = _resolve_transition_now(record=record, now=now)
     return record.model_copy(
         update={
             "status": "READY",
@@ -80,7 +80,7 @@ def mark_outbox_record_sent(
     """Transition a READY/RETRY outbox record to SENT after publish success."""
     if record.status not in {"READY", "RETRY"}:
         raise InvariantViolation(f"cannot mark record SENT from status={record.status}")
-    resolved_now = _resolve_now(now=now)
+    resolved_now = _resolve_transition_now(record=record, now=now)
     return record.model_copy(
         update={
             "status": "SENT",
@@ -105,7 +105,7 @@ def mark_outbox_record_publish_failure(
     """Transition READY/RETRY to RETRY, or RETRY to DEAD when attempts exceed policy threshold."""
     if record.status not in {"READY", "RETRY"}:
         raise InvariantViolation(f"cannot mark publish failure from status={record.status}")
-    resolved_now = _resolve_now(now=now)
+    resolved_now = _resolve_transition_now(record=record, now=now)
     next_attempt_number = record.delivery_attempts + 1
     max_retry_attempts = resolve_max_retry_attempts(policy=policy, app_env=app_env)
     if next_attempt_number > max_retry_attempts:
@@ -186,4 +186,12 @@ def _resolve_now(*, now: datetime | None) -> datetime:
     resolved_now = now or datetime.now(tz=UTC)
     if resolved_now.tzinfo is None:
         raise ValueError("now must be timezone-aware")
+    return resolved_now
+
+
+def _resolve_transition_now(*, record: OutboxRecordV1, now: datetime | None) -> datetime:
+    """Ensure transition timestamps never move backward relative to stored record state."""
+    resolved_now = _resolve_now(now=now)
+    if resolved_now < record.updated_at:
+        return record.updated_at
     return resolved_now

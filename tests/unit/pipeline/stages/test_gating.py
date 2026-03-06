@@ -1,11 +1,21 @@
+import io
+import json
 from datetime import UTC, datetime
+from time import perf_counter
 
 import pytest
 
-from aiops_triage_pipeline.contracts.enums import Action, CriticalityTier, EvidenceStatus
+from aiops_triage_pipeline.contracts.enums import (
+    Action,
+    CriticalityTier,
+    Environment,
+    EvidenceStatus,
+)
+from aiops_triage_pipeline.contracts.gate_input import Finding, GateInputV1
 from aiops_triage_pipeline.contracts.peak_policy import PeakPolicyV1, PeakThresholdPolicy
 from aiops_triage_pipeline.contracts.rulebook import (
     GateCheck,
+    GateEffect,
     GateEffects,
     GateSpec,
     RulebookCaps,
@@ -16,8 +26,12 @@ from aiops_triage_pipeline.pipeline.stages.evidence import collect_evidence_stag
 from aiops_triage_pipeline.pipeline.stages.gating import (
     GateInputContext,
     collect_gate_inputs_by_scope,
+    evaluate_rulebook_gates,
 )
-from aiops_triage_pipeline.pipeline.stages.peak import collect_peak_stage_output
+from aiops_triage_pipeline.pipeline.stages.peak import (
+    collect_peak_stage_output,
+    load_rulebook_policy,
+)
 
 
 def _peak_policy_for_tests() -> PeakPolicyV1:
@@ -70,6 +84,55 @@ def _rulebook_policy_for_tests(required: int = 5) -> RulebookV1:
         caps=caps,
         gates=gates,
     )
+
+
+class _DedupeStore:
+    def __init__(self, *, duplicate: bool = False, fail_on_check: bool = False) -> None:
+        self.duplicate = duplicate
+        self.fail_on_check = fail_on_check
+        self.remembered: list[str] = []
+
+    def is_duplicate(self, fingerprint: str) -> bool:  # noqa: ARG002
+        if self.fail_on_check:
+            raise RuntimeError("dedupe store unavailable")
+        return self.duplicate
+
+    def remember(self, fingerprint: str) -> None:
+        self.remembered.append(fingerprint)
+
+
+def _gate_input_for_eval() -> GateInputV1:
+    return GateInputV1(
+        env=Environment.PROD,
+        cluster_id="cluster-a",
+        stream_id="stream-orders",
+        topic="orders",
+        topic_role="SHARED_TOPIC",
+        anomaly_family="VOLUME_DROP",
+        criticality_tier=CriticalityTier.TIER_0,
+        proposed_action=Action.PAGE,
+        diagnosis_confidence=0.95,
+        sustained=True,
+        findings=(
+            Finding(
+                finding_id="f-1",
+                name="volume-drop",
+                is_anomalous=True,
+                evidence_required=("topic_messages_in_per_sec",),
+                is_primary=True,
+                severity="HIGH",
+                reason_codes=("VOLUME_DROP",),
+            ),
+        ),
+        evidence_status_map={"topic_messages_in_per_sec": EvidenceStatus.PRESENT},
+        action_fingerprint="prod/cluster-a/stream-orders/SHARED_TOPIC/orders/VOLUME_DROP/TIER_0",
+        peak=True,
+    )
+
+
+def _parse_logs(stream: io.StringIO) -> list[dict]:
+    lines = [line for line in stream.getvalue().splitlines() if line.strip()]
+    return [json.loads(line) for line in lines]
 
 
 def test_collect_gate_inputs_by_scope_propagates_unknown_evidence_status_map() -> None:
@@ -247,3 +310,210 @@ def test_collect_gate_inputs_by_scope_raises_when_context_missing() -> None:
             peak_output=peak_output,
             context_by_scope={},
         )
+
+
+def test_evaluate_rulebook_gates_emits_complete_decision_and_ordered_gate_ids() -> None:
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval(),
+        rulebook=load_rulebook_policy(),
+    )
+
+    assert decision.gate_rule_ids == ("AG0", "AG1", "AG2", "AG3", "AG4", "AG5", "AG6")
+    assert decision.final_action == Action.PAGE
+    assert decision.env_cap_applied is False
+    assert decision.action_fingerprint
+    assert decision.postmortem_required is True
+    assert decision.postmortem_mode == "SOFT"
+    assert decision.postmortem_reason_codes == ("PM_PEAK_SUSTAINED",)
+
+
+def test_evaluate_rulebook_gates_enforces_monotonic_action_reduction() -> None:
+    rulebook = load_rulebook_policy()
+    ag2 = next(gate for gate in rulebook.gates if gate.id == "AG2")
+    strengthened_ag2 = ag2.model_copy(
+        update={
+            "effect": ag2.effect.model_copy(
+                update={
+                    "on_fail": GateEffect(
+                        cap_action_to="PAGE",
+                        set_reason_codes=("AG2_ATTEMPTED_ESCALATION",),
+                    )
+                }
+            )
+        }
+    )
+    reordered_gates = tuple(
+        strengthened_ag2 if gate.id == "AG2" else gate for gate in rulebook.gates
+    )
+    monotonic_rulebook = rulebook.model_copy(update={"gates": reordered_gates})
+
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval().model_copy(
+            update={
+                "proposed_action": Action.OBSERVE,
+                "evidence_status_map": {"topic_messages_in_per_sec": EvidenceStatus.UNKNOWN},
+            }
+        ),
+        rulebook=monotonic_rulebook,
+    )
+
+    assert decision.final_action == Action.OBSERVE
+    assert "AG2_ATTEMPTED_ESCALATION" in decision.gate_reason_codes
+
+
+def test_evaluate_rulebook_gates_fails_when_gate_order_is_invalid() -> None:
+    rulebook = load_rulebook_policy()
+    bad_order = rulebook.gates[:-2] + (rulebook.gates[-1], rulebook.gates[-2])
+    invalid_rulebook = rulebook.model_copy(update={"gates": bad_order})
+
+    with pytest.raises(ValueError, match="Rulebook gate order must be"):
+        evaluate_rulebook_gates(
+            gate_input=_gate_input_for_eval(),
+            rulebook=invalid_rulebook,
+        )
+
+
+def test_evaluate_rulebook_gates_ag5_duplicate_suppresses_action() -> None:
+    dedupe_store = _DedupeStore(duplicate=True)
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval(),
+        rulebook=load_rulebook_policy(),
+        dedupe_store=dedupe_store,
+    )
+
+    assert decision.final_action == Action.OBSERVE
+    assert "AG5_DUPLICATE_SUPPRESSED" in decision.gate_reason_codes
+    assert dedupe_store.remembered == []
+
+
+def test_evaluate_rulebook_gates_ag5_store_error_applies_safe_cap() -> None:
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval(),
+        rulebook=load_rulebook_policy(),
+        dedupe_store=_DedupeStore(fail_on_check=True),
+    )
+
+    assert decision.final_action == Action.NOTIFY
+    assert "AG5_DEDUPE_STORE_ERROR" in decision.gate_reason_codes
+
+
+def test_evaluate_rulebook_gates_ag5_non_duplicate_keeps_action_and_records_fingerprint() -> None:
+    dedupe_store = _DedupeStore(duplicate=False)
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval(),
+        rulebook=load_rulebook_policy(),
+        dedupe_store=dedupe_store,
+    )
+
+    assert decision.final_action == Action.PAGE
+    assert dedupe_store.remembered == [decision.action_fingerprint]
+
+
+def test_evaluate_rulebook_gates_ag6_sets_postmortem_without_action_escalation() -> None:
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval().model_copy(update={"proposed_action": Action.OBSERVE}),
+        rulebook=load_rulebook_policy(),
+    )
+
+    assert decision.final_action == Action.OBSERVE
+    assert decision.postmortem_required is True
+    assert decision.postmortem_reason_codes == ("PM_PEAK_SUSTAINED",)
+
+
+def test_evaluate_rulebook_gates_marks_env_cap_applied_and_records_reason() -> None:
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval().model_copy(
+            update={"env": Environment.LOCAL, "diagnosis_confidence": 1.0, "sustained": True}
+        ),
+        rulebook=load_rulebook_policy(),
+    )
+
+    assert decision.env_cap_applied is True
+    assert decision.final_action == Action.OBSERVE
+    assert "AG1_ENV_OR_TIER_CAP" in decision.gate_reason_codes
+
+
+def test_evaluate_rulebook_gates_uses_stage_alias_for_uat_env_cap() -> None:
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval().model_copy(update={"env": Environment.UAT}),
+        rulebook=load_rulebook_policy(),
+    )
+
+    assert decision.env_cap_applied is True
+    assert decision.final_action == Action.NOTIFY
+    assert "AG1_ENV_OR_TIER_CAP" in decision.gate_reason_codes
+
+
+def test_evaluate_rulebook_gates_keeps_env_cap_applied_false_for_tier_only_cap() -> None:
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval().model_copy(
+            update={"criticality_tier": CriticalityTier.TIER_1}
+        ),
+        rulebook=load_rulebook_policy(),
+    )
+
+    assert decision.final_action == Action.TICKET
+    assert decision.env_cap_applied is False
+    assert "AG1_ENV_OR_TIER_CAP" in decision.gate_reason_codes
+
+
+def test_evaluate_rulebook_gates_applies_dev_env_cap() -> None:
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval().model_copy(update={"env": Environment.DEV}),
+        rulebook=load_rulebook_policy(),
+    )
+
+    assert decision.env_cap_applied is True
+    assert decision.final_action == Action.OBSERVE
+    assert "AG1_ENV_OR_TIER_CAP" in decision.gate_reason_codes
+
+
+def test_evaluate_rulebook_gates_is_deterministic_for_same_input() -> None:
+    gate_input = _gate_input_for_eval()
+    rulebook = load_rulebook_policy()
+
+    first = evaluate_rulebook_gates(gate_input=gate_input, rulebook=rulebook)
+    second = evaluate_rulebook_gates(gate_input=gate_input, rulebook=rulebook)
+
+    assert first == second
+
+
+def test_evaluate_rulebook_gates_logs_latency_guardrail_warning_when_threshold_exceeded(
+    monkeypatch,
+    log_stream: io.StringIO,
+) -> None:
+    perf_counter_values = iter((10.0, 10.8))
+    monkeypatch.setattr(
+        "aiops_triage_pipeline.pipeline.stages.gating.perf_counter",
+        lambda: next(perf_counter_values),
+    )
+
+    _ = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval(),
+        rulebook=load_rulebook_policy(),
+        latency_warning_threshold_ms=500,
+    )
+
+    warning_events = [
+        entry
+        for entry in _parse_logs(log_stream)
+        if entry.get("event") == "rulebook_gate_evaluation_slow"
+    ]
+    assert len(warning_events) == 1
+    assert warning_events[0]["latency_warning_threshold_ms"] == 500
+
+
+def test_evaluate_rulebook_gates_micro_benchmark_guardrail() -> None:
+    gate_input = _gate_input_for_eval()
+    rulebook = load_rulebook_policy()
+    durations_ms: list[float] = []
+
+    for _ in range(200):
+        started = perf_counter()
+        _ = evaluate_rulebook_gates(gate_input=gate_input, rulebook=rulebook)
+        durations_ms.append((perf_counter() - started) * 1000.0)
+
+    durations_ms.sort()
+    p99_index = int(len(durations_ms) * 0.99) - 1
+    p99_duration_ms = durations_ms[max(p99_index, 0)]
+    assert p99_duration_ms <= 500.0

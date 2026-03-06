@@ -1,6 +1,6 @@
 # Story 5.1: Rulebook Gate Engine (AG0-AG6 Sequential Evaluation)
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -23,50 +23,50 @@ so that every action decision is deterministic, auditable, and follows the exact
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add Stage 6 rulebook evaluation entrypoint and decision context model (AC: 1, 2, 3)
-  - [ ] Extend `src/aiops_triage_pipeline/pipeline/stages/gating.py` with an evaluation API (for example `evaluate_rulebook_gates(...) -> ActionDecisionV1`) that accepts `GateInputV1` + `RulebookV1`.
-  - [ ] Start from `proposed_action` and enforce monotonic reduction with a single shared action-rank helper (`OBSERVE < NOTIFY < TICKET < PAGE`).
-  - [ ] Ensure `gate_rule_ids` always records AG0..AG6 in executed order and that the output always includes all required ActionDecision fields.
+- [x] Task 1: Add Stage 6 rulebook evaluation entrypoint and decision context model (AC: 1, 2, 3)
+  - [x] Extend `src/aiops_triage_pipeline/pipeline/stages/gating.py` with an evaluation API (for example `evaluate_rulebook_gates(...) -> ActionDecisionV1`) that accepts `GateInputV1` + `RulebookV1`.
+  - [x] Start from `proposed_action` and enforce monotonic reduction with a single shared action-rank helper (`OBSERVE < NOTIFY < TICKET < PAGE`).
+  - [x] Ensure `gate_rule_ids` always records AG0..AG6 in executed order and that the output always includes all required ActionDecision fields.
 
-- [ ] Task 2: Implement AG0-AG6 sequential orchestration with policy-driven handlers (AC: 1, 2, 3, 4)
-  - [ ] Execute gates strictly in policy order and fail fast when required gate IDs are missing or reordered.
-  - [ ] Implement baseline per-gate evaluation hooks aligned to current contracts:
+- [x] Task 2: Implement AG0-AG6 sequential orchestration with policy-driven handlers (AC: 1, 2, 3, 4)
+  - [x] Execute gates strictly in policy order and fail fast when required gate IDs are missing or reordered.
+  - [x] Implement baseline per-gate evaluation hooks aligned to current contracts:
     - AG0: schema/invariant safety fallback behavior.
     - AG1: cap evaluation through policy maps.
     - AG2-AG4: evidence/sustained/confidence checks via `GateInputV1` fields.
     - AG5: dedupe decision through an injected dependency hook.
     - AG6: postmortem predicate fields only (must not escalate `final_action`).
-  - [ ] Apply reason codes from gate effects and keep evaluation deterministic.
+  - [x] Apply reason codes from gate effects and keep evaluation deterministic.
 
-- [ ] Task 3: Define AG5 dedupe abstraction without hard-wiring infra in this story (AC: 4)
-  - [ ] Add a narrow protocol/interface for dedupe lookup/write so Stage 6 remains testable and mostly pure.
-  - [ ] Keep Redis/network specifics behind the abstraction; Story 5.5 will harden full dedupe TTL/store behavior.
-  - [ ] Ensure dedupe store errors map to the configured safe cap path instead of crashing uncontrolled.
+- [x] Task 3: Define AG5 dedupe abstraction without hard-wiring infra in this story (AC: 4)
+  - [x] Add a narrow protocol/interface for dedupe lookup/write so Stage 6 remains testable and mostly pure.
+  - [x] Keep Redis/network specifics behind the abstraction; Story 5.5 will harden full dedupe TTL/store behavior.
+  - [x] Ensure dedupe store errors map to the configured safe cap path instead of crashing uncontrolled.
 
-- [ ] Task 4: Wire scheduler-facing helper for gate decisions (AC: 1, 2, 4)
-  - [ ] Add a scheduler helper that evaluates collected gate inputs and returns per-scope ActionDecision payloads.
-  - [ ] Preserve existing Stage 1-3 and gate-input assembly behavior; add Stage 6 decision computation as an additive step.
-  - [ ] Keep structured logging and correlation fields aligned with current scheduler/pipeline logging patterns.
+- [x] Task 4: Wire scheduler-facing helper for gate decisions (AC: 1, 2, 4)
+  - [x] Add a scheduler helper that evaluates collected gate inputs and returns per-scope ActionDecision payloads.
+  - [x] Preserve existing Stage 1-3 and gate-input assembly behavior; add Stage 6 decision computation as an additive step.
+  - [x] Keep structured logging and correlation fields aligned with current scheduler/pipeline logging patterns.
 
-- [ ] Task 5: Add latency measurement and guardrail logging (AC: 5)
-  - [ ] Measure per-evaluation elapsed time using a monotonic clock.
-  - [ ] Emit structured logs for evaluation duration and gate path.
-  - [ ] Add warning/guardrail behavior when evaluation duration exceeds the NFR threshold.
+- [x] Task 5: Add latency measurement and guardrail logging (AC: 5)
+  - [x] Measure per-evaluation elapsed time using a monotonic clock.
+  - [x] Emit structured logs for evaluation duration and gate path.
+  - [x] Add warning/guardrail behavior when evaluation duration exceeds the NFR threshold.
 
-- [ ] Task 6: Add unit tests for sequencing, output completeness, monotonicity, and error paths (AC: 1, 2, 3, 4, 6)
-  - [ ] Add tests proving AG0..AG6 execute in strict order and none are skipped.
-  - [ ] Add tests verifying action never escalates, including multi-gate cap interactions.
-  - [ ] Add tests covering output completeness (`ActionDecisionV1` required fields) and reason code aggregation.
-  - [ ] Add tests for AG5 dedupe hook outcomes: pass, duplicate suppression, and store-error cap behavior.
-  - [ ] Add tests for AG6 postmortem flag behavior independent from final action escalation.
+- [x] Task 6: Add unit tests for sequencing, output completeness, monotonicity, and error paths (AC: 1, 2, 3, 4, 6)
+  - [x] Add tests proving AG0..AG6 execute in strict order and none are skipped.
+  - [x] Add tests verifying action never escalates, including multi-gate cap interactions.
+  - [x] Add tests covering output completeness (`ActionDecisionV1` required fields) and reason code aggregation.
+  - [x] Add tests for AG5 dedupe hook outcomes: pass, duplicate suppression, and store-error cap behavior.
+  - [x] Add tests for AG6 postmortem flag behavior independent from final action escalation.
 
-- [ ] Task 7: Add performance-oriented test coverage for Stage 6 budget confidence (AC: 5, 6)
-  - [ ] Add deterministic micro-benchmark style test(s) that exercise realistic gate payloads and assert per-evaluation timing envelope for local CI conditions.
-  - [ ] Keep assertions resilient (guardrail-oriented, not flaky hard-real-time) while still enforcing regression detection for obvious slowdowns.
+- [x] Task 7: Add performance-oriented test coverage for Stage 6 budget confidence (AC: 5, 6)
+  - [x] Add deterministic micro-benchmark style test(s) that exercise realistic gate payloads and assert per-evaluation timing envelope for local CI conditions.
+  - [x] Keep assertions resilient (guardrail-oriented, not flaky hard-real-time) while still enforcing regression detection for obvious slowdowns.
 
-- [ ] Task 8: Run quality gates
-  - [ ] `uv run pytest -q tests/unit/pipeline/stages/test_gating.py tests/unit/pipeline/test_scheduler.py tests/unit/contracts/test_policy_models.py`
-  - [ ] `uv run ruff check`
+- [x] Task 8: Run quality gates
+  - [x] `uv run pytest -q tests/unit/pipeline/stages/test_gating.py tests/unit/pipeline/test_scheduler.py tests/unit/contracts/test_policy_models.py`
+  - [x] `uv run ruff check`
 
 ## Dev Notes
 
@@ -233,7 +233,7 @@ GPT-5 Codex
 ### Debug Log References
 
 - Workflow engine: `_bmad/core/tasks/workflow.xml`
-- Workflow config: `_bmad/bmm/workflows/4-implementation/create-story/workflow.yaml`
+- Workflow config: `_bmad/bmm/workflows/4-implementation/dev-story/workflow.yaml`
 - Story selection source: `artifact/implementation-artifacts/sprint-status.yaml`
 - Core source artifacts:
   - `artifact/planning-artifacts/epics.md`
@@ -243,13 +243,45 @@ GPT-5 Codex
   - `artifact/planning-artifacts/prd/glossary-terminology.md`
   - `artifact/project-context.md`
 
+### Implementation Plan
+
+- Implement Stage 6 `evaluate_rulebook_gates(...)` in `pipeline/stages/gating.py` with strict AG0..AG6 order validation and monotonic action reduction.
+- Add a narrow AG5 dedupe protocol (`GateDedupeStoreProtocol`) and map dedupe store failures to safe caps via policy effects.
+- Add scheduler helper `run_gate_decision_stage_cycle(...)` to evaluate per-scope `GateInputV1` payloads into `ActionDecisionV1`.
+- Extend Stage 6/scheduler unit tests for order guarantees, monotonicity, ActionDecision completeness, AG5 outcomes, AG6 postmortem behavior, deterministic replay, and latency guardrails.
+- Execute story quality gates and then full-suite regression verification before marking story review-ready.
+
 ### Completion Notes List
 
-- Selected first backlog story in sprint order: `5-1-rulebook-gate-engine-ag0-ag6-sequential-evaluation`.
-- Consolidated implementation context from epics, architecture, project context, and current codebase state.
-- Added gate-engine-specific guardrails to prevent scope drift and regressions in deterministic action safety.
-- Added current-version technical validation notes for pytest/pydantic/redis/python datetime guidance.
+- Implemented `evaluate_rulebook_gates(...)` and `evaluate_rulebook_gate_inputs_by_scope(...)` for deterministic AG0..AG6 execution and ActionDecision generation.
+- Added policy-order validation (fail fast on missing/reordered gates), canonical monotonic action reduction, AG1 env/tier caps, AG2 evidence sufficiency checks, AG3 source-topic paging deny, AG4 confidence/sustained checks, AG5 dedupe seam, and AG6 postmortem handling.
+- Added latency measurement using `perf_counter()`, structured evaluation logs, and warning guardrail logs when evaluation duration exceeds threshold.
+- Added scheduler helper `run_gate_decision_stage_cycle(...)` as additive Stage 6 wiring without changing existing Stage 1-3 behavior.
+- Added/updated unit tests for strict gate order, output completeness, monotonicity, AG5 pass/duplicate/error flows, AG6 behavior, deterministic replay, and micro-benchmark guardrail assertions.
+- Story quality gates pass: targeted pytest suite + `ruff check`.
+- Fixed full-suite blocker by enforcing monotonic outbox transition timestamps in state-machine transitions (prevents `updated_at` from moving backward when caller `now` is earlier than persisted row timestamps).
+- Added outbox state-machine regression tests for backward-time transition inputs.
+- Full regression suite now passes: `414 passed, 10 skipped` via `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`.
+- Code review fixes applied for Story 5.1:
+  - Added AG1 environment-policy fallback mapping for `uat` -> `stage` compatibility so Stage 6 does not fail when policy artifacts still use `stage`.
+  - Corrected `ActionDecisionV1.env_cap_applied` semantics to only reflect environment-cap reductions (not tier-only caps).
+  - Removed implicit policy file loading from `run_gate_decision_stage_cycle(...)`; callers must pass explicit `RulebookV1` to keep Stage 6 decision computation free of hidden file I/O.
+  - Added regression tests for UAT cap compatibility, tier-only cap semantics, and explicit-policy requirement in scheduler helper.
 
 ### File List
 
+- `src/aiops_triage_pipeline/pipeline/stages/gating.py`
+- `src/aiops_triage_pipeline/pipeline/scheduler.py`
+- `src/aiops_triage_pipeline/pipeline/stages/__init__.py`
+- `src/aiops_triage_pipeline/outbox/state_machine.py`
+- `tests/unit/pipeline/stages/test_gating.py`
+- `tests/unit/pipeline/test_scheduler.py`
+- `tests/unit/outbox/test_state_machine.py`
+- `artifact/implementation-artifacts/sprint-status.yaml`
 - `artifact/implementation-artifacts/5-1-rulebook-gate-engine-ag0-ag6-sequential-evaluation.md`
+
+## Change Log
+
+- 2026-03-06: Implemented Stage 6 rulebook gate evaluator and scheduler decision helper for Story 5.1; added comprehensive unit coverage and latency guardrail logging.
+- 2026-03-06: Executed story-targeted quality gates successfully (`ruff`, targeted `pytest`), then resolved full-suite regression blocker by clamping outbox transition timestamps to monotonic progression and adding regression tests.
+- 2026-03-06: Addressed code-review findings by fixing UAT AG1 policy compatibility, tightening `env_cap_applied` semantics, removing implicit Stage 6 policy file I/O from scheduler helper, and extending Stage 6 regression tests.

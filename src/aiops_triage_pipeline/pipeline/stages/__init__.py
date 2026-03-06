@@ -11,8 +11,10 @@ from aiops_triage_pipeline.pipeline.stages.casefile import (
     persist_casefile_linkage_stage,
 )
 from aiops_triage_pipeline.pipeline.stages.gating import (
+    GateDedupeStoreProtocol,
     GateInputContext,
     collect_gate_inputs_by_scope,
+    evaluate_rulebook_gates,
 )
 from aiops_triage_pipeline.pipeline.stages.outbox import (
     build_outbox_ready_record,
@@ -48,7 +50,9 @@ __all__ = [
     "build_outbox_ready_transition_payload",
     "publish_case_header_after_confirmed_casefile",
     "GateInputContext",
+    "GateDedupeStoreProtocol",
     "collect_gate_inputs_by_scope",
+    "evaluate_rulebook_gates",
     "TopologyImpactContext",
     "TopologyRoutingContext",
     "TopologyStageOutput",

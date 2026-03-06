@@ -95,6 +95,20 @@ def test_mark_outbox_record_sent_rejects_invalid_source_status() -> None:
         mark_outbox_record_sent(record=non_ready_record)
 
 
+def test_mark_outbox_record_sent_clamps_timestamp_when_now_is_earlier() -> None:
+    ready_record = create_ready_outbox_record(
+        confirmed_casefile=_ready_casefile(),
+        now=datetime(2026, 3, 5, 12, 2, tzinfo=UTC),
+    )
+    sent_record = mark_outbox_record_sent(
+        record=ready_record,
+        now=datetime(2026, 3, 5, 12, 0, tzinfo=UTC),
+    )
+
+    assert sent_record.status == "SENT"
+    assert sent_record.updated_at == ready_record.updated_at
+
+
 def test_mark_outbox_record_publish_failure_transitions_to_retry_with_backoff() -> None:
     policy = OutboxPolicyV1(
         retention_by_env={
@@ -128,6 +142,38 @@ def test_mark_outbox_record_publish_failure_transitions_to_retry_with_backoff() 
     assert retry.next_attempt_at is not None
     assert retry.next_attempt_at > failed_at
     assert retry.last_error_message == "kafka timeout"
+
+
+def test_mark_outbox_record_publish_failure_clamps_timestamp_when_now_is_earlier() -> None:
+    policy = OutboxPolicyV1(
+        retention_by_env={
+            "local": OutboxRetentionPolicy(sent_retention_days=1, dead_retention_days=7),
+            "dev": OutboxRetentionPolicy(sent_retention_days=3, dead_retention_days=14),
+            "uat": OutboxRetentionPolicy(sent_retention_days=7, dead_retention_days=30),
+            "prod": OutboxRetentionPolicy(
+                sent_retention_days=14,
+                dead_retention_days=90,
+                max_retry_attempts=5,
+            ),
+        }
+    )
+    ready = create_ready_outbox_record(
+        confirmed_casefile=_ready_casefile(),
+        now=datetime(2026, 3, 5, 12, 2, tzinfo=UTC),
+    )
+
+    retry = mark_outbox_record_publish_failure(
+        record=ready,
+        policy=policy,
+        app_env="prod",
+        error_message="kafka timeout",
+        now=datetime(2026, 3, 5, 12, 0, tzinfo=UTC),
+    )
+
+    assert retry.status == "RETRY"
+    assert retry.updated_at == ready.updated_at
+    assert retry.next_attempt_at is not None
+    assert retry.next_attempt_at > retry.updated_at
 
 
 def test_mark_outbox_record_publish_failure_transitions_to_dead_after_max_retries() -> None:

@@ -1,16 +1,25 @@
-"""Stage 6 gate-input assembly helpers."""
+"""Stage 6 gate-input assembly and deterministic rulebook evaluation helpers."""
 
 from collections import defaultdict
-from dataclasses import dataclass
-from typing import Any, Literal, Mapping
+from dataclasses import dataclass, field
+from time import perf_counter
+from typing import Any, Literal, Mapping, Protocol
 
-from aiops_triage_pipeline.contracts.enums import Action, CriticalityTier, Environment
+from aiops_triage_pipeline.contracts.action_decision import ActionDecisionV1
+from aiops_triage_pipeline.contracts.enums import (
+    Action,
+    CriticalityTier,
+    Environment,
+    EvidenceStatus,
+)
 from aiops_triage_pipeline.contracts.gate_input import GateInputV1
+from aiops_triage_pipeline.contracts.rulebook import GateEffect, GateSpec, RulebookV1
 from aiops_triage_pipeline.logging.setup import get_logger
 from aiops_triage_pipeline.models.evidence import EvidenceStageOutput
 from aiops_triage_pipeline.models.peak import PeakStageOutput
 
 GateScope = tuple[str, ...]
+_EXPECTED_GATE_ORDER: tuple[str, ...] = ("AG0", "AG1", "AG2", "AG3", "AG4", "AG5", "AG6")
 _ACTION_PRIORITY: dict[Action, int] = {
     Action.OBSERVE: 0,
     Action.NOTIFY: 1,
@@ -32,6 +41,196 @@ class GateInputContext:
     partition_count_observed: int | None = None
     case_id: str | None = None
     decision_basis: Mapping[str, Any] | None = None
+
+
+class GateDedupeStoreProtocol(Protocol):
+    """Narrow AG5 dedupe seam to keep Stage 6 deterministic and testable."""
+
+    def is_duplicate(self, fingerprint: str) -> bool:
+        """Return True when the fingerprint is already active in the dedupe window."""
+
+    def remember(self, fingerprint: str) -> None:
+        """Persist fingerprint in dedupe window after successful non-duplicate evaluation."""
+
+
+@dataclass
+class _EvaluationState:
+    current_action: Action
+    env_cap_applied: bool = False
+    gate_reason_codes: list[str] = field(default_factory=list)
+    postmortem_required: bool = False
+    postmortem_mode: str | None = None
+    postmortem_reason_codes: list[str] = field(default_factory=list)
+
+
+def evaluate_rulebook_gates(
+    *,
+    gate_input: GateInputV1,
+    rulebook: RulebookV1,
+    dedupe_store: GateDedupeStoreProtocol | None = None,
+    latency_warning_threshold_ms: int = 500,
+) -> ActionDecisionV1:
+    """Evaluate AG0..AG6 sequentially and return ActionDecisionV1."""
+    logger = get_logger("pipeline.stages.gating")
+    started = perf_counter()
+    _validate_rulebook_gate_order(rulebook.gates)
+
+    state = _EvaluationState(current_action=gate_input.proposed_action)
+    gate_specs = {gate.id: gate for gate in rulebook.gates}
+
+    for gate_id in _EXPECTED_GATE_ORDER:
+        gate_spec = gate_specs[gate_id]
+
+        if gate_id == "AG0":
+            if not _ag0_is_valid(gate_input):
+                _apply_gate_effect(
+                    state=state,
+                    effect=gate_spec.effect.on_fail,
+                    gate_id=gate_id,
+                )
+            continue
+
+        if gate_id == "AG1":
+            _evaluate_ag1(
+                gate_input=gate_input,
+                rulebook=rulebook,
+                gate_spec=gate_spec,
+                state=state,
+            )
+            continue
+
+        if gate_id == "AG2":
+            if _ag2_has_insufficient_evidence(gate_input):
+                _apply_gate_effect(
+                    state=state,
+                    effect=gate_spec.effect.on_fail,
+                    gate_id=gate_id,
+                )
+            continue
+
+        if gate_id == "AG3":
+            if (
+                gate_input.topic_role in rulebook.caps.paging_denied_topic_roles
+                and state.current_action == Action.PAGE
+            ):
+                _apply_gate_effect(
+                    state=state,
+                    effect=gate_spec.effect.on_fail,
+                    gate_id=gate_id,
+                )
+            continue
+
+        if gate_id == "AG4":
+            min_confidence = _ag4_min_confidence(gate_spec)
+            if gate_input.diagnosis_confidence < min_confidence or not gate_input.sustained:
+                _apply_gate_effect(
+                    state=state,
+                    effect=gate_spec.effect.on_fail,
+                    gate_id=gate_id,
+                )
+            continue
+
+        if gate_id == "AG5":
+            if _ACTION_PRIORITY[state.current_action] <= _ACTION_PRIORITY[Action.OBSERVE]:
+                continue
+            if dedupe_store is None:
+                continue
+            try:
+                if dedupe_store.is_duplicate(gate_input.action_fingerprint):
+                    _apply_gate_effect(
+                        state=state,
+                        effect=gate_spec.effect.on_duplicate,
+                        gate_id=gate_id,
+                    )
+                else:
+                    dedupe_store.remember(gate_input.action_fingerprint)
+            except Exception:
+                _apply_gate_effect(
+                    state=state,
+                    effect=gate_spec.effect.on_store_error,
+                    gate_id=gate_id,
+                )
+            continue
+
+        if gate_id == "AG6":
+            if (
+                gate_input.env == Environment.PROD
+                and gate_input.criticality_tier == CriticalityTier.TIER_0
+            ):
+                if gate_input.peak is True and gate_input.sustained:
+                    _apply_gate_effect(
+                        state=state,
+                        effect=gate_spec.effect.on_pass,
+                        gate_id=gate_id,
+                        allow_action_change=False,
+                    )
+                else:
+                    _apply_gate_effect(
+                        state=state,
+                        effect=gate_spec.effect.on_fail,
+                        gate_id=gate_id,
+                        allow_action_change=False,
+                    )
+
+    state.gate_reason_codes = list(_unique_in_order(state.gate_reason_codes))
+    state.postmortem_reason_codes = list(_unique_in_order(state.postmortem_reason_codes))
+    if state.postmortem_required and state.postmortem_mode is None:
+        state.postmortem_mode = "SOFT"
+    if not state.postmortem_required:
+        state.postmortem_mode = None
+        state.postmortem_reason_codes = []
+
+    elapsed_ms = (perf_counter() - started) * 1000.0
+    logger.info(
+        "rulebook_gate_evaluation_completed",
+        event_type="gating.rulebook_evaluation",
+        evaluation_duration_ms=round(elapsed_ms, 3),
+        final_action=state.current_action.value,
+        gate_rule_ids=_EXPECTED_GATE_ORDER,
+        gate_reason_codes=tuple(state.gate_reason_codes),
+        action_fingerprint=gate_input.action_fingerprint,
+    )
+    if elapsed_ms > latency_warning_threshold_ms:
+        logger.warning(
+            "rulebook_gate_evaluation_slow",
+            event_type="gating.rulebook_latency_guardrail_exceeded",
+            evaluation_duration_ms=round(elapsed_ms, 3),
+            latency_warning_threshold_ms=latency_warning_threshold_ms,
+            action_fingerprint=gate_input.action_fingerprint,
+        )
+
+    return ActionDecisionV1(
+        final_action=state.current_action,
+        env_cap_applied=state.env_cap_applied,
+        gate_rule_ids=_EXPECTED_GATE_ORDER,
+        gate_reason_codes=tuple(state.gate_reason_codes),
+        action_fingerprint=gate_input.action_fingerprint,
+        postmortem_required=state.postmortem_required,
+        postmortem_mode=state.postmortem_mode,
+        postmortem_reason_codes=tuple(state.postmortem_reason_codes),
+    )
+
+
+def evaluate_rulebook_gate_inputs_by_scope(
+    *,
+    gate_inputs_by_scope: Mapping[GateScope, tuple[GateInputV1, ...]],
+    rulebook: RulebookV1,
+    dedupe_store: GateDedupeStoreProtocol | None = None,
+    latency_warning_threshold_ms: int = 500,
+) -> dict[GateScope, tuple[ActionDecisionV1, ...]]:
+    """Evaluate all gate inputs and return ActionDecisionV1 payloads by scope."""
+    decisions_by_scope: dict[GateScope, tuple[ActionDecisionV1, ...]] = {}
+    for scope, gate_inputs in sorted(gate_inputs_by_scope.items()):
+        decisions_by_scope[scope] = tuple(
+            evaluate_rulebook_gates(
+                gate_input=gate_input,
+                rulebook=rulebook,
+                dedupe_store=dedupe_store,
+                latency_warning_threshold_ms=latency_warning_threshold_ms,
+            )
+            for gate_input in gate_inputs
+        )
+    return decisions_by_scope
 
 
 def collect_gate_inputs_by_scope(
@@ -119,6 +318,164 @@ def collect_gate_inputs_by_scope(
         scope: tuple(scope_gate_inputs)
         for scope, scope_gate_inputs in sorted(gate_inputs_by_scope.items())
     }
+
+
+def _validate_rulebook_gate_order(gates: tuple[GateSpec, ...]) -> None:
+    gate_ids = tuple(gate.id for gate in gates)
+    if gate_ids != _EXPECTED_GATE_ORDER:
+        raise ValueError(
+            f"Rulebook gate order must be {_EXPECTED_GATE_ORDER}; got {gate_ids}"
+        )
+
+
+def _ag0_is_valid(gate_input: GateInputV1) -> bool:
+    if not gate_input.action_fingerprint.strip():
+        return False
+    if not gate_input.findings:
+        return False
+    return True
+
+
+def _evaluate_ag1(
+    *,
+    gate_input: GateInputV1,
+    rulebook: RulebookV1,
+    gate_spec: GateSpec,
+    state: _EvaluationState,
+) -> None:
+    env_cap = _lookup_action_policy_entry(
+        mapping=rulebook.caps.max_action_by_env,
+        key=gate_input.env.value,
+        context="caps.max_action_by_env",
+        fallback_keys=_env_policy_fallback_keys(gate_input.env.value),
+    )
+    env_capped_action = _reduce_action(state.current_action, env_cap)
+    env_cap_reduced_action = env_capped_action != state.current_action
+    capped_action = env_capped_action
+    if gate_input.env == Environment.PROD:
+        prod_tier_cap = _lookup_action_policy_entry(
+            mapping=rulebook.caps.max_action_by_tier_in_prod,
+            key=gate_input.criticality_tier.value,
+            context="caps.max_action_by_tier_in_prod",
+        )
+        capped_action = _reduce_action(capped_action, prod_tier_cap)
+
+    cap_reduced_action = capped_action != state.current_action
+    if cap_reduced_action:
+        state.current_action = capped_action
+        if env_cap_reduced_action:
+            state.env_cap_applied = True
+        _apply_gate_effect(
+            state=state,
+            effect=gate_spec.effect.on_cap_applied,
+            gate_id="AG1",
+            mark_env_cap_applied=env_cap_reduced_action,
+        )
+
+
+def _ag2_has_insufficient_evidence(gate_input: GateInputV1) -> bool:
+    findings_to_check = [finding for finding in gate_input.findings if finding.is_primary]
+    if not findings_to_check:
+        findings_to_check = list(gate_input.findings)
+
+    for finding in findings_to_check:
+        for required_evidence in finding.evidence_required:
+            status = gate_input.evidence_status_map.get(required_evidence)
+            if status != EvidenceStatus.PRESENT:
+                return True
+    return False
+
+
+def _ag4_min_confidence(gate_spec: GateSpec) -> float:
+    for check in gate_spec.checks:
+        if check.type != "min_value":
+            continue
+        if check.model_extra.get("field") != "diagnosis_confidence":
+            continue
+        min_value = check.model_extra.get("min")
+        if isinstance(min_value, int | float):
+            return float(min_value)
+    raise ValueError("AG4 is missing diagnosis_confidence min_value check configuration")
+
+
+def _lookup_action_policy_entry(
+    *,
+    mapping: Mapping[str, str],
+    key: str,
+    context: str,
+    fallback_keys: tuple[str, ...] = (),
+) -> Action:
+    candidate_keys = (key,) + fallback_keys
+    for candidate_key in candidate_keys:
+        policy_value = mapping.get(candidate_key)
+        if policy_value is None:
+            continue
+        return _action_from_policy_value(policy_value, context=f"{context}[{candidate_key!r}]")
+    raise ValueError(f"Missing policy mapping for {context}[{key!r}]")
+
+
+def _env_policy_fallback_keys(env_key: str) -> tuple[str, ...]:
+    # Backward compatibility while policy artifacts migrate from `stage` to `uat`.
+    if env_key == "uat":
+        return ("stage",)
+    if env_key == "stage":
+        return ("uat",)
+    return ()
+
+
+def _action_from_policy_value(value: str, *, context: str) -> Action:
+    try:
+        return Action(value)
+    except ValueError as exc:
+        raise ValueError(f"Invalid action value {value!r} in {context}") from exc
+
+
+def _apply_gate_effect(
+    *,
+    state: _EvaluationState,
+    effect: GateEffect | None,
+    gate_id: str,
+    allow_action_change: bool = True,
+    mark_env_cap_applied: bool = False,
+) -> None:
+    if effect is None:
+        return
+
+    if effect.cap_action_to and allow_action_change:
+        cap_action = _action_from_policy_value(
+            effect.cap_action_to,
+            context=f"{gate_id}.effect.cap_action_to",
+        )
+        reduced_action = _reduce_action(state.current_action, cap_action)
+        if reduced_action != state.current_action and mark_env_cap_applied:
+            state.env_cap_applied = True
+        state.current_action = reduced_action
+
+    state.gate_reason_codes.extend(effect.set_reason_codes)
+
+    if effect.force_postmortem_mode is not None:
+        mode = effect.force_postmortem_mode.strip().upper()
+        state.postmortem_mode = None if mode in {"", "NONE"} else mode
+    if effect.set_postmortem_required is not None:
+        state.postmortem_required = effect.set_postmortem_required
+    state.postmortem_reason_codes.extend(effect.set_postmortem_reason_codes)
+
+
+def _reduce_action(current_action: Action, cap_action: Action) -> Action:
+    if _ACTION_PRIORITY[current_action] <= _ACTION_PRIORITY[cap_action]:
+        return current_action
+    return cap_action
+
+
+def _unique_in_order(values: list[str]) -> tuple[str, ...]:
+    seen: set[str] = set()
+    unique_values: list[str] = []
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        unique_values.append(value)
+    return tuple(unique_values)
 
 
 def _resolve_context_for_scope(

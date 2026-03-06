@@ -3,7 +3,10 @@ import json
 from datetime import UTC, datetime, timedelta
 from urllib.error import URLError
 
+import pytest
+
 from aiops_triage_pipeline.contracts.enums import Action, CriticalityTier, EvidenceStatus
+from aiops_triage_pipeline.contracts.gate_input import Finding, GateInputV1
 from aiops_triage_pipeline.contracts.peak_policy import PeakPolicyV1, PeakThresholdPolicy
 from aiops_triage_pipeline.contracts.redis_ttl_policy import RedisTtlPolicyV1, RedisTtlsByEnv
 from aiops_triage_pipeline.health.registry import HealthRegistry
@@ -15,6 +18,7 @@ from aiops_triage_pipeline.pipeline.scheduler import (
     floor_to_interval_boundary,
     next_interval_boundary,
     run_evidence_stage_cycle,
+    run_gate_decision_stage_cycle,
     run_gate_input_stage_cycle,
     run_peak_stage_cycle,
 )
@@ -55,6 +59,18 @@ class _FindingsRedis:
     def set(self, key: str, value: str, *, ex: int | None = None) -> bool:  # noqa: ARG002
         self.store[key] = value
         return True
+
+
+class _DedupeStore:
+    def __init__(self, *, duplicate: bool = False) -> None:
+        self.duplicate = duplicate
+        self.remembered: list[str] = []
+
+    def is_duplicate(self, fingerprint: str) -> bool:  # noqa: ARG002
+        return self.duplicate
+
+    def remember(self, fingerprint: str) -> None:
+        self.remembered.append(fingerprint)
 
 
 def _ttl_policy() -> RedisTtlPolicyV1:
@@ -590,3 +606,97 @@ def test_run_gate_input_stage_cycle_skips_scopes_without_topology_context() -> N
     )
 
     assert gate_inputs_by_scope == {}
+
+
+def test_run_gate_decision_stage_cycle_returns_decisions_by_scope() -> None:
+    scope = ("prod", "cluster-a", "orders")
+    gate_inputs_by_scope = {
+        scope: (
+            GateInputV1(
+                env="prod",
+                cluster_id="cluster-a",
+                stream_id="stream-orders",
+                topic="orders",
+                topic_role="SHARED_TOPIC",
+                anomaly_family="VOLUME_DROP",
+                criticality_tier="TIER_0",
+                proposed_action="PAGE",
+                diagnosis_confidence=0.92,
+                sustained=True,
+                findings=(
+                    Finding(
+                        finding_id="f-1",
+                        name="volume-drop",
+                        is_anomalous=True,
+                        evidence_required=("topic_messages_in_per_sec",),
+                        is_primary=True,
+                    ),
+                ),
+                evidence_status_map={"topic_messages_in_per_sec": "PRESENT"},
+                action_fingerprint="prod/cluster-a/stream-orders/SHARED_TOPIC/orders/VOLUME_DROP/TIER_0",
+                peak=True,
+            ),
+        )
+    }
+
+    decisions_by_scope = run_gate_decision_stage_cycle(
+        gate_inputs_by_scope=gate_inputs_by_scope,
+        rulebook_policy=load_rulebook_policy(),
+    )
+
+    assert scope in decisions_by_scope
+    assert len(decisions_by_scope[scope]) == 1
+    assert decisions_by_scope[scope][0].final_action == Action.PAGE
+    assert decisions_by_scope[scope][0].gate_rule_ids == (
+        "AG0",
+        "AG1",
+        "AG2",
+        "AG3",
+        "AG4",
+        "AG5",
+        "AG6",
+    )
+
+
+def test_run_gate_decision_stage_cycle_wires_dedupe_store() -> None:
+    scope = ("prod", "cluster-a", "orders")
+    gate_input = GateInputV1(
+        env="prod",
+        cluster_id="cluster-a",
+        stream_id="stream-orders",
+        topic="orders",
+        topic_role="SHARED_TOPIC",
+        anomaly_family="VOLUME_DROP",
+        criticality_tier="TIER_0",
+        proposed_action="PAGE",
+        diagnosis_confidence=0.92,
+        sustained=True,
+        findings=(
+            Finding(
+                finding_id="f-1",
+                name="volume-drop",
+                is_anomalous=True,
+                evidence_required=("topic_messages_in_per_sec",),
+                is_primary=True,
+            ),
+        ),
+        evidence_status_map={"topic_messages_in_per_sec": "PRESENT"},
+        action_fingerprint="prod/cluster-a/stream-orders/SHARED_TOPIC/orders/VOLUME_DROP/TIER_0",
+        peak=True,
+    )
+    dedupe_store = _DedupeStore(duplicate=True)
+
+    decisions_by_scope = run_gate_decision_stage_cycle(
+        gate_inputs_by_scope={scope: (gate_input,)},
+        rulebook_policy=load_rulebook_policy(),
+        dedupe_store=dedupe_store,
+    )
+
+    assert decisions_by_scope[scope][0].final_action == Action.OBSERVE
+    assert decisions_by_scope[scope][0].gate_reason_codes == ("AG5_DUPLICATE_SUPPRESSED",)
+    assert dedupe_store.remembered == []
+
+
+def test_run_gate_decision_stage_cycle_requires_explicit_rulebook_policy() -> None:
+    with pytest.raises(ValueError, match="rulebook_policy is required"):
+        run_gate_decision_stage_cycle(gate_inputs_by_scope={})

@@ -1,10 +1,11 @@
-"""Wall-clock evaluation scheduler utilities for evidence collection cadence."""
+"""Wall-clock scheduler utilities for Stage 1-6 evidence, peak, and gate-decision cycles."""
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Mapping, Sequence
 
 from aiops_triage_pipeline.cache.findings_cache import FindingsCacheClientProtocol
+from aiops_triage_pipeline.contracts.action_decision import ActionDecisionV1
 from aiops_triage_pipeline.contracts.enums import Action
 from aiops_triage_pipeline.contracts.gate_input import GateInputV1
 from aiops_triage_pipeline.contracts.peak_policy import PeakPolicyV1
@@ -30,8 +31,10 @@ from aiops_triage_pipeline.pipeline.stages.evidence import (
     collect_prometheus_samples_with_diagnostics,
 )
 from aiops_triage_pipeline.pipeline.stages.gating import (
+    GateDedupeStoreProtocol,
     GateInputContext,
     collect_gate_inputs_by_scope,
+    evaluate_rulebook_gate_inputs_by_scope,
 )
 from aiops_triage_pipeline.pipeline.stages.peak import collect_peak_stage_output
 from aiops_triage_pipeline.pipeline.stages.topology import (
@@ -251,6 +254,27 @@ def run_gate_input_stage_cycle(
         peak_output=peak_output,
         context_by_scope=context_by_scope,
         max_safe_action=filtered_evidence_output.max_safe_action,
+    )
+
+
+def run_gate_decision_stage_cycle(
+    *,
+    gate_inputs_by_scope: Mapping[tuple[str, ...], tuple[GateInputV1, ...]],
+    rulebook_policy: RulebookV1 | None = None,
+    dedupe_store: GateDedupeStoreProtocol | None = None,
+    latency_warning_threshold_ms: int = 500,
+) -> dict[tuple[str, ...], tuple[ActionDecisionV1, ...]]:
+    """Run Stage 6 rulebook decision evaluation for assembled gate inputs."""
+    if rulebook_policy is None:
+        raise ValueError(
+            "rulebook_policy is required for run_gate_decision_stage_cycle "
+            "to avoid implicit policy file I/O"
+        )
+    return evaluate_rulebook_gate_inputs_by_scope(
+        gate_inputs_by_scope=gate_inputs_by_scope,
+        rulebook=rulebook_policy,
+        dedupe_store=dedupe_store,
+        latency_warning_threshold_ms=latency_warning_threshold_ms,
     )
 
 
