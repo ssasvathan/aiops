@@ -1,4 +1,4 @@
-# generated: 2026-02-28
+# generated: 2026-03-06
 # project: aiOps
 # project_key: NOKEY
 # tracking_system: file-system
@@ -12,8 +12,8 @@
 #   - done: All stories in epic completed
 #
 # Epic Status Transitions:
-#   - backlog → in-progress: Automatically when first story is created (via create-story)
-#   - in-progress → done: Manually when all stories reach 'done' status
+#   - backlog -> in-progress: Automatically when first story is created (via create-story)
+#   - in-progress -> done: Manually when all stories reach 'done' status
 #
 # Story Status:
 #   - backlog: Story only exists in epic file
@@ -33,17 +33,12 @@
 # - SM typically creates next story after previous one is 'done' to incorporate learnings
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
-generated: "2026-02-28"
+generated: '2026-03-06'
 project: aiOps
 project_key: NOKEY
 tracking_system: file-system
 story_location: artifact/implementation-artifacts
-
 development_status:
-  # ─────────────────────────────────────────────────────────
-  # Epic 1: Project Foundation & Developer Experience
-  # Phase: Phase 0 foundation | FRs: FR55, FR56, FR57, FR58, FR59
-  # ─────────────────────────────────────────────────────────
   epic-1: in-progress
   1-1-project-initialization-and-repository-structure: done
   1-2-event-contract-models: done
@@ -55,11 +50,6 @@ development_status:
   1-8-local-development-environment-docker-compose: done
   1-9-harness-traffic-generation: done
   epic-1-retrospective: done
-
-  # ─────────────────────────────────────────────────────────
-  # Epic 2: Evidence Collection & Signal Validation
-  # Phase: Phase 0 signal validation | FRs: FR1-FR8, FR67a
-  # ─────────────────────────────────────────────────────────
   epic-2: in-progress
   2-1-prometheus-metric-collection-and-evaluation-cadence: done
   2-2-anomaly-pattern-detection: done
@@ -69,11 +59,6 @@ development_status:
   2-6-redis-evidence-caching: done
   2-7-prometheus-unavailability-and-telemetrydegradedevent: done
   epic-2-retrospective: done
-
-  # ─────────────────────────────────────────────────────────
-  # Epic 3: Topology Resolution & Case Routing
-  # Phase: Phase 1A | FRs: FR9-FR16
-  # ─────────────────────────────────────────────────────────
   epic-3: in-progress
   3-1-topology-registry-loader-v0-and-v1-formats: done
   3-2-stream-resolution-and-topic-role-classification: done
@@ -81,11 +66,6 @@ development_status:
   3-4-multi-level-ownership-routing: done
   3-5-legacy-v0-compatibility-views: done
   epic-3-retrospective: done
-
-  # ─────────────────────────────────────────────────────────
-  # Epic 4: Durable Triage & Reliable Event Publishing
-  # Phase: Phase 1A | FRs: FR17-FR26
-  # ─────────────────────────────────────────────────────────
   epic-4: in-progress
   4-1-casefile-triage-stage-assembly: done
   4-2-write-once-casefile-to-object-storage-invariant-a: done
@@ -94,12 +74,7 @@ development_status:
   4-5-outbox-to-kafka-event-publishing-invariant-b2: done
   4-6-triageexcerpt-exposure-denylist-enforcement: done
   4-7-casefile-retention-and-lifecycle-management: done
-  epic-4-retrospective: optional
-
-  # ─────────────────────────────────────────────────────────
-  # Epic 5: Deterministic Safety Gating & Action Execution
-  # Phase: Phase 1A | FRs: FR27-FR35, FR43-FR45, FR51
-  # ─────────────────────────────────────────────────────────
+  epic-4-retrospective: done
   epic-5: backlog
   5-1-rulebook-gate-engine-ag0-ag6-sequential-evaluation: backlog
   5-2-environment-and-criticality-tier-caps-ag1: backlog
@@ -111,22 +86,12 @@ development_status:
   5-8-slack-notification-and-structured-log-fallback: backlog
   5-9-end-to-end-hot-path-pipeline-test: backlog
   epic-5-retrospective: optional
-
-  # ─────────────────────────────────────────────────────────
-  # Epic 6: LLM-Enriched Diagnosis
-  # Phase: Phase 1A | FRs: FR36-FR42, FR66
-  # ─────────────────────────────────────────────────────────
   epic-6: backlog
   6-1-cold-path-llm-invocation-and-hot-path-independence: backlog
   6-2-structured-diagnosisreport-output-and-evidence-citation: backlog
   6-3-llm-output-schema-validation-and-deterministic-fallback: backlog
   6-4-llm-stub-and-failure-injection-mode: backlog
   epic-6-retrospective: optional
-
-  # ─────────────────────────────────────────────────────────
-  # Epic 7: Governance, Audit & Operational Observability
-  # Phase: Phase 1A | FRs: FR52-FR54, FR60-FR65, FR67b
-  # ─────────────────────────────────────────────────────────
   epic-7: backlog
   7-1-outbox-health-monitoring-and-dead-0-posture: backlog
   7-2-opentelemetry-instrumentation-and-otlp-export: backlog
@@ -135,11 +100,6 @@ development_status:
   7-5-exposure-denylist-governance-and-llm-narrative-compliance: backlog
   7-6-case-labeling-schema-and-mi-1-posture-enforcement: backlog
   epic-7-retrospective: optional
-
-  # ─────────────────────────────────────────────────────────
-  # Epic 8: ServiceNow Postmortem Automation
-  # Phase: Phase 1B | FRs: FR46-FR50
-  # ─────────────────────────────────────────────────────────
   epic-8: backlog
   8-1-tiered-servicenow-incident-correlation: backlog
   8-2-idempotent-problem-and-pir-task-upsert: backlog
