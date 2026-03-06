@@ -1,6 +1,6 @@
 # Story 4.7: CaseFile Retention & Lifecycle Management
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -238,7 +238,7 @@ Applied rules from `artifact/project-context.md`:
 
 - Story context generated with implementation guardrails for FR21.
 - Story file: `artifact/implementation-artifacts/4-7-casefile-retention-and-lifecycle-management.md`.
-- Story status set to: `ready-for-dev`.
+- Story status set to: `done`.
 - Completion note: comprehensive retention/lifecycle implementation guide created for dev execution.
 
 ## Dev Agent Record
@@ -251,7 +251,8 @@ GPT-5 Codex
 
 - Workflow engine: `_bmad/core/tasks/workflow.xml`
 - Workflow config: `_bmad/bmm/workflows/4-implementation/dev-story/workflow.yaml`
-- Story selection source: `artifact/implementation-artifacts/sprint-status.yaml` (`ready-for-dev` story key: `4-7-casefile-retention-and-lifecycle-management`)
+- Review workflow config: `_bmad/bmm/workflows/4-implementation/code-review/workflow.yaml`
+- Story selection source: `artifact/implementation-artifacts/sprint-status.yaml` (`review` story key at review start: `4-7-casefile-retention-and-lifecycle-management`)
 - Core source artifacts:
   - `artifact/planning-artifacts/epics.md`
   - `artifact/planning-artifacts/architecture.md`
@@ -262,6 +263,7 @@ GPT-5 Codex
 - Validation commands executed:
   - `uv run pytest -q tests/unit/contracts/test_policy_models.py tests/unit/storage/test_casefile_io.py tests/unit/storage/test_casefile_lifecycle.py`
   - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs tests/integration/test_casefile_lifecycle.py -m integration`
+  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs tests/integration/test_casefile_write.py -m integration`
   - `uv run ruff check`
 
 ### Completion Notes List
@@ -270,6 +272,10 @@ GPT-5 Codex
 - Added lifecycle execution module `storage/lifecycle.py` with UTC-aware cutoff math, canonical `cases/{case_id}/{stage}.json` scope parsing, deterministic key ordering, bounded batch deletes, idempotent reruns, and structured run results.
 - Extended `ObjectStoreClientProtocol`/`S3ObjectStoreClient` with paginated listing and batch-delete APIs while preserving typed dependency errors and existing write/read semantics.
 - Added governance gate requiring approval metadata for destructive purges and structured lifecycle audit events containing required audit fields.
+- Hardened delete boundary controls so `delete_objects_batch(...)` requires `governance_approval_ref` for any destructive delete request.
+- Updated lifecycle purge semantics to evaluate retention at case scope (using canonical case creation timestamp preference from `triage.json`) and purge full eligible case scope deterministically.
+- Added policy artifact validation test that loads `config/policies/casefile-retention-policy-v1.yaml` and asserts required env keys + `prod=25` months.
+- Tightened lifecycle integration fixture skip behavior to Docker/environment failures only so setup regressions fail loudly.
 - Added scheduled lifecycle mode wiring in `__main__.py` and lifecycle settings in `config/settings.py` for poll interval, pagination, delete batch size, and governance metadata.
 - Added comprehensive unit and integration coverage for cutoff selection, governance enforcement, pagination/deletion behavior, audit logging shape, purge scope, idempotent reruns, and partial delete failures.
 - Ran and passed all story quality gates and regression checks.
@@ -291,6 +297,18 @@ GPT-5 Codex
 - `tests/unit/test_main.py`
 - `artifact/implementation-artifacts/4-7-casefile-retention-and-lifecycle-management.md`
 
+### Senior Developer Review (AI)
+
+- Review date: 2026-03-06
+- Outcome: Changes Requested (resolved in this pass)
+- Findings fixed: 4 (2 High, 2 Medium)
+- Fix summary:
+  - Enforced governed deletion at object-store API boundary (`delete_objects_batch` now requires governance approval metadata).
+  - Corrected retention purge behavior to evaluate at case scope and purge all stage files for an eligible case.
+  - Added policy-artifact-backed test coverage for `config/policies/casefile-retention-policy-v1.yaml`.
+  - Narrowed integration fixture skip handling to explicit Docker/environment failure classes.
+
 ### Change Log
 
 - 2026-03-06: Implemented Story 4.7 CaseFile retention lifecycle (policy contract/artifact, storage lifecycle runner, governance/audit controls, CLI scheduling mode, and full unit/integration validation).
+- 2026-03-06: Code review remediation pass completed (governed delete boundary, case-scope retention purge semantics, artifact-backed policy test coverage, and stricter integration fixture error handling).

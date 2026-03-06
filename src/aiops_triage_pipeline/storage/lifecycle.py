@@ -67,7 +67,7 @@ class CasefileLifecycleRunner:
         )
 
         scanned_count = 0
-        eligible_keys: list[str] = []
+        case_objects: dict[str, list[tuple[str, datetime]]] = {}
         continuation_token: str | None = None
 
         while True:
@@ -83,15 +83,28 @@ class CasefileLifecycleRunner:
                 if case_id is None:
                     continue
                 last_modified = _as_aware_utc(item.last_modified, field_name="last_modified")
-                if last_modified <= cutoff:
-                    eligible_keys.append(item.key)
+                case_objects.setdefault(case_id, []).append((item.key, last_modified))
 
             continuation_token = page.next_continuation_token
             if continuation_token is None:
                 break
 
+        eligible_case_ids = {
+            case_id
+            for case_id, objects in case_objects.items()
+            if _resolve_case_created_at(objects) <= cutoff
+        }
         # Keep ordering deterministic so repeated scheduled runs are reproducible.
-        ordered_keys = tuple(sorted(set(eligible_keys)))
+        ordered_keys = tuple(
+            sorted(
+                {
+                    key
+                    for case_id, objects in case_objects.items()
+                    if case_id in eligible_case_ids
+                    for key, _ in objects
+                }
+            )
+        )
         if ordered_keys and self._governance_approval_ref is None:
             raise InvariantViolation(
                 "governance approval metadata is required for destructive lifecycle purge"
@@ -100,7 +113,10 @@ class CasefileLifecycleRunner:
         purged_keys: list[str] = []
         failed_keys: list[str] = []
         for key_batch in _chunked(ordered_keys, self._delete_batch_size):
-            delete_result = self._object_store_client.delete_objects_batch(keys=key_batch)
+            delete_result = self._object_store_client.delete_objects_batch(
+                keys=key_batch,
+                governance_approval_ref=self._governance_approval_ref,
+            )
             purged_keys.extend(delete_result.deleted_keys)
             failed_keys.extend(delete_result.failed_keys)
 
@@ -178,6 +194,17 @@ def _extract_case_id(key: str) -> str | None:
     if matched is None:
         return None
     return matched.group("case_id")
+
+
+def _resolve_case_created_at(objects: Iterable[tuple[str, datetime]]) -> datetime:
+    # Prefer triage stage timestamp as canonical case creation; fall back to earliest stage.
+    values = tuple(objects)
+    triage_times = tuple(
+        last_modified for key, last_modified in values if key.endswith("/triage.json")
+    )
+    if triage_times:
+        return min(triage_times)
+    return min(last_modified for _, last_modified in values)
 
 
 def _chunked(values: Iterable[str], chunk_size: int) -> tuple[tuple[str, ...], ...]:

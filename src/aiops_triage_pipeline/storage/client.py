@@ -23,6 +23,7 @@ from aiops_triage_pipeline.config.settings import Settings, get_settings
 from aiops_triage_pipeline.errors.exceptions import (
     CriticalDependencyError,
     IntegrationError,
+    InvariantViolation,
     ObjectNotFoundError,
 )
 
@@ -84,7 +85,12 @@ class ObjectStoreClientProtocol(Protocol):
         max_keys: int = 1000,
     ) -> ObjectStoreListPage: ...
 
-    def delete_objects_batch(self, *, keys: Sequence[str]) -> DeleteObjectsResult: ...
+    def delete_objects_batch(
+        self,
+        *,
+        keys: Sequence[str],
+        governance_approval_ref: str | None = None,
+    ) -> DeleteObjectsResult: ...
 
 
 class S3ObjectStoreClient(ObjectStoreClientProtocol):
@@ -238,7 +244,12 @@ class S3ObjectStoreClient(ObjectStoreClientProtocol):
                 f"object storage runtime error during list_objects prefix={prefix}: {exc}"
             ) from exc
 
-    def delete_objects_batch(self, *, keys: Sequence[str]) -> DeleteObjectsResult:
+    def delete_objects_batch(
+        self,
+        *,
+        keys: Sequence[str],
+        governance_approval_ref: str | None = None,
+    ) -> DeleteObjectsResult:
         normalized_keys = tuple(
             key.strip() for key in keys if isinstance(key, str) and key.strip()
         )
@@ -247,6 +258,10 @@ class S3ObjectStoreClient(ObjectStoreClientProtocol):
         if len(normalized_keys) > _S3_MAX_BATCH_KEYS:
             raise ValueError(
                 f"delete_objects_batch supports at most {_S3_MAX_BATCH_KEYS} keys per request"
+            )
+        if not (governance_approval_ref or "").strip():
+            raise InvariantViolation(
+                "governance_approval_ref is required for delete_objects_batch"
             )
 
         try:

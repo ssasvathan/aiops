@@ -9,6 +9,7 @@ from urllib.request import urlopen
 import boto3
 import pytest
 from botocore.client import BaseClient
+from docker.errors import DockerException
 from testcontainers.core.container import DockerContainer
 
 from aiops_triage_pipeline.contracts.casefile_retention_policy import (
@@ -70,7 +71,7 @@ def minio_object_store() -> tuple[BaseClient, S3ObjectStoreClient]:
                 s3_client=s3_client,
                 bucket=_MINIO_BUCKET,
             )
-    except Exception as exc:  # noqa: BLE001
+    except (DockerException, FileNotFoundError, PermissionError, TimeoutError, OSError) as exc:
         pytest.skip(f"Docker/MinIO unavailable for integration test: {exc}")
 
 
@@ -141,9 +142,18 @@ class _PartiallyFailingDeleteClient(ObjectStoreClientProtocol):
             max_keys=max_keys,
         )
 
-    def delete_objects_batch(self, *, keys: Sequence[str]) -> DeleteObjectsResult:
+    def delete_objects_batch(
+        self,
+        *,
+        keys: Sequence[str],
+        governance_approval_ref: str | None = None,
+    ) -> DeleteObjectsResult:
+        del governance_approval_ref
         passthrough_keys = tuple(key for key in keys if key != self._failing_key)
-        result = self._delegate.delete_objects_batch(keys=passthrough_keys)
+        result = self._delegate.delete_objects_batch(
+            keys=passthrough_keys,
+            governance_approval_ref="CHG-PARTIAL-FAILURE",
+        )
         if self._failing_key in keys:
             return DeleteObjectsResult(
                 deleted_keys=result.deleted_keys,

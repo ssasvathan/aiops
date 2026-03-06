@@ -93,7 +93,7 @@ development_status:
   4-4-postgres-durable-outbox-state-machine: done
   4-5-outbox-to-kafka-event-publishing-invariant-b2: done
   4-6-triageexcerpt-exposure-denylist-enforcement: done
-  4-7-casefile-retention-and-lifecycle-management: review
+  4-7-casefile-retention-and-lifecycle-management: done
   epic-4-retrospective: optional
 
   # ─────────────────────────────────────────────────────────

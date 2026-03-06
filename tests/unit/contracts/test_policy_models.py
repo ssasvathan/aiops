@@ -1,8 +1,11 @@
 """Unit tests for Story 1.3 policy contract models."""
 
+from pathlib import Path
+
 import pytest
 from pydantic import ValidationError
 
+from aiops_triage_pipeline.config.settings import load_policy_yaml
 from aiops_triage_pipeline.contracts import (
     CasefileRetentionPolicyV1,
     GateEffects,
@@ -183,6 +186,15 @@ def test_casefile_retention_prod_months(
     minimal_casefile_retention_policy: CasefileRetentionPolicyV1,
 ) -> None:
     assert minimal_casefile_retention_policy.retention_by_env["prod"].retention_months == 25
+
+
+def test_casefile_retention_policy_artifact_matches_expected_contract() -> None:
+    policy_path = (
+        Path(__file__).resolve().parents[3] / "config/policies/casefile-retention-policy-v1.yaml"
+    )
+    policy = load_policy_yaml(policy_path, CasefileRetentionPolicyV1)
+    assert set(policy.retention_by_env.keys()) == {"local", "dev", "uat", "prod"}
+    assert policy.retention_by_env["prod"].retention_months == 25
 
 
 def test_sn_mi_creation_not_allowed(minimal_sn_linkage: ServiceNowLinkageContractV1) -> None:

@@ -39,6 +39,7 @@ class _InMemoryLifecycleObjectStore(ObjectStoreClientProtocol):
         self._inventory = dict(inventory)
         self._fail_delete_keys = set(fail_delete_keys or set())
         self.delete_calls: list[tuple[str, ...]] = []
+        self.governance_approval_refs: list[str | None] = []
 
     def put_if_absent(
         self,
@@ -74,8 +75,14 @@ class _InMemoryLifecycleObjectStore(ObjectStoreClientProtocol):
             next_continuation_token=next_token,
         )
 
-    def delete_objects_batch(self, *, keys: Sequence[str]) -> DeleteObjectsResult:
+    def delete_objects_batch(
+        self,
+        *,
+        keys: Sequence[str],
+        governance_approval_ref: str | None = None,
+    ) -> DeleteObjectsResult:
         self.delete_calls.append(tuple(keys))
+        self.governance_approval_refs.append(governance_approval_ref)
         deleted: list[str] = []
         failed: list[str] = []
         for key in keys:
@@ -145,6 +152,34 @@ def test_runner_paginates_and_deletes_in_bounded_batches() -> None:
         ("cases/case-old-1/diagnosis.json", "cases/case-old-1/triage.json"),
         ("cases/case-old-2/triage.json",),
     ]
+    assert client.governance_approval_refs == ["CHG-12345", "CHG-12345"]
+
+
+def test_runner_purges_full_case_scope_by_case_creation_timestamp() -> None:
+    now = datetime(2026, 3, 6, 12, 0, tzinfo=UTC)
+    inventory = {
+        "cases/case-mixed-age/triage.json": datetime(2023, 1, 1, 1, 0, tzinfo=UTC),
+        "cases/case-mixed-age/diagnosis.json": datetime(2025, 8, 1, 1, 0, tzinfo=UTC),
+        "cases/case-fresh/triage.json": datetime(2025, 8, 2, 1, 0, tzinfo=UTC),
+    }
+    client = _InMemoryLifecycleObjectStore(inventory=inventory)
+    runner = CasefileLifecycleRunner(
+        object_store_client=client,
+        policy=_policy(),
+        app_env="prod",
+        policy_ref="casefile-retention-policy-v1",
+        governance_approval_ref="CHG-12346",
+        delete_batch_size=100,
+        list_page_size=100,
+    )
+
+    result = runner.run_once(now=now)
+
+    assert result.eligible_count == 2
+    assert result.purged_count == 2
+    assert result.failed_count == 0
+    assert result.case_ids == ("case-mixed-age",)
+    assert "cases/case-fresh/triage.json" in client._inventory  # noqa: SLF001
 
 
 def test_runner_is_idempotent_across_repeated_runs() -> None:
