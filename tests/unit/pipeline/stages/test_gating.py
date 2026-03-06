@@ -556,6 +556,65 @@ def test_evaluate_rulebook_gates_ag2_short_circuits_page_before_ag3_for_source_t
     assert decision.final_action == Action.NOTIFY
     assert "AG2_INSUFFICIENT_EVIDENCE" in decision.gate_reason_codes
     assert "AG3_PAGING_DENIED_SOURCE_TOPIC" not in decision.gate_reason_codes
+    assert "LOW_CONFIDENCE" not in decision.gate_reason_codes
+    assert "NOT_SUSTAINED" not in decision.gate_reason_codes
+
+
+def test_evaluate_rulebook_gates_ag4_downgrades_when_not_sustained() -> None:
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval().model_copy(
+            update={"sustained": False, "diagnosis_confidence": 0.95}
+        ),
+        rulebook=load_rulebook_policy(),
+        dedupe_store=_DedupeStore(duplicate=False),
+    )
+
+    assert decision.final_action == Action.OBSERVE
+    assert "NOT_SUSTAINED" in decision.gate_reason_codes
+    assert "LOW_CONFIDENCE" not in decision.gate_reason_codes
+
+
+def test_evaluate_rulebook_gates_ag4_downgrades_when_confidence_is_below_floor() -> None:
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval().model_copy(
+            update={"sustained": True, "diagnosis_confidence": 0.59}
+        ),
+        rulebook=load_rulebook_policy(),
+        dedupe_store=_DedupeStore(duplicate=False),
+    )
+
+    assert decision.final_action == Action.OBSERVE
+    assert "LOW_CONFIDENCE" in decision.gate_reason_codes
+    assert "NOT_SUSTAINED" not in decision.gate_reason_codes
+
+
+def test_evaluate_rulebook_gates_ag4_records_deterministic_reason_order_when_both_fail() -> None:
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval().model_copy(
+            update={"sustained": False, "diagnosis_confidence": 0.59}
+        ),
+        rulebook=load_rulebook_policy(),
+        dedupe_store=_DedupeStore(duplicate=False),
+    )
+
+    assert decision.final_action == Action.OBSERVE
+    assert tuple(
+        code for code in decision.gate_reason_codes if code in {"LOW_CONFIDENCE", "NOT_SUSTAINED"}
+    ) == ("LOW_CONFIDENCE", "NOT_SUSTAINED")
+
+
+def test_evaluate_rulebook_gates_ag4_allows_boundary_confidence_of_point_six() -> None:
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval().model_copy(
+            update={"sustained": True, "diagnosis_confidence": 0.6}
+        ),
+        rulebook=load_rulebook_policy(),
+        dedupe_store=_DedupeStore(duplicate=False),
+    )
+
+    assert decision.final_action == Action.PAGE
+    assert "LOW_CONFIDENCE" not in decision.gate_reason_codes
+    assert "NOT_SUSTAINED" not in decision.gate_reason_codes
 
 
 def test_evaluate_rulebook_gates_marks_env_cap_applied_and_records_reason() -> None:

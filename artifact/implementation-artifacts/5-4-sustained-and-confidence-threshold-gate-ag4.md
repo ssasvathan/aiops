@@ -1,6 +1,6 @@
 # Story 5.4: Sustained & Confidence Threshold Gate (AG4)
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -22,28 +22,28 @@ so that only persistent, high-confidence anomalies trigger disruptive actions (F
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Refine AG4 evaluation semantics in Stage 6 (AC: 1, 2, 3, 4)
-  - [ ] Update `src/aiops_triage_pipeline/pipeline/stages/gating.py` AG4 logic to evaluate sustained and confidence checks explicitly and deterministically.
-  - [ ] Ensure AG4 only downgrades (never escalates) and composes correctly after AG1/AG2/AG3 reductions.
-  - [ ] Emit granular AG4 reason codes for each failed condition (`NOT_SUSTAINED`, `LOW_CONFIDENCE`) with deterministic ordering when both fail.
+- [x] Task 1: Refine AG4 evaluation semantics in Stage 6 (AC: 1, 2, 3, 4)
+  - [x] Update `src/aiops_triage_pipeline/pipeline/stages/gating.py` AG4 logic to evaluate sustained and confidence checks explicitly and deterministically.
+  - [x] Ensure AG4 only downgrades (never escalates) and composes correctly after AG1/AG2/AG3 reductions.
+  - [x] Emit granular AG4 reason codes for each failed condition (`NOT_SUSTAINED`, `LOW_CONFIDENCE`) with deterministic ordering when both fail.
 
-- [ ] Task 2: Align Rulebook policy artifact with AG4 reason-code requirements (AC: 4)
-  - [ ] Update `config/policies/rulebook-v1.yaml` AG4 `effect.on_fail` reason-code strategy so policy and implementation remain consistent with acceptance criteria.
-  - [ ] Preserve existing minimum confidence threshold (`0.6`) and sustained requirement in policy checks.
+- [x] Task 2: Align Rulebook policy artifact with AG4 reason-code requirements (AC: 4)
+  - [x] Update `config/policies/rulebook-v1.yaml` AG4 `effect.on_fail` reason-code strategy so policy and implementation remain consistent with acceptance criteria.
+  - [x] Preserve existing minimum confidence threshold (`0.6`) and sustained requirement in policy checks.
 
-- [ ] Task 3: Expand AG4-focused unit coverage in Stage 6 tests (AC: 1, 2, 3, 4, 5)
-  - [ ] Extend `tests/unit/pipeline/stages/test_gating.py` with explicit AG4 tests for: not sustained only, low confidence only, both failures, and confidence boundary at exactly `0.6`.
-  - [ ] Assert both `final_action` behavior and precise AG4 reason-code outputs.
-  - [ ] Verify AG4 behavior remains deterministic with unchanged gate ordering (`AG0..AG6`).
+- [x] Task 3: Expand AG4-focused unit coverage in Stage 6 tests (AC: 1, 2, 3, 4, 5)
+  - [x] Extend `tests/unit/pipeline/stages/test_gating.py` with explicit AG4 tests for: not sustained only, low confidence only, both failures, and confidence boundary at exactly `0.6`.
+  - [x] Assert both `final_action` behavior and precise AG4 reason-code outputs.
+  - [x] Verify AG4 behavior remains deterministic with unchanged gate ordering (`AG0..AG6`).
 
-- [ ] Task 4: Add scheduler-level AG4 regression checks (AC: 3, 4, 5)
-  - [ ] Extend `tests/unit/pipeline/test_scheduler.py` to assert AG4 outcomes are surfaced correctly through `run_gate_decision_stage_cycle(...)` by scope.
-  - [ ] Verify AG4 interacts safely with prior AG2/AG3 behavior and does not regress dedupe/postmortem downstream semantics.
+- [x] Task 4: Add scheduler-level AG4 regression checks (AC: 3, 4, 5)
+  - [x] Extend `tests/unit/pipeline/test_scheduler.py` to assert AG4 outcomes are surfaced correctly through `run_gate_decision_stage_cycle(...)` by scope.
+  - [x] Verify AG4 interacts safely with prior AG2/AG3 behavior and does not regress dedupe/postmortem downstream semantics.
 
-- [ ] Task 5: Run quality gates for Story 5.4
-  - [ ] `uv run pytest -q tests/unit/pipeline/stages/test_gating.py tests/unit/pipeline/test_scheduler.py tests/unit/contracts/test_policy_models.py`
-  - [ ] `uv run ruff check`
-  - [ ] `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
+- [x] Task 5: Run quality gates for Story 5.4
+  - [x] `uv run pytest -q tests/unit/pipeline/stages/test_gating.py tests/unit/pipeline/test_scheduler.py tests/unit/contracts/test_policy_models.py`
+  - [x] `uv run ruff check`
+  - [x] `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
 
 ## Dev Notes
 
@@ -227,7 +227,7 @@ GPT-5 Codex
 ### Debug Log References
 
 - Workflow engine: `_bmad/core/tasks/workflow.xml`
-- Workflow config: `_bmad/bmm/workflows/4-implementation/create-story/workflow.yaml`
+- Workflow config: `_bmad/bmm/workflows/4-implementation/dev-story/workflow.yaml`
 - Story selection source: `artifact/implementation-artifacts/sprint-status.yaml`
 - Core planning artifacts:
   - `artifact/planning-artifacts/epics.md`
@@ -235,18 +235,33 @@ GPT-5 Codex
   - `artifact/planning-artifacts/prd/functional-requirements.md`
   - `artifact/planning-artifacts/prd/glossary-terminology.md`
   - `artifact/project-context.md`
+- Implementation + validation commands:
+  - `uv run pytest -q tests/unit/pipeline/stages/test_gating.py tests/unit/pipeline/test_scheduler.py -k "ag4"` (red phase)
+  - `uv run pytest -q tests/unit/pipeline/stages/test_gating.py tests/unit/pipeline/test_scheduler.py tests/unit/contracts/test_policy_models.py`
+  - `uv run ruff check`
+  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
 
 ### Completion Notes List
 
 - Story 5.4 context created from next backlog item in sprint status.
 - Epic 5 continuity and prior-story learnings integrated to prevent regressions.
 - AG4-specific implementation guardrails and test expectations documented for deterministic execution.
+- Implemented deterministic AG4 failure evaluation in Stage 6 for high-urgency actions only (`PAGE`/`TICKET`) using policy checks.
+- Added granular AG4 reason-code emission with deterministic ordering: `LOW_CONFIDENCE`, `NOT_SUSTAINED`.
+- Updated rulebook policy AG4 checks with `reason_code_on_fail` metadata and retained threshold/sustained constraints.
+- Added AG4 regression coverage in stage-level and scheduler-level tests, including confidence boundary `0.6`.
+- Verified quality gates: targeted pytest suite, Ruff lint, and full Docker-backed regression with zero skips (`464 passed`).
 
 ### File List
 
+- `src/aiops_triage_pipeline/pipeline/stages/gating.py`
+- `config/policies/rulebook-v1.yaml`
+- `tests/unit/pipeline/stages/test_gating.py`
+- `tests/unit/pipeline/test_scheduler.py`
 - `artifact/implementation-artifacts/5-4-sustained-and-confidence-threshold-gate-ag4.md`
 - `artifact/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
 
 - 2026-03-06: Created Story 5.4 context document with AG4 implementation guardrails, architecture constraints, test plan, and latest-technology checks.
+- 2026-03-06: Implemented Story 5.4 AG4 sustained/confidence gate behavior with granular reason codes, added AG4 regression tests, passed lint, and completed full no-skip regression run.

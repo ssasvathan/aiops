@@ -117,15 +117,15 @@ gates:
         type: min_value
         field: diagnosis_confidence
         min: 0.6
+        reason_code_on_fail: LOW_CONFIDENCE
       - check_id: AG4_SUSTAINED_REQUIRED_FOR_HIGH_URGENCY
         type: equals
         field: sustained
         value: true
+        reason_code_on_fail: NOT_SUSTAINED
     effect:
       on_fail:
         cap_action_to: OBSERVE
-        set_reason_codes:
-          - AG4_LOW_CONFIDENCE_OR_NOT_SUSTAINED
         set_reason_text:
           - "High-urgency requires sustained=true and confidence>=0.6; capped to OBSERVE."
 

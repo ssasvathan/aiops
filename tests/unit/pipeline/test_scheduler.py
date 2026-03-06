@@ -745,6 +745,135 @@ def test_run_gate_decision_stage_cycle_applies_ag3_source_topic_page_denial() ->
     assert "AG2_INSUFFICIENT_EVIDENCE" not in decision.gate_reason_codes
 
 
+def test_run_gate_decision_stage_cycle_applies_ag4_not_sustained_downgrade() -> None:
+    scope = ("prod", "cluster-a", "orders")
+    gate_inputs_by_scope = {
+        scope: (
+            GateInputV1(
+                env="prod",
+                cluster_id="cluster-a",
+                stream_id="stream-orders",
+                topic="orders",
+                topic_role="SHARED_TOPIC",
+                anomaly_family="VOLUME_DROP",
+                criticality_tier="TIER_0",
+                proposed_action="PAGE",
+                diagnosis_confidence=0.92,
+                sustained=False,
+                findings=(
+                    Finding(
+                        finding_id="f-1",
+                        name="volume-drop",
+                        is_anomalous=True,
+                        evidence_required=("topic_messages_in_per_sec",),
+                        is_primary=True,
+                    ),
+                ),
+                evidence_status_map={"topic_messages_in_per_sec": "PRESENT"},
+                action_fingerprint="prod/cluster-a/stream-orders/SHARED_TOPIC/orders/VOLUME_DROP/TIER_0",
+                peak=True,
+            ),
+        )
+    }
+
+    decisions_by_scope = run_gate_decision_stage_cycle(
+        gate_inputs_by_scope=gate_inputs_by_scope,
+        rulebook_policy=load_rulebook_policy(),
+        dedupe_store=_DedupeStore(duplicate=False),
+    )
+
+    decision = decisions_by_scope[scope][0]
+    assert decision.final_action == Action.OBSERVE
+    assert "NOT_SUSTAINED" in decision.gate_reason_codes
+    assert "LOW_CONFIDENCE" not in decision.gate_reason_codes
+
+
+def test_run_gate_decision_stage_cycle_applies_ag4_low_confidence_downgrade() -> None:
+    scope = ("prod", "cluster-a", "orders")
+    gate_inputs_by_scope = {
+        scope: (
+            GateInputV1(
+                env="prod",
+                cluster_id="cluster-a",
+                stream_id="stream-orders",
+                topic="orders",
+                topic_role="SHARED_TOPIC",
+                anomaly_family="VOLUME_DROP",
+                criticality_tier="TIER_0",
+                proposed_action="PAGE",
+                diagnosis_confidence=0.59,
+                sustained=True,
+                findings=(
+                    Finding(
+                        finding_id="f-1",
+                        name="volume-drop",
+                        is_anomalous=True,
+                        evidence_required=("topic_messages_in_per_sec",),
+                        is_primary=True,
+                    ),
+                ),
+                evidence_status_map={"topic_messages_in_per_sec": "PRESENT"},
+                action_fingerprint="prod/cluster-a/stream-orders/SHARED_TOPIC/orders/VOLUME_DROP/TIER_0",
+                peak=True,
+            ),
+        )
+    }
+
+    decisions_by_scope = run_gate_decision_stage_cycle(
+        gate_inputs_by_scope=gate_inputs_by_scope,
+        rulebook_policy=load_rulebook_policy(),
+        dedupe_store=_DedupeStore(duplicate=False),
+    )
+
+    decision = decisions_by_scope[scope][0]
+    assert decision.final_action == Action.OBSERVE
+    assert "LOW_CONFIDENCE" in decision.gate_reason_codes
+    assert "NOT_SUSTAINED" not in decision.gate_reason_codes
+
+
+def test_run_gate_decision_stage_cycle_ag4_boundary_confidence_keeps_high_urgency() -> None:
+    scope = ("prod", "cluster-a", "orders")
+    gate_inputs_by_scope = {
+        scope: (
+            GateInputV1(
+                env="prod",
+                cluster_id="cluster-a",
+                stream_id="stream-orders",
+                topic="orders",
+                topic_role="SHARED_TOPIC",
+                anomaly_family="VOLUME_DROP",
+                criticality_tier="TIER_0",
+                proposed_action="PAGE",
+                diagnosis_confidence=0.6,
+                sustained=True,
+                findings=(
+                    Finding(
+                        finding_id="f-1",
+                        name="volume-drop",
+                        is_anomalous=True,
+                        evidence_required=("topic_messages_in_per_sec",),
+                        is_primary=True,
+                    ),
+                ),
+                evidence_status_map={"topic_messages_in_per_sec": "PRESENT"},
+                action_fingerprint="prod/cluster-a/stream-orders/SHARED_TOPIC/orders/VOLUME_DROP/TIER_0",
+                peak=True,
+            ),
+        )
+    }
+
+    decisions_by_scope = run_gate_decision_stage_cycle(
+        gate_inputs_by_scope=gate_inputs_by_scope,
+        rulebook_policy=load_rulebook_policy(),
+        dedupe_store=_DedupeStore(duplicate=False),
+    )
+
+    decision = decisions_by_scope[scope][0]
+    assert decision.final_action == Action.PAGE
+    assert "LOW_CONFIDENCE" not in decision.gate_reason_codes
+    assert "NOT_SUSTAINED" not in decision.gate_reason_codes
+
+
 def test_run_gate_decision_stage_cycle_surfaces_ag1_caps_by_scope() -> None:
     dev_scope = ("dev", "cluster-a", "orders")
     prod_scope = ("prod", "cluster-a", "payments")

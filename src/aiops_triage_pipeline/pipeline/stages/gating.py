@@ -123,13 +123,19 @@ def evaluate_rulebook_gates(
             continue
 
         if gate_id == "AG4":
-            min_confidence = _ag4_min_confidence(gate_spec)
-            if gate_input.diagnosis_confidence < min_confidence or not gate_input.sustained:
+            if _ACTION_PRIORITY[state.current_action] < _ACTION_PRIORITY[Action.TICKET]:
+                continue
+            ag4_reason_codes = _ag4_failure_reason_codes(
+                gate_spec=gate_spec,
+                gate_input=gate_input,
+            )
+            if ag4_reason_codes:
                 _apply_gate_effect(
                     state=state,
                     effect=gate_spec.effect.on_fail,
                     gate_id=gate_id,
                 )
+                state.gate_reason_codes.extend(ag4_reason_codes)
             continue
 
         if gate_id == "AG5":
@@ -405,16 +411,59 @@ def _ag2_has_insufficient_evidence(gate_input: GateInputV1) -> bool:
     return False
 
 
-def _ag4_min_confidence(gate_spec: GateSpec) -> float:
+def _ag4_failure_reason_codes(*, gate_spec: GateSpec, gate_input: GateInputV1) -> tuple[str, ...]:
+    reason_codes: list[str] = []
+    found_confidence_check = False
+    found_sustained_check = False
+
     for check in gate_spec.checks:
-        if check.type != "min_value":
+        model_extra = check.model_extra or {}
+        field_name = model_extra.get("field")
+
+        if check.type == "min_value" and field_name == "diagnosis_confidence":
+            found_confidence_check = True
+            min_value = model_extra.get("min")
+            if not isinstance(min_value, int | float):
+                raise ValueError(
+                    "AG4 diagnosis_confidence min_value check is missing numeric min threshold"
+                )
+            if gate_input.diagnosis_confidence < float(min_value):
+                reason_codes.append(
+                    _ag4_reason_code_from_check(
+                        model_extra=model_extra,
+                        default_code="LOW_CONFIDENCE",
+                    )
+                )
             continue
-        if check.model_extra.get("field") != "diagnosis_confidence":
-            continue
-        min_value = check.model_extra.get("min")
-        if isinstance(min_value, int | float):
-            return float(min_value)
-    raise ValueError("AG4 is missing diagnosis_confidence min_value check configuration")
+
+        if check.type == "equals" and field_name == "sustained":
+            found_sustained_check = True
+            expected_value = model_extra.get("value")
+            if not isinstance(expected_value, bool):
+                raise ValueError("AG4 sustained equals check must define a boolean value")
+            if gate_input.sustained != expected_value:
+                reason_codes.append(
+                    _ag4_reason_code_from_check(
+                        model_extra=model_extra,
+                        default_code="NOT_SUSTAINED",
+                    )
+                )
+
+    if not found_confidence_check:
+        raise ValueError("AG4 is missing diagnosis_confidence min_value check configuration")
+    if not found_sustained_check:
+        raise ValueError("AG4 is missing sustained equals check configuration")
+
+    return _unique_in_order(reason_codes)
+
+
+def _ag4_reason_code_from_check(*, model_extra: Mapping[str, Any], default_code: str) -> str:
+    reason_code = model_extra.get("reason_code_on_fail")
+    if isinstance(reason_code, str):
+        normalized = reason_code.strip()
+        if normalized:
+            return normalized
+    return default_code
 
 
 def _lookup_action_policy_entry(
