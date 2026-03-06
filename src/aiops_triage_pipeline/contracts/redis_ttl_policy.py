@@ -7,7 +7,6 @@ from pydantic import BaseModel, field_validator, model_validator
 from aiops_triage_pipeline.contracts.enums import Action
 
 _REQUIRED_ENVS: frozenset[str] = frozenset({"local", "dev", "uat", "prod"})
-_REQUIRED_AG5_ACTION_KEYS: frozenset[str] = frozenset({"PAGE", "TICKET", "NOTIFY"})
 
 
 class AG5DedupeTtlConfig(BaseModel, frozen=True):

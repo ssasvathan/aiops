@@ -104,9 +104,10 @@ class _DedupeStore:
             raise RuntimeError("dedupe store unavailable")
         return self.duplicate
 
-    def remember(self, fingerprint: str, action: Action) -> None:
+    def remember(self, fingerprint: str, action: Action) -> bool:
         self.remembered.append(fingerprint)
         self.remembered_actions.append(action)
+        return True
 
 
 def _gate_input_for_eval() -> GateInputV1:

@@ -1,6 +1,6 @@
 # Story 5.5: Action Deduplication & Redis Degraded Mode (AG5)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -317,3 +317,33 @@ claude-sonnet-4-6
 - `tests/integration/test_degraded_modes.py`
 - `artifact/implementation-artifacts/5-5-action-deduplication-and-redis-degraded-mode-ag5.md`
 - `artifact/implementation-artifacts/sprint-status.yaml`
+
+## Senior Developer Review (AI)
+
+**Reviewer:** Sas | **Date:** 2026-03-06 | **Outcome:** Approved with remediations applied
+
+### Findings Summary
+
+| ID | Severity | Area | Resolution |
+|----|----------|------|-----------|
+| H1 | HIGH | `scheduler.py` — `SlackClient._send_live` blocked asyncio event loop via `urllib.urlopen` | Fixed: wrapped in `asyncio.to_thread` |
+| H2 | HIGH | `integrations/slack.py` — LIVE mode HTTP path (no-webhook, success, failure) entirely untested | Fixed: 3 new tests added to `test_scheduler.py` |
+| M1 | MEDIUM | `redis_ttl_policy.py` — `_REQUIRED_AG5_ACTION_KEYS` defined but never used (dead code) | Fixed: constant removed |
+| M2 | MEDIUM | `integrations/slack.py` — docstring claimed "Always emits structured log" but OFF mode silently drops | Fixed: docstring corrected |
+| M3 | MEDIUM | `cache/dedupe.py` — `remember()` discarded NX return value; callers had no feedback on atomic claim outcome | Fixed: `remember()` now returns `bool`; Protocol updated; stubs updated; 2 new tests added |
+
+### Changes Applied
+
+- `src/aiops_triage_pipeline/pipeline/scheduler.py`: added `import asyncio`; Slack dispatch uses `await asyncio.to_thread(...)` to prevent event-loop blocking in LIVE mode.
+- `src/aiops_triage_pipeline/integrations/slack.py`: corrected `send_degraded_mode_event` docstring.
+- `src/aiops_triage_pipeline/contracts/redis_ttl_policy.py`: removed unused `_REQUIRED_AG5_ACTION_KEYS` constant.
+- `src/aiops_triage_pipeline/pipeline/stages/gating.py`: `GateDedupeStoreProtocol.remember()` return type changed to `bool`.
+- `src/aiops_triage_pipeline/cache/dedupe.py`: `RedisActionDedupeStore.remember()` returns `bool(result)` from `SET NX EX`.
+- `tests/unit/cache/test_dedupe.py`: 2 new tests for NX return value (`True` on new claim, `False` on rejection).
+- `tests/unit/pipeline/stages/test_gating.py`: `_DedupeStore.remember()` stub updated to return `bool`.
+- `tests/unit/pipeline/test_scheduler.py`: `_DedupeStore.remember()` stub updated; 3 new LIVE mode Slack tests added.
+
+### Quality Gate Post-Remediation
+
+- `ruff check`: clean
+- Unit suite: 502 passed / 0 skipped

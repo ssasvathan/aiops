@@ -154,6 +154,19 @@ def test_remember_does_not_overwrite_active_window() -> None:
     assert len(redis.set_calls) == 2
 
 
+def test_remember_returns_true_when_key_is_newly_registered() -> None:
+    redis = _StubRedis()
+    store = RedisActionDedupeStore(redis)
+    assert store.remember("fp", Action.PAGE) is True
+
+
+def test_remember_returns_false_when_nx_claim_is_rejected() -> None:
+    redis = _StubRedis()
+    store = RedisActionDedupeStore(redis)
+    store.remember("fp", Action.PAGE)  # first call wins the claim
+    assert store.remember("fp", Action.PAGE) is False  # NX rejects duplicate
+
+
 # ── Deduplication behavior ────────────────────────────────────────────────────
 
 

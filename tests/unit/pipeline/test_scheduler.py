@@ -73,8 +73,9 @@ class _DedupeStore:
     def is_duplicate(self, fingerprint: str) -> bool:  # noqa: ARG002
         return self.duplicate
 
-    def remember(self, fingerprint: str, action: object) -> None:  # noqa: ARG002
+    def remember(self, fingerprint: str, action: object) -> bool:  # noqa: ARG002
         self.remembered.append(fingerprint)
+        return True
 
 
 def _ttl_policy() -> RedisTtlPolicyV1:
@@ -1403,3 +1404,99 @@ async def test_emit_redis_degraded_mode_events_emits_structured_log(
     assert degraded_entries[0]["event_type"] == "DegradedModeEvent"
     assert degraded_entries[0]["affected_scope"] == "redis"
     assert degraded_entries[0]["capped_action_level"] == "NOTIFY-only"
+
+
+# ── SlackClient LIVE mode tests ────────────────────────────────────────────────
+
+
+def _degraded_event() -> DegradedModeEvent:
+    return DegradedModeEvent(
+        affected_scope="redis",
+        reason="Redis unavailable",
+        capped_action_level="NOTIFY-only",
+        estimated_impact_window="unknown",
+        timestamp=datetime(2026, 3, 6, 12, 0, tzinfo=UTC),
+    )
+
+
+def test_slack_client_mock_mode_increments_send_count() -> None:
+    client = SlackClient(mode=SlackIntegrationMode.MOCK)
+    assert client.mock_send_count == 0
+    client.send_degraded_mode_event(_degraded_event())
+    assert client.mock_send_count == 1
+    client.send_degraded_mode_event(_degraded_event())
+    assert client.mock_send_count == 2
+
+
+def test_slack_client_log_mode_does_not_increment_send_count() -> None:
+    client = SlackClient(mode=SlackIntegrationMode.LOG)
+    client.send_degraded_mode_event(_degraded_event())
+    assert client.mock_send_count == 0
+
+
+def test_slack_client_live_mode_no_webhook_logs_warning_and_does_not_raise(
+    log_stream: io.StringIO,
+) -> None:
+    client = SlackClient(mode=SlackIntegrationMode.LIVE, webhook_url=None)
+    client.send_degraded_mode_event(_degraded_event())  # must not raise
+
+    log_entries = _parse_logs(log_stream)
+    no_webhook_entries = [
+        e for e in log_entries if e.get("event") == "degraded_mode_slack_no_webhook"
+    ]
+    assert len(no_webhook_entries) == 1
+    assert no_webhook_entries[0]["affected_scope"] == "redis"
+
+
+def test_slack_client_live_mode_delivers_payload_to_webhook(monkeypatch) -> None:
+    captured: list = []
+
+    class _FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+    def _fake_urlopen(req, timeout):  # noqa: ANN001, ANN202
+        captured.append(req)
+        return _FakeResponse()
+
+    monkeypatch.setattr(
+        "aiops_triage_pipeline.integrations.slack.urllib.request.urlopen",
+        _fake_urlopen,
+    )
+    client = SlackClient(
+        mode=SlackIntegrationMode.LIVE,
+        webhook_url="https://hooks.slack.com/test",
+    )
+    client.send_degraded_mode_event(_degraded_event())
+
+    assert len(captured) == 1
+    assert captured[0].full_url == "https://hooks.slack.com/test"
+    assert captured[0].get_header("Content-type") == "application/json"
+
+
+def test_slack_client_live_mode_delivery_failure_logs_warning_and_does_not_raise(
+    log_stream: io.StringIO,
+    monkeypatch,
+) -> None:
+    def _fail_urlopen(req, timeout):  # noqa: ANN001, ANN202
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(
+        "aiops_triage_pipeline.integrations.slack.urllib.request.urlopen",
+        _fail_urlopen,
+    )
+    client = SlackClient(
+        mode=SlackIntegrationMode.LIVE,
+        webhook_url="https://hooks.slack.com/test",
+    )
+    client.send_degraded_mode_event(_degraded_event())  # must not raise
+
+    log_entries = _parse_logs(log_stream)
+    failure_entries = [
+        e for e in log_entries if e.get("event") == "degraded_mode_slack_send_failed"
+    ]
+    assert len(failure_entries) == 1
+    assert "connection refused" in failure_entries[0]["error"]

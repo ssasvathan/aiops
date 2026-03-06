@@ -1,5 +1,6 @@
 """Wall-clock scheduler utilities for Stage 1-6 evidence, peak, and gate-decision cycles."""
 
+import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Mapping, Sequence
@@ -336,7 +337,7 @@ async def emit_redis_degraded_mode_events(
                 timestamp=event.timestamp.isoformat(),
             )
             if slack_client is not None:
-                slack_client.send_degraded_mode_event(event)
+                await asyncio.to_thread(slack_client.send_degraded_mode_event, event)
             return (event,)
         return ()
 

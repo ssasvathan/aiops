@@ -13,7 +13,7 @@ class SlackIntegrationMode(str, Enum):
 
     OFF  — No Slack activity; events are silently dropped.
     LOG  — Log the event only; no HTTP call is made.
-    MOCK — Log the event and simulate a successful send; no HTTP call.
+    MOCK — Log the event, increment mock_send_count, and return; no HTTP call.
     LIVE — Log the event and POST to the configured webhook URL.
     """
 
@@ -41,16 +41,23 @@ class SlackClient:
     ) -> None:
         self._mode = mode
         self._webhook_url = webhook_url
+        self._mock_send_count: int = 0
 
     @property
     def mode(self) -> SlackIntegrationMode:
         return self._mode
 
+    @property
+    def mock_send_count(self) -> int:
+        """Number of events dispatched in MOCK mode (simulating successful sends)."""
+        return self._mock_send_count
+
     def send_degraded_mode_event(self, event: DegradedModeEvent) -> None:
         """Dispatch a DegradedModeEvent according to the configured integration mode.
 
-        Always emits a structured log entry (log fallback). HTTP delivery
-        is only attempted in LIVE mode.
+        In OFF mode, the event is silently dropped with no log entry.
+        In LOG and MOCK modes, a structured log entry is emitted; no HTTP call is made.
+        In LIVE mode, a structured log entry is emitted and HTTP delivery is attempted.
         """
         if self._mode == SlackIntegrationMode.OFF:
             return
@@ -67,7 +74,11 @@ class SlackClient:
             timestamp=event.timestamp.isoformat(),
         )
 
-        if self._mode in (SlackIntegrationMode.LOG, SlackIntegrationMode.MOCK):
+        if self._mode == SlackIntegrationMode.LOG:
+            return
+
+        if self._mode == SlackIntegrationMode.MOCK:
+            self._mock_send_count += 1
             return
 
         # LIVE mode — attempt webhook delivery

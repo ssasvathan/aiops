@@ -49,8 +49,12 @@ class GateDedupeStoreProtocol(Protocol):
     def is_duplicate(self, fingerprint: str) -> bool:
         """Return True when the fingerprint is already active in the dedupe window."""
 
-    def remember(self, fingerprint: str, action: Action) -> None:
-        """Persist fingerprint in dedupe window with the per-action TTL."""
+    def remember(self, fingerprint: str, action: Action) -> bool:
+        """Persist fingerprint in dedupe window with the per-action TTL.
+
+        Returns True if the key was newly registered, False if it already existed
+        (e.g. a concurrent worker won the atomic NX claim first).
+        """
 
 
 @dataclass

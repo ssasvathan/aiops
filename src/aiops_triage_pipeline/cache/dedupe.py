@@ -88,17 +88,21 @@ class RedisActionDedupeStore:
             self._last_error = str(exc)
             raise
 
-    def remember(self, fingerprint: str, action: Action) -> None:
+    def remember(self, fingerprint: str, action: Action) -> bool:
         """Atomically register ``dedupe:{fingerprint}`` with the per-action TTL.
 
         Uses ``SET NX EX`` so an existing active window is never overwritten.
+
+        Returns:
+            True if the key was newly registered (this caller won the atomic claim).
+            False if the key already existed (NX condition rejected the write).
 
         Raises:
             Exception: Any Redis connectivity or protocol error.
         """
         ttl = self._ttl_for_action(action)
         try:
-            self._redis.set(  # type: ignore[attr-defined]
+            result = self._redis.set(  # type: ignore[attr-defined]
                 f"dedupe:{fingerprint}",
                 "1",
                 nx=True,
@@ -106,6 +110,7 @@ class RedisActionDedupeStore:
             )
             self._is_healthy = True
             self._last_error = None
+            return bool(result)
         except Exception as exc:
             self._is_healthy = False
             self._last_error = str(exc)

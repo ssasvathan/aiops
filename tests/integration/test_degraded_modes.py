@@ -9,6 +9,7 @@ Tests use a real Redis instance via Testcontainers to verify:
 
 from __future__ import annotations
 
+import socket
 import time
 from datetime import UTC, datetime
 
@@ -44,6 +45,18 @@ def redis_client(redis_container):
     )
     client.flushall()
     return client
+
+
+def _bad_redis_client() -> redis_lib.Redis:
+    """Return a Redis client pointing at a port guaranteed to be unreachable.
+
+    Allocates a free port via the OS, releases it, then targets it — the port
+    will not be listening, so Redis connection attempts fail immediately.
+    """
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        port = s.getsockname()[1]
+    return redis_lib.Redis(host="127.0.0.1", port=port, socket_connect_timeout=1)
 
 
 def _gate_input(fingerprint: str = "fp-test") -> GateInputV1:
@@ -134,7 +147,7 @@ def test_ag5_gate_suppresses_duplicate_action_within_ttl(redis_client) -> None:
 
 
 def test_ag5_gate_caps_to_notify_when_redis_unavailable() -> None:
-    bad_client = redis_lib.Redis(host="127.0.0.1", port=19999, socket_connect_timeout=1)
+    bad_client = _bad_redis_client()
     store = RedisActionDedupeStore(bad_client)
     rulebook = load_rulebook_policy()
 
@@ -154,7 +167,7 @@ def test_ag5_gate_caps_to_notify_when_redis_unavailable() -> None:
 
 
 async def test_emit_redis_degraded_mode_events_on_real_connection_failure() -> None:
-    bad_client = redis_lib.Redis(host="127.0.0.1", port=19999, socket_connect_timeout=1)
+    bad_client = _bad_redis_client()
     store = RedisActionDedupeStore(bad_client)
 
     # Trigger failure
@@ -180,7 +193,7 @@ async def test_emit_redis_degraded_mode_events_on_real_connection_failure() -> N
 
 
 async def test_redis_recovery_restores_health_status(redis_client) -> None:
-    bad_client = redis_lib.Redis(host="127.0.0.1", port=19999, socket_connect_timeout=1)
+    bad_client = _bad_redis_client()
     store = RedisActionDedupeStore(bad_client)
 
     try:
