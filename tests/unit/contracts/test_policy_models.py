@@ -198,6 +198,21 @@ def test_rulebook_policy_artifact_enforces_fr29_prod_tier_caps() -> None:
     }
 
 
+def test_rulebook_policy_artifact_ag4_reason_codes_are_explicit() -> None:
+    policy_path = Path(__file__).resolve().parents[3] / "config/policies/rulebook-v1.yaml"
+    policy = load_policy_yaml(policy_path, RulebookV1)
+
+    ag4_gate = next(gate for gate in policy.gates if gate.id == "AG4")
+    checks_by_id = {check.check_id: check for check in ag4_gate.checks}
+    confidence_check_extra = checks_by_id["AG4_CONFIDENCE_MIN"].model_extra or {}
+    sustained_check_extra = (
+        checks_by_id["AG4_SUSTAINED_REQUIRED_FOR_HIGH_URGENCY"].model_extra or {}
+    )
+
+    assert confidence_check_extra.get("reason_code_on_fail") == "LOW_CONFIDENCE"
+    assert sustained_check_extra.get("reason_code_on_fail") == "NOT_SUSTAINED"
+
+
 def test_redis_ttl_prod_dedupe_accessible(minimal_redis_ttl: RedisTtlPolicyV1) -> None:
     assert minimal_redis_ttl.ttls_by_env["prod"].dedupe_seconds > 0
 

@@ -1,6 +1,6 @@
 # Story 5.4: Sustained & Confidence Threshold Gate (AG4)
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -215,8 +215,8 @@ Applied rules from `artifact/project-context.md`:
 
 - Story context generated for Epic 5 Story 5.4.
 - Story file: `artifact/implementation-artifacts/5-4-sustained-and-confidence-threshold-gate-ag4.md`.
-- Story status set to: `ready-for-dev`.
-- Completion note: Ultimate context engine analysis completed - comprehensive developer guide created.
+- Story status set to: `done`.
+- Completion note: implementation and adversarial code-review remediations completed.
 
 ## Dev Agent Record
 
@@ -250,7 +250,9 @@ GPT-5 Codex
 - Added granular AG4 reason-code emission with deterministic ordering: `LOW_CONFIDENCE`, `NOT_SUSTAINED`.
 - Updated rulebook policy AG4 checks with `reason_code_on_fail` metadata and retained threshold/sustained constraints.
 - Added AG4 regression coverage in stage-level and scheduler-level tests, including confidence boundary `0.6`.
-- Verified quality gates: targeted pytest suite, Ruff lint, and full Docker-backed regression with zero skips (`464 passed`).
+- Added explicit AG4 `TICKET`-path tests plus scheduler interaction tests for AG2/AG3 and AG5/AG6 downstream behavior.
+- Added policy artifact contract test to lock AG4 `reason_code_on_fail` metadata (`LOW_CONFIDENCE`, `NOT_SUSTAINED`).
+- Verified quality gates: targeted pytest suite, Ruff lint, and full Docker-backed regression with zero skips (`475 passed`).
 
 ### File List
 
@@ -258,10 +260,32 @@ GPT-5 Codex
 - `config/policies/rulebook-v1.yaml`
 - `tests/unit/pipeline/stages/test_gating.py`
 - `tests/unit/pipeline/test_scheduler.py`
+- `tests/unit/contracts/test_policy_models.py`
 - `artifact/implementation-artifacts/5-4-sustained-and-confidence-threshold-gate-ag4.md`
 - `artifact/implementation-artifacts/sprint-status.yaml`
+
+## Senior Developer Review (AI)
+
+### Reviewer
+
+Sas
+
+### Date
+
+2026-03-06
+
+### Outcome
+
+Approved after review remediations.
+
+### Notes
+
+- Closed gaps in AG4 review coverage by adding explicit `TICKET` action assertions and scheduler-level AG2/AG3 interaction checks.
+- Verified AG4 downgrades do not regress AG5 dedupe behavior and preserve AG6 postmortem semantics.
+- Synced story and sprint tracking state to `done`.
 
 ## Change Log
 
 - 2026-03-06: Created Story 5.4 context document with AG4 implementation guardrails, architecture constraints, test plan, and latest-technology checks.
 - 2026-03-06: Implemented Story 5.4 AG4 sustained/confidence gate behavior with granular reason codes, added AG4 regression tests, passed lint, and completed full no-skip regression run.
+- 2026-03-06: Applied adversarial code-review remediations (AG4 test-depth expansion, policy metadata contract lock), and marked story/sprint status as `done`.

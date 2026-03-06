@@ -617,6 +617,39 @@ def test_evaluate_rulebook_gates_ag4_allows_boundary_confidence_of_point_six() -
     assert "NOT_SUSTAINED" not in decision.gate_reason_codes
 
 
+@pytest.mark.parametrize(
+    ("confidence", "sustained", "expected_action", "expected_reason_codes"),
+    [
+        (0.95, False, Action.OBSERVE, ("NOT_SUSTAINED",)),
+        (0.59, True, Action.OBSERVE, ("LOW_CONFIDENCE",)),
+        (0.6, True, Action.TICKET, ()),
+    ],
+)
+def test_evaluate_rulebook_gates_ag4_applies_to_ticket_actions(
+    confidence: float,
+    sustained: bool,
+    expected_action: Action,
+    expected_reason_codes: tuple[str, ...],
+) -> None:
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval().model_copy(
+            update={
+                "proposed_action": Action.TICKET,
+                "diagnosis_confidence": confidence,
+                "sustained": sustained,
+            }
+        ),
+        rulebook=load_rulebook_policy(),
+        dedupe_store=_DedupeStore(duplicate=False),
+    )
+
+    assert decision.final_action == expected_action
+    for reason_code in expected_reason_codes:
+        assert reason_code in decision.gate_reason_codes
+    for reason_code in {"LOW_CONFIDENCE", "NOT_SUSTAINED"} - set(expected_reason_codes):
+        assert reason_code not in decision.gate_reason_codes
+
+
 def test_evaluate_rulebook_gates_marks_env_cap_applied_and_records_reason() -> None:
     decision = evaluate_rulebook_gates(
         gate_input=_gate_input_for_eval().model_copy(
