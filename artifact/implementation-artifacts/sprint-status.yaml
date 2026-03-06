@@ -75,8 +75,8 @@ development_status:
   4-6-triageexcerpt-exposure-denylist-enforcement: done
   4-7-casefile-retention-and-lifecycle-management: done
   epic-4-retrospective: done
-  epic-5: backlog
-  5-1-rulebook-gate-engine-ag0-ag6-sequential-evaluation: backlog
+  epic-5: in-progress
+  5-1-rulebook-gate-engine-ag0-ag6-sequential-evaluation: ready-for-dev
   5-2-environment-and-criticality-tier-caps-ag1: backlog
   5-3-evidence-sufficiency-and-source-topic-gates-ag2-ag3: backlog
   5-4-sustained-and-confidence-threshold-gate-ag4: backlog
