@@ -907,3 +907,67 @@ def test_evaluate_rulebook_gates_ag6_no_action_escalation_when_predicate_does_no
     assert decision.postmortem_required is False
     assert decision.postmortem_mode is None
     assert decision.postmortem_reason_codes == ()
+
+
+def test_gate_effect_confidence_floor_is_noop_at_runtime() -> None:
+    # Contract test: GateEffect.confidence_floor is a reserved field with no runtime effect.
+    # It is NOT the LLM confidence input — it has no connection to cold-path (LLM) output.
+    # This test ensures that setting confidence_floor on a gate effect produces identical
+    # ActionDecisionV1 output to the same gate without it, preventing future regressions.
+    rulebook = load_rulebook_policy()
+    ag2 = next(gate for gate in rulebook.gates if gate.id == "AG2")
+    ag2_with_floor = ag2.model_copy(
+        update={
+            "effect": ag2.effect.model_copy(
+                update={
+                    "on_fail": GateEffect(
+                        cap_action_to="TICKET",
+                        set_reason_codes=("AG2_INSUFFICIENT_EVIDENCE",),
+                        confidence_floor=0.99,  # high floor — must have zero runtime effect
+                    )
+                }
+            )
+        }
+    )
+    ag2_without_floor = ag2.model_copy(
+        update={
+            "effect": ag2.effect.model_copy(
+                update={
+                    "on_fail": GateEffect(
+                        cap_action_to="TICKET",
+                        set_reason_codes=("AG2_INSUFFICIENT_EVIDENCE",),
+                        confidence_floor=None,
+                    )
+                }
+            )
+        }
+    )
+
+    gate_input = _gate_input_for_eval().model_copy(
+        update={"evidence_status_map": {"topic_messages_in_per_sec": EvidenceStatus.UNKNOWN}}
+    )
+
+    def _make_rulebook(ag2_gate: GateSpec) -> RulebookV1:
+        return rulebook.model_copy(
+            update={
+                "gates": tuple(
+                    ag2_gate if gate.id == "AG2" else gate for gate in rulebook.gates
+                )
+            }
+        )
+
+    decision_with = evaluate_rulebook_gates(
+        gate_input=gate_input,
+        rulebook=_make_rulebook(ag2_with_floor),
+        dedupe_store=_DedupeStore(duplicate=False),
+    )
+    decision_without = evaluate_rulebook_gates(
+        gate_input=gate_input,
+        rulebook=_make_rulebook(ag2_without_floor),
+        dedupe_store=_DedupeStore(duplicate=False),
+    )
+
+    assert decision_with.final_action == decision_without.final_action
+    assert decision_with.gate_reason_codes == decision_without.gate_reason_codes
+    assert decision_with.env_cap_applied == decision_without.env_cap_applied
+    assert decision_with.postmortem_required == decision_without.postmortem_required

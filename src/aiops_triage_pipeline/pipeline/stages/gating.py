@@ -528,8 +528,10 @@ def _apply_gate_effect(
         state.current_action = reduced_action
 
     state.gate_reason_codes.extend(effect.set_reason_codes)
-    # NOTE: effect.confidence_floor is parsed by GateEffect but not enforced here;
-    # it is reserved for a future gate-input mutation mechanism.
+    # NOTE: effect.confidence_floor is parsed by GateEffect but intentionally not
+    # enforced here — it is a gate-engine reserved field for a future evidence-confidence
+    # floor mechanism. It is NOT the LLM confidence input vector and has no connection
+    # to any cold-path (LLM) output. Setting it in a rulebook YAML is a no-op at runtime.
 
     if effect.force_postmortem_mode is not None:
         mode = effect.force_postmortem_mode.strip().upper()
