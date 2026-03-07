@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     # PagerDuty Events V2 service integration key (required for LIVE mode)
     PD_ROUTING_KEY: str | None = None
 
+    # Slack incoming-webhook URL (required for LIVE mode; never logged)
+    SLACK_WEBHOOK_URL: str | None = None
+
     # Integration modes — default LOG to prevent accidental outbound calls
     INTEGRATION_MODE_PD: IntegrationMode = IntegrationMode.LOG
     INTEGRATION_MODE_SLACK: IntegrationMode = IntegrationMode.LOG
@@ -129,6 +132,7 @@ class Settings(BaseSettings):
             S3_SECRET_KEY="[REDACTED]",
             S3_BUCKET=self.S3_BUCKET,
             PD_ROUTING_KEY="[CONFIGURED]" if self.PD_ROUTING_KEY else "[NOT SET]",
+            SLACK_WEBHOOK_URL="[CONFIGURED]" if self.SLACK_WEBHOOK_URL else "[NOT SET]",
             INTEGRATION_MODE_PD=self.INTEGRATION_MODE_PD.value,
             INTEGRATION_MODE_SLACK=self.INTEGRATION_MODE_SLACK.value,
             INTEGRATION_MODE_SN=self.INTEGRATION_MODE_SN.value,

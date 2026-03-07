@@ -48,3 +48,28 @@ class TelemetryDegradedEvent(BaseModel, frozen=True):
     reason: str
     recovery_status: Literal["pending", "resolved"]
     timestamp: datetime
+
+
+class NotificationEvent(BaseModel, frozen=True):
+    """Emitted (as a structured log event) when a postmortem obligation is dispatched (FR45).
+
+    Used by:
+    - Story 5.8: Slack notification / structured log fallback for SOFT postmortem enforcement
+
+    Attributes:
+        event_type:           Discriminator field — always "NotificationEvent"
+        case_id:              CaseFile identifier for audit traceability
+        final_action:         The finalized action string (e.g., "PAGE", "NOTIFY")
+        routing_key:          Topology ownership routing key
+        support_channel:      Team support channel (may be None if not configured)
+        postmortem_required:  Always True when this event is emitted (AC7 guard is upstream)
+        reason_codes:         Reason codes that triggered the postmortem obligation
+    """
+
+    event_type: Literal["NotificationEvent"] = "NotificationEvent"
+    case_id: str
+    final_action: str
+    routing_key: str
+    support_channel: str | None
+    postmortem_required: bool
+    reason_codes: tuple[str, ...]

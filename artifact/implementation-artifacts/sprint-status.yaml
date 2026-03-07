@@ -83,7 +83,7 @@ development_status:
   5-5-action-deduplication-and-redis-degraded-mode-ag5: done
   5-6-postmortem-predicate-evaluation-ag6: done
   5-7-pagerduty-page-trigger-execution: done
-  5-8-slack-notification-and-structured-log-fallback: backlog
+  5-8-slack-notification-and-structured-log-fallback: review
   5-9-end-to-end-hot-path-pipeline-test: backlog
   epic-5-retrospective: optional
   epic-6: backlog
