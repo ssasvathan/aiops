@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock
 
+import httpx
 import pytest
 
 from aiops_triage_pipeline.config.settings import IntegrationMode
@@ -137,12 +139,38 @@ async def test_off_mode_raises_value_error() -> None:
         await client.invoke(_CASE_ID, _make_excerpt(), _EVIDENCE_SUMMARY)
 
 
-async def test_live_mode_raises_not_implemented() -> None:
-    """LIVE mode raises NotImplementedError until Story 6.2."""
-    client = _make_client(IntegrationMode.LIVE)
+async def test_live_mode_no_base_url_raises_value_error() -> None:
+    """LIVE mode with base_url=None raises ValueError mentioning LLM_BASE_URL."""
+    client = LLMClient(mode=IntegrationMode.LIVE, base_url=None)
 
-    with pytest.raises(NotImplementedError, match="Story 6.2"):
+    with pytest.raises(ValueError, match="LLM_BASE_URL"):
         await client.invoke(_CASE_ID, _make_excerpt(), _EVIDENCE_SUMMARY)
+
+
+async def test_live_mode_makes_http_post_to_base_url() -> None:
+    """LIVE mode with base_url makes an HTTP POST to base_url/diagnose."""
+    base_url = "http://llm-endpoint.bank.internal"
+    client = LLMClient(mode=IntegrationMode.LIVE, base_url=base_url)
+
+    mock_response = MagicMock(spec=httpx.Response)
+    mock_response.status_code = 200
+    mock_response.raise_for_status.return_value = None
+
+    mock_http_client = AsyncMock(spec=httpx.AsyncClient)
+    mock_http_client.post = AsyncMock(return_value=mock_response)
+    mock_http_client.__aenter__ = AsyncMock(return_value=mock_http_client)
+    mock_http_client.__aexit__ = AsyncMock(return_value=None)
+
+    with pytest.MonkeyPatch().context() as mp:
+        mp.setattr(httpx, "AsyncClient", lambda **_kw: mock_http_client)
+        report = await client.invoke(_CASE_ID, _make_excerpt(), _EVIDENCE_SUMMARY)
+
+    assert isinstance(report, DiagnosisReportV1)
+    assert report.reason_codes == ("LLM_LIVE_STUB",)
+    assert report.case_id == _CASE_ID
+    mock_http_client.post.assert_called_once()
+    call_args = mock_http_client.post.call_args
+    assert call_args[0][0] == f"{base_url}/diagnose"
 
 
 # ---------------------------------------------------------------------------
@@ -217,18 +245,17 @@ async def test_case_id_propagated_in_error_mode() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_llm_module_imports_no_http_library() -> None:
-    """AC2: integrations/llm.py must not import any HTTP library — no network I/O in stub."""
+def test_llm_module_imports_no_non_httpx_http_library() -> None:
+    """integrations/llm.py must not import requests/aiohttp/urllib — httpx is approved."""
     import inspect
 
     import aiops_triage_pipeline.integrations.llm as llm_module
 
     source = inspect.getsource(llm_module)
     forbidden_imports = [
-        "import httpx",
         "import requests",
         "import aiohttp",
         "import urllib.request",
     ]
     for lib in forbidden_imports:
-        assert lib not in source, f"Found HTTP import in integrations/llm.py: {lib}"
+        assert lib not in source, f"Found forbidden HTTP import in integrations/llm.py: {lib}"

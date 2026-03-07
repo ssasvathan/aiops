@@ -88,7 +88,7 @@ development_status:
   epic-5-retrospective: done
   epic-6: in-progress
   6-1-llm-stub-and-failure-injection-mode: done
-  6-2-cold-path-llm-invocation-and-hot-path-independence: backlog
+  6-2-cold-path-llm-invocation-and-hot-path-independence: review
   6-3-structured-diagnosisreport-output-and-evidence-citation: backlog
   6-4-llm-output-schema-validation-and-deterministic-fallback: backlog
   epic-6-retrospective: optional

@@ -75,6 +75,10 @@ class Settings(BaseSettings):
     # Slack incoming-webhook URL (required for LIVE mode; never logged)
     SLACK_WEBHOOK_URL: str | None = None
 
+    # LLM endpoint (required for LIVE mode)
+    LLM_BASE_URL: str | None = None  # Bank-sanctioned LLM endpoint base URL (LIVE mode)
+    LLM_API_KEY: str | None = None  # Bearer auth token for LLM endpoint (optional in LIVE mode)
+
     # Integration modes — default LOG to prevent accidental outbound calls
     INTEGRATION_MODE_PD: IntegrationMode = IntegrationMode.LOG
     INTEGRATION_MODE_SLACK: IntegrationMode = IntegrationMode.LOG
@@ -150,6 +154,8 @@ class Settings(BaseSettings):
             INTEGRATION_MODE_SLACK=self.INTEGRATION_MODE_SLACK.value,
             INTEGRATION_MODE_SN=self.INTEGRATION_MODE_SN.value,
             INTEGRATION_MODE_LLM=self.INTEGRATION_MODE_LLM.value,
+            LLM_BASE_URL=self.LLM_BASE_URL or "[NOT SET]",
+            LLM_API_KEY="[CONFIGURED]" if self.LLM_API_KEY else "[NOT SET]",
             OUTBOX_PUBLISHER_POLL_INTERVAL_SECONDS=self.OUTBOX_PUBLISHER_POLL_INTERVAL_SECONDS,
             OUTBOX_PUBLISHER_BATCH_SIZE=self.OUTBOX_PUBLISHER_BATCH_SIZE,
             CASEFILE_LIFECYCLE_POLL_INTERVAL_SECONDS=self.CASEFILE_LIFECYCLE_POLL_INTERVAL_SECONDS,

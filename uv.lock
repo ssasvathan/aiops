@@ -9,6 +9,7 @@ source = { editable = "." }
 dependencies = [
     { name = "boto3" },
     { name = "confluent-kafka" },
+    { name = "httpx" },
     { name = "langgraph" },
     { name = "opentelemetry-exporter-otlp" },
     { name = "opentelemetry-sdk" },
@@ -35,6 +36,7 @@ dev = [
 requires-dist = [
     { name = "boto3", specifier = "~=1.42" },
     { name = "confluent-kafka", specifier = "==2.13.0" },
+    { name = "httpx", specifier = ">=0.27" },
     { name = "langgraph", specifier = "==1.0.9" },
     { name = "opentelemetry-exporter-otlp", specifier = "==1.39.1" },
     { name = "opentelemetry-sdk", specifier = "==1.39.1" },

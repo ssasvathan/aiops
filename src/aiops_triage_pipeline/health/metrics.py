@@ -33,6 +33,23 @@ _component_health_gauge = _meter.create_up_down_counter(
 _prev_status_values: dict[str, int] = {}
 
 
+_llm_cold_path_inflight = _meter.create_up_down_counter(
+    name="aiops.llm.cold_path.inflight",
+    description="Number of in-flight cold-path LLM diagnosis invocations",
+    unit="1",
+)
+
+
+def llm_inflight_add(delta: int) -> None:
+    """Increment (+1) or decrement (-1) the LLM cold-path in-flight gauge.
+
+    Called by diagnosis/graph.py on task start (+1) and in finally block (-1).
+    Uses a simple UpDownCounter — no delta-tracking needed because start/stop
+    calls always balance and we never read back the counter value here.
+    """
+    _llm_cold_path_inflight.add(delta, attributes={"component": "llm"})
+
+
 def record_status(component: str, status: HealthStatus) -> None:
     """Record component health status as an OTLP metric.
 
