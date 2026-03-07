@@ -106,7 +106,52 @@ uv run ruff check
 
 ## Common Troubleshooting
 
+### Docker Daemon Not Running
+
+**Symptom:** Tests in `tests/integration/` (e.g. `test_degraded_modes.py`) error at setup with:
+
+```
+docker.errors.DockerException: Error while fetching server API version:
+  ('Connection aborted.', FileNotFoundError(2, 'No such file or directory'))
+```
+
+This surfaces even when running `uv run pytest -q -m "not integration"` because some tests in
+`tests/integration/` use testcontainers but lack the `@pytest.mark.integration` marker — they are
+not excluded by the marker filter and will error at fixture setup if Docker is unavailable.
+
+**Triage steps:**
+
+1. **Check daemon status:**
+   ```bash
+   docker info
+   ```
+   If this fails, the daemon is not running.
+
+2. **Start Docker:**
+   - macOS/Windows: Open Docker Desktop and wait for the whale icon to stabilise.
+   - Linux (systemd): `sudo systemctl start docker`
+   - Linux (rootless): `systemctl --user start docker`
+
+3. **Verify daemon is accessible:**
+   ```bash
+   docker ps
+   ```
+   Should list containers (even if empty) without error.
+
+4. **Re-run tests:**
+   ```bash
+   uv run pytest -q -m "not integration"
+   ```
+   Expected: all tests pass, 0 errors.
+
+**Note:** If you intentionally want to skip Docker-dependent tests while the daemon is down,
+run only the pure unit tests:
+```bash
+uv run pytest -q tests/unit
+```
+
+---
+
 - If smoke tests fail immediately, ensure services are running:
   - `docker compose ps`
 - If Python commands fail on env resolution, verify `APP_ENV` and matching `config/.env.<APP_ENV>` file.
-- If integration tests fail, confirm Docker daemon is running and accessible to testcontainers.

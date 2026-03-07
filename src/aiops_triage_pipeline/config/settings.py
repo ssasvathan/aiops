@@ -93,6 +93,19 @@ class Settings(BaseSettings):
         return ENV_ACTION_CAPS.get(self.APP_ENV.value, "OBSERVE")
 
     @model_validator(mode="after")
+    def validate_llm_prod_mode(self) -> "Settings":
+        """Reject MOCK and OFF for INTEGRATION_MODE_LLM in prod — requires LIVE (or LOG)."""
+        if self.APP_ENV == AppEnv.prod and self.INTEGRATION_MODE_LLM in (
+            IntegrationMode.OFF,
+            IntegrationMode.MOCK,
+        ):
+            raise ValueError(
+                f"INTEGRATION_MODE_LLM must be LIVE or LOG in prod environment; "
+                f"got {self.INTEGRATION_MODE_LLM.value}"
+            )
+        return self
+
+    @model_validator(mode="after")
     def validate_kerberos_files(self) -> "Settings":
         """Fail-fast at boot if SASL_SSL is configured but Kerberos files are missing."""
         if self.KAFKA_SECURITY_PROTOCOL == "SASL_SSL":

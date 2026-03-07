@@ -177,6 +177,68 @@ def test_get_settings_returns_same_instance() -> None:
     get_settings.cache_clear()
 
 
+_PROD_SETTINGS_BASE: dict = dict(
+    _env_file=None,
+    APP_ENV="prod",
+    KAFKA_BOOTSTRAP_SERVERS="localhost:9092",
+    DATABASE_URL="postgresql+psycopg://u:p@h/db",
+    REDIS_URL="redis://localhost:6379/0",
+    S3_ENDPOINT_URL="http://localhost:9000",
+    S3_ACCESS_KEY="key",
+    S3_SECRET_KEY="secret",
+    S3_BUCKET="bucket",
+)
+
+
+def test_prod_llm_mock_raises_validation_error() -> None:
+    """APP_ENV=prod + INTEGRATION_MODE_LLM=MOCK raises ValidationError at startup."""
+    get_settings.cache_clear()
+    with pytest.raises((ValueError, ValidationError), match="INTEGRATION_MODE_LLM"):
+        Settings(**{**_PROD_SETTINGS_BASE, "INTEGRATION_MODE_LLM": "MOCK"})
+
+
+def test_prod_llm_off_raises_validation_error() -> None:
+    """APP_ENV=prod + INTEGRATION_MODE_LLM=OFF raises ValidationError at startup."""
+    get_settings.cache_clear()
+    with pytest.raises((ValueError, ValidationError), match="INTEGRATION_MODE_LLM"):
+        Settings(**{**_PROD_SETTINGS_BASE, "INTEGRATION_MODE_LLM": "OFF"})
+
+
+def test_prod_llm_live_succeeds() -> None:
+    """APP_ENV=prod + INTEGRATION_MODE_LLM=LIVE creates Settings successfully."""
+    get_settings.cache_clear()
+    settings = Settings(**{**_PROD_SETTINGS_BASE, "INTEGRATION_MODE_LLM": "LIVE"})
+    assert settings.INTEGRATION_MODE_LLM.value == "LIVE"
+    assert settings.APP_ENV.value == "prod"
+
+
+def test_prod_llm_log_succeeds() -> None:
+    """APP_ENV=prod + INTEGRATION_MODE_LLM=LOG is allowed (safe non-destructive default)."""
+    get_settings.cache_clear()
+    settings = Settings(**{**_PROD_SETTINGS_BASE, "INTEGRATION_MODE_LLM": "LOG"})
+    assert settings.INTEGRATION_MODE_LLM.value == "LOG"
+    assert settings.APP_ENV.value == "prod"
+
+
+def test_local_llm_mock_succeeds() -> None:
+    """APP_ENV=local + INTEGRATION_MODE_LLM=MOCK is allowed (non-prod environment)."""
+    get_settings.cache_clear()
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="local",
+        KAFKA_BOOTSTRAP_SERVERS="localhost:9092",
+        DATABASE_URL="postgresql+psycopg://u:p@h/db",
+        REDIS_URL="redis://localhost:6379/0",
+        S3_ENDPOINT_URL="http://localhost:9000",
+        S3_ACCESS_KEY="key",
+        S3_SECRET_KEY="secret",
+        S3_BUCKET="bucket",
+        INTEGRATION_MODE_LLM="MOCK",
+    )
+    assert settings.INTEGRATION_MODE_LLM.value == "MOCK"
+    assert settings.APP_ENV.value == "local"
+
+
 def test_load_policy_yaml_happy_path(tmp_path: Path) -> None:
     """load_policy_yaml loads YAML and validates it against a Pydantic model."""
     from pydantic import BaseModel
