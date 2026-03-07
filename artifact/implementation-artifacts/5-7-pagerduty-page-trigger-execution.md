@@ -1,6 +1,6 @@
 # Story 5.7: PagerDuty PAGE Trigger Execution
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -285,5 +285,22 @@ claude-sonnet-4-6
 - `src/aiops_triage_pipeline/config/settings.py` (modified — added PD_ROUTING_KEY field and log_active_config entry)
 - `tests/unit/integrations/test_pagerduty.py` (new — 14 unit tests for PagerDutyClient)
 - `tests/unit/pipeline/stages/test_dispatch.py` (new — 9 unit tests for dispatch stage)
-- `artifact/implementation-artifacts/sprint-status.yaml` (modified — status: in-progress → review)
+- `artifact/implementation-artifacts/sprint-status.yaml` (modified — status: review → done)
 - `artifact/implementation-artifacts/5-7-pagerduty-page-trigger-execution.md` (modified — story file updates)
+
+### Code Review Remediations (2026-03-06)
+
+**Issues fixed by code-review workflow:**
+
+- **H1 (HIGH)** `pagerduty.py`: `PageTriggerPayload` was dead code — `_send_live` built payload as raw dict bypassing the model. Fixed: `_send_live` now instantiates `PageTriggerPayload` and serializes via `model_dump()` for validated payload construction.
+- **M1 (MEDIUM)** `dispatch.py`: `case_id=decision.action_fingerprint` conflated two distinct audit fields since `ActionDecisionV1` carries no `case_id`. Fixed: added `case_id: str` parameter to `dispatch_action`; callers supply the CaseFile case_id; tests assert `case_id != action_fingerprint`.
+- **M2 (MEDIUM)** `pagerduty.py`: LIVE mode API-call result logs (`pd_page_trigger_sent`, `pd_page_trigger_send_failed`) were missing `mode` and `action` fields required by AC6/NFR-S6. Fixed: both log entries now include `action="trigger"` and `mode=self._mode.value`.
+- **M3 (MEDIUM)** `pagerduty.py`: `_send_live` received a `logger` parameter it never used, calling `get_logger()` three additional times internally. Fixed: all log calls inside `_send_live` now use the passed `logger` parameter.
+- **L1 (LOW)** `dispatch.py`: non-PAGE `action_dispatched` log was missing `mode` and `case_id` fields present on PAGE path. Fixed: both fields added for consistent audit logging.
+- **L2 (LOW)** `test_dispatch.py`: `case_id` kwarg not asserted, allowing M1 to hide. Fixed: assertions added verifying `case_id == _CASE_ID` and `case_id != action_fingerprint`.
+- **L3 (LOW)** `test_pagerduty.py`: `test_live_mode_emits_log` only checked `len >= 1`. Fixed: test now finds the `pd_page_trigger_sent` entry and asserts `mode`, `action`, and `outcome`.
+
+**Post-remediation quality gates:**
+- `uv run pytest -q tests/unit/integrations/test_pagerduty.py tests/unit/pipeline/stages/test_dispatch.py` — 23 passed
+- `uv run ruff check` — All checks passed
+- Full unit regression: 546 passed, 0 unit failures

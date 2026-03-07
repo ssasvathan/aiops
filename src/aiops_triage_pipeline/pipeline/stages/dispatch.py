@@ -9,6 +9,7 @@ from aiops_triage_pipeline.pipeline.stages.topology import TopologyRoutingContex
 
 def dispatch_action(
     *,
+    case_id: str,
     decision: ActionDecisionV1,
     routing_context: TopologyRoutingContext | None,
     pd_client: PagerDutyClient,
@@ -23,6 +24,7 @@ def dispatch_action(
     calls from this stage.
 
     Args:
+        case_id:         CaseFile identifier for audit traceability (NFR-S6).
         decision:        Final gated ActionDecisionV1 from Stage 6.
         routing_context: Topology routing metadata from Stage 3; may be None if
                          topology resolution was unsuccessful.
@@ -33,7 +35,7 @@ def dispatch_action(
 
     if decision.final_action == Action.PAGE:
         pd_client.send_page_trigger(
-            case_id=decision.action_fingerprint,
+            case_id=case_id,
             action_fingerprint=decision.action_fingerprint,
             routing_key=topology_routing_key,
             summary=(
@@ -44,6 +46,7 @@ def dispatch_action(
         logger.info(
             "action_dispatched",
             event_type="pipeline.stages.dispatch.action_dispatched",
+            case_id=case_id,
             final_action=decision.final_action.value,
             action_fingerprint=decision.action_fingerprint,
             topology_routing_key=topology_routing_key,
@@ -55,8 +58,10 @@ def dispatch_action(
         logger.info(
             "action_dispatched",
             event_type="pipeline.stages.dispatch.action_dispatched",
+            case_id=case_id,
             final_action=decision.final_action.value,
             action_fingerprint=decision.action_fingerprint,
             topology_routing_key=topology_routing_key,
+            mode=pd_client.mode.value,
             outcome="no_pd_trigger",
         )

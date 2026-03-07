@@ -172,14 +172,21 @@ def test_live_mode_payload_structure() -> None:
 
 
 def test_live_mode_emits_log() -> None:
-    """LIVE mode: structured log entry emitted with outcome."""
+    """LIVE mode: API-call result log emitted with outcome, mode, and action (AC6)."""
     client = _make_client(mode=PagerDutyIntegrationMode.LIVE)
     with structlog.testing.capture_logs() as cap_logs:
         with patch(_URLOPEN_PATH, return_value=_make_live_response()):
             _trigger(client)
     assert cap_logs, "Expected at least one log entry in LIVE mode"
-    outcomes = [e.get("outcome") for e in cap_logs]
-    assert "success" in outcomes
+    # Find the API-call result entry (pd_page_trigger_sent)
+    result_entries = [e for e in cap_logs if e.get("event") == "pd_page_trigger_sent"]
+    assert result_entries, f"Expected pd_page_trigger_sent log entry; got: {cap_logs}"
+    result = result_entries[0]
+    assert result.get("outcome") == "success"
+    assert result.get("mode") == "LIVE", f"Expected mode=LIVE in API result log; got: {result}"
+    assert result.get("action") == "trigger", (
+        f"Expected action=trigger in API result log; got: {result}"
+    )
 
 
 # ---------------------------------------------------------------------------

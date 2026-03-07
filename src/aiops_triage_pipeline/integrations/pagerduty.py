@@ -133,8 +133,10 @@ class PagerDutyClient:
         logger: object,
     ) -> None:
         """POST trigger to PD Events V2. Catches and logs all HTTP errors (non-critical)."""
+        _log = logger  # type: ignore[assignment]
+
         if not self._pd_routing_key:
-            get_logger("integrations.pagerduty").warning(
+            _log.warning(
                 "pd_page_trigger_no_routing_key",
                 event_type="integrations.pagerduty.no_routing_key",
                 case_id=case_id,
@@ -143,11 +145,10 @@ class PagerDutyClient:
             )
             return
 
-        body: dict[str, Any] = {
-            "routing_key": self._pd_routing_key,
-            "dedup_key": action_fingerprint,
-            "event_action": "trigger",
-            "payload": {
+        trigger = PageTriggerPayload(
+            routing_key=self._pd_routing_key,
+            dedup_key=action_fingerprint,
+            payload={
                 "summary": summary,
                 "severity": "critical",
                 "source": "aiops-triage-pipeline",
@@ -157,11 +158,11 @@ class PagerDutyClient:
                     "action_fingerprint": action_fingerprint,
                 },
             },
-        }
+        )
 
         req = urllib.request.Request(
             _PD_EVENTS_V2_URL,
-            data=json.dumps(body).encode(),
+            data=json.dumps(trigger.model_dump()).encode(),
             headers={"Content-Type": "application/json"},
             method="POST",
         )
@@ -174,11 +175,13 @@ class PagerDutyClient:
                 raw = resp.read()
                 pd_response: dict[str, Any] = json.loads(raw) if raw else {}
                 pd_incident_id = pd_response.get("dedup_key", action_fingerprint)
-                get_logger("integrations.pagerduty").info(
+                _log.info(
                     "pd_page_trigger_sent",
                     event_type="integrations.pagerduty.trigger_sent",
                     case_id=case_id,
                     action_fingerprint=action_fingerprint,
+                    action="trigger",
+                    mode=self._mode.value,
                     pd_incident_id=pd_incident_id,
                     latency_ms=latency_ms,
                     outcome="success",
@@ -186,11 +189,13 @@ class PagerDutyClient:
         except Exception as exc:
             end = time.monotonic()
             latency_ms = round((end - start) * 1000, 2)
-            get_logger("integrations.pagerduty").warning(
+            _log.warning(
                 "pd_page_trigger_send_failed",
                 event_type="integrations.pagerduty.send_error",
                 case_id=case_id,
                 action_fingerprint=action_fingerprint,
+                action="trigger",
+                mode=self._mode.value,
                 latency_ms=latency_ms,
                 error=str(exc),
                 outcome="error",
