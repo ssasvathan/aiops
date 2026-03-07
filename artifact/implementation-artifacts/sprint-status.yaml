@@ -84,7 +84,7 @@ development_status:
   5-6-postmortem-predicate-evaluation-ag6: done
   5-7-pagerduty-page-trigger-execution: done
   5-8-slack-notification-and-structured-log-fallback: done
-  5-9-end-to-end-hot-path-pipeline-test: backlog
+  5-9-end-to-end-hot-path-pipeline-test: done
   epic-5-retrospective: optional
   epic-6: backlog
   6-1-cold-path-llm-invocation-and-hot-path-independence: backlog

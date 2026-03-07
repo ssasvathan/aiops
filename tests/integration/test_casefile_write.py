@@ -1,9 +1,6 @@
 from __future__ import annotations
 
-import time
 from datetime import UTC, datetime
-from urllib.error import URLError
-from urllib.request import urlopen
 
 import boto3
 import pytest
@@ -46,6 +43,7 @@ from aiops_triage_pipeline.storage.client import (
     PutIfAbsentResult,
     S3ObjectStoreClient,
 )
+from tests.integration.conftest import _wait_for_minio
 
 _MINIO_IMAGE = "minio/minio:RELEASE.2025-01-20T14-49-07Z"
 _MINIO_ACCESS_KEY = "minioadmin"
@@ -134,18 +132,6 @@ def _sample_case_header_event(case_id: str) -> CaseHeaderEventV1:
         routing_key="OWN::Streaming::Payments::Topic",
         evaluation_ts=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
     )
-
-
-def _wait_for_minio(endpoint_url: str, timeout_seconds: float = 30.0) -> None:
-    deadline = time.monotonic() + timeout_seconds
-    while time.monotonic() < deadline:
-        try:
-            with urlopen(f"{endpoint_url}/minio/health/live", timeout=1.0) as response:  # noqa: S310
-                if response.status == 200:
-                    return
-        except (URLError, TimeoutError, ConnectionError):
-            time.sleep(0.25)
-    raise TimeoutError(f"Timed out waiting for MinIO health endpoint at {endpoint_url}")
 
 
 @pytest.fixture

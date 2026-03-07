@@ -42,6 +42,7 @@ from aiops_triage_pipeline.storage.casefile_io import (
     serialize_casefile_triage,
 )
 from aiops_triage_pipeline.storage.client import ObjectStoreClientProtocol, PutIfAbsentResult
+from tests.integration.conftest import _is_environment_prereq_error
 
 
 def _sample_casefile() -> CaseFileTriageV1:
@@ -203,20 +204,6 @@ def _denylist_for_tests(*, denied_field_names: tuple[str, ...] = ("password",)) 
         denylist_version="v1.0.0",
         denied_field_names=denied_field_names,
         denied_value_patterns=("(?i)bearer\\s+[A-Za-z0-9]{10,}",),
-    )
-
-
-def _is_environment_prereq_error(exc: Exception) -> bool:
-    text = f"{type(exc).__name__}: {exc}"
-    return any(
-        marker in text
-        for marker in (
-            "no pq wrapper available",
-            "libpq library not found",
-            "Error while fetching server API version",
-            "DockerException",
-            "Cannot connect to Docker daemon",
-        )
     )
 
 
