@@ -9,6 +9,7 @@ import structlog.testing
 
 from aiops_triage_pipeline.denylist.loader import DenylistV1
 from aiops_triage_pipeline.integrations.slack import SlackClient, SlackIntegrationMode
+from aiops_triage_pipeline.models.events import NotificationEvent
 
 # ---------------------------------------------------------------------------
 # Helpers / fixtures
@@ -122,6 +123,7 @@ def test_log_mode_log_contains_all_six_fields() -> None:
     assert entry.get("support_channel") == _SUPPORT_CHANNEL
     assert entry.get("postmortem_required") is True
     assert entry.get("reason_codes") == list(_REASON_CODES)
+    assert entry.get("slack_mode") == SlackIntegrationMode.LOG.value
 
 
 # ---------------------------------------------------------------------------
@@ -272,3 +274,56 @@ def test_denylist_value_pattern_denied_field_absent_from_log() -> None:
     assert "routing_key" not in entry, (
         f"Expected 'routing_key' to be absent from log due to value pattern; got entry: {entry}"
     )
+
+
+# ---------------------------------------------------------------------------
+# NotificationEvent schema contract
+# ---------------------------------------------------------------------------
+
+
+def test_notification_event_model_fields_match_log_output() -> None:
+    """NotificationEvent schema can be instantiated from actual log output fields.
+
+    Ensures the model definition stays in sync with what send_postmortem_notification
+    actually emits — catching any future field-name drift between model and log.
+    """
+    client = _make_client(mode=SlackIntegrationMode.LOG)
+    with structlog.testing.capture_logs() as cap_logs:
+        _notify(client)
+    entry = next(e for e in cap_logs if e.get("event") == "postmortem_notification_dispatch")
+    event = NotificationEvent(
+        case_id=entry["case_id"],
+        final_action=entry["final_action"],
+        routing_key=entry["routing_key"],
+        support_channel=entry.get("support_channel"),
+        postmortem_required=entry["postmortem_required"],
+        reason_codes=tuple(entry["reason_codes"]),
+    )
+    assert event.event_type == "NotificationEvent"
+    assert event.case_id == _CASE_ID
+    assert event.final_action == _FINAL_ACTION
+    assert event.routing_key == _ROUTING_KEY
+
+
+# ---------------------------------------------------------------------------
+# Denylist enforcement — LIVE mode webhook payload (AC2)
+# ---------------------------------------------------------------------------
+
+
+def test_live_mode_denylist_field_denied_absent_from_webhook_payload() -> None:
+    """LIVE mode: denied field is redacted in webhook body text (AC2 enforcement on Slack payload)."""
+    denylist = DenylistV1(
+        denylist_version="test-deny-field-live",
+        denied_field_names=("case_id",),
+        denied_value_patterns=(),
+    )
+    client = _make_client(mode=SlackIntegrationMode.LIVE, webhook_url=_WEBHOOK_URL)
+    with structlog.testing.capture_logs():
+        with patch(_URLOPEN_PATH, return_value=_make_live_response()) as mock_urlopen:
+            _notify(client, denylist=denylist)
+    req = mock_urlopen.call_args[0][0]
+    body = json.loads(req.data.decode())
+    assert _CASE_ID not in body["text"], (
+        f"Expected denied case_id to be absent from webhook text; got: {body['text']}"
+    )
+    assert "[redacted]" in body["text"]

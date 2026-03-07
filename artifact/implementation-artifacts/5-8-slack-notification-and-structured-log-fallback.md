@@ -1,6 +1,6 @@
 # Story 5.8: Slack Notification & Structured Log Fallback
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -364,7 +364,28 @@ claude-sonnet-4-6
 - `src/aiops_triage_pipeline/pipeline/stages/dispatch.py` — extended `dispatch_action` signature with `slack_client`, `denylist`; added postmortem dispatch block; added imports
 - `tests/unit/integrations/test_slack_notification.py` — new file: 13 unit tests for `send_postmortem_notification`
 - `tests/unit/pipeline/stages/test_dispatch.py` — extended: `_dispatch` helper, 5 new postmortem tests, all existing tests updated to use helper
+- `artifact/implementation-artifacts/sprint-status.yaml` — story status updated to `done`
+
+## Senior Developer Review (AI)
+
+**Reviewer:** Sas (AI code review) on 2026-03-07
+**Outcome:** Changes Requested → Fixed → Approved
+
+### Findings
+
+| ID | Severity | Description | Resolution |
+|----|----------|-------------|------------|
+| M1 | MEDIUM | `NotificationEvent` defined in `models/events.py` but never imported or used in any src file or test — dead model, mirrors Story 5.7 PageTriggerPayload anti-pattern | Added `test_notification_event_model_fields_match_log_output` to `test_slack_notification.py`: instantiates the model from actual log output, binding the schema to the implementation |
+| M2 | MEDIUM | AC2 denylist tests only covered LOG mode; no test verified denied fields are absent from the LIVE mode HTTP webhook payload body | Added `test_live_mode_denylist_field_denied_absent_from_webhook_payload` to `test_slack_notification.py` |
+| M3 | MEDIUM | `artifact/implementation-artifacts/sprint-status.yaml` committed in HEAD but absent from story File List | Added to File List |
+| L1 | LOW | `SlackClient` class docstring only mentions degraded-mode events; no mention of postmortem notification capability | Fixed: updated docstring to describe both notification paths; corrected inaccurate "All modes emit" claim for OFF mode |
+| L2 | LOW | `test_log_mode_log_contains_all_six_fields` checks 6 AC fields but not the `slack_mode` key presence | Fixed: added `slack_mode` assertion to the six-fields test |
+| L3 | LOW | `_send_live` ignores its `logger` parameter and calls `get_logger()` redundantly on lines 182, 207 — pre-existing Story 5.7 M3 violation in a file touched by this story | Fixed: `_send_live` now uses the passed logger via `_log` local alias |
+
+### Summary
+All 7 ACs verified as implemented. All [x] task claims validated. 3 MEDIUM issues fixed; 3 LOW issues noted for future remediation. Test count: 13 → 15 in `test_slack_notification.py`.
 
 ## Change Log
 
+- 2026-03-07: Code review — fixed 3 MEDIUM + 3 LOW issues: added `NotificationEvent` schema contract test (M1), added LIVE mode denylist webhook payload test (M2), added `sprint-status.yaml` to File List (M3); updated `SlackClient` docstring (L1), added `slack_mode` log assertion (L2), fixed `_send_live` redundant `get_logger()` calls (L3). Story status set to `done`.
 - 2026-03-06: Story 5.8 implemented — Slack postmortem notification and structured log fallback. Added `NotificationEvent` model, `SLACK_WEBHOOK_URL` setting, `send_postmortem_notification` on `SlackClient`, postmortem dispatch block in `dispatch_action`. 18 new unit tests; full regression 578 passed, 0 skipped.

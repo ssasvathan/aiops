@@ -27,10 +27,14 @@ class SlackIntegrationMode(str, Enum):
 
 
 class SlackClient:
-    """Slack webhook client for degraded-mode operational notifications.
+    """Slack webhook client for operational notifications.
 
-    All modes emit a structured log entry first (log fallback per FR51 AC6).
-    HTTP calls only occur in LIVE mode.
+    Handles two independent notification paths:
+    - ``send_degraded_mode_event``: degraded-mode operational alerts (Story 5.5)
+    - ``send_postmortem_notification``: SOFT postmortem enforcement (Story 5.8, FR44/FR45)
+
+    In OFF mode events are silently dropped. All other modes emit a structured
+    log entry; HTTP calls only occur in LIVE mode.
 
     Args:
         mode:        Integration mode controlling notification behavior.
@@ -178,8 +182,9 @@ class SlackClient:
             )
 
     def _send_live(self, event: DegradedModeEvent, logger: object) -> None:
+        _log = logger if hasattr(logger, "warning") else get_logger("integrations.slack")
         if not self._webhook_url:
-            get_logger("integrations.slack").warning(
+            _log.warning(
                 "degraded_mode_slack_no_webhook",
                 event_type="integrations.slack.no_webhook",
                 affected_scope=event.affected_scope,
@@ -204,7 +209,7 @@ class SlackClient:
             with urllib.request.urlopen(req, timeout=5):
                 pass
         except Exception as exc:
-            get_logger("integrations.slack").warning(
+            _log.warning(
                 "degraded_mode_slack_send_failed",
                 event_type="integrations.slack.send_error",
                 error=str(exc),
