@@ -995,7 +995,28 @@ So that the complete flow from harness traffic to action execution is validated 
 
 Cases are enriched with AI-generated diagnosis on the cold path, providing structured root cause hypotheses, evidence citations, and next-step recommendations — without ever blocking the hot-path triage pipeline.
 
-### Story 6.1: Cold-Path LLM Invocation & Hot-Path Independence
+### Story 6.1: LLM Stub & Failure-Injection Mode
+
+As a platform developer,
+I want the pipeline to run with LLM in stub and failure-injection modes for local and test environments,
+So that end-to-end pipeline testing works without external LLM API calls while prod always uses live LLM (FR41).
+
+**Acceptance Criteria:**
+
+**Given** the pipeline is running in local or test environment
+**When** LLM stub mode is active (INTEGRATION_MODE_LLM=MOCK)
+**Then** the LLM stub produces a deterministic schema-valid DiagnosisReport with: verdict=UNKNOWN, confidence=LOW, reason_codes=[LLM_STUB]
+**And** no external LLM API calls are made
+**And** the full pipeline (hot path + cold path) executes end-to-end with stub output
+**When** failure-injection mode is active
+**Then** LLM timeout, unavailability, and malformed output scenarios can be simulated
+**And** each scenario produces the corresponding deterministic fallback DiagnosisReport
+**When** the environment is PROD
+**Then** LLM stub mode is NOT permitted — INTEGRATION_MODE_LLM must be LIVE
+**And** startup validation rejects MOCK/OFF mode for LLM in prod configuration
+**And** unit tests verify: stub output schema validity, no external calls in stub mode, failure-injection scenarios, prod mode enforcement
+
+### Story 6.2: Cold-Path LLM Invocation & Hot-Path Independence
 
 As a platform operator,
 I want LLM diagnosis invoked on the cold path as a non-blocking, fire-and-forget async task,
@@ -1014,7 +1035,7 @@ So that the hot-path triage pipeline (CaseFile write, outbox publish, Rulebook g
 **And** cases not meeting invocation criteria skip LLM diagnosis entirely (no wasted calls)
 **And** unit tests verify: hot-path completes independently, conditional invocation criteria, fire-and-forget registration, exposure-capped inputs
 
-### Story 6.2: Structured DiagnosisReport Output & Evidence Citation
+### Story 6.3: Structured DiagnosisReport Output & Evidence Citation
 
 As a platform operator,
 I want the LLM to produce a structured DiagnosisReport with evidence citations and UNKNOWN propagation,
@@ -1032,7 +1053,7 @@ So that diagnosis output is machine-parseable, traceable to evidence, and never 
 **And** LLM uses only bank-sanctioned endpoints (NFR-S8)
 **And** unit tests verify: DiagnosisReport field completeness, evidence citation presence, UNKNOWN propagation for missing evidence, hash chain to triage.json
 
-### Story 6.3: LLM Output Schema Validation & Deterministic Fallback
+### Story 6.4: LLM Output Schema Validation & Deterministic Fallback
 
 As a platform operator,
 I want invalid or unavailable LLM output to produce a deterministic schema-valid fallback DiagnosisReport,
@@ -1054,27 +1075,6 @@ So that the system is resilient to LLM failures and every case has a valid diagn
 **And** all fallback DiagnosisReports are schema-valid and written to `diagnosis.json`
 **And** the HealthRegistry is updated with LLM component status on failure/recovery
 **And** unit tests verify: each failure scenario (unavailable, timeout, error, malformed), fallback schema validity, gap recording, no retry within cycle (NFR-T3)
-
-### Story 6.4: LLM Stub & Failure-Injection Mode
-
-As a platform developer,
-I want the pipeline to run with LLM in stub and failure-injection modes for local and test environments,
-So that end-to-end pipeline testing works without external LLM API calls while prod always uses live LLM (FR41).
-
-**Acceptance Criteria:**
-
-**Given** the pipeline is running in local or test environment
-**When** LLM stub mode is active (INTEGRATION_MODE_LLM=MOCK)
-**Then** the LLM stub produces a deterministic schema-valid DiagnosisReport with: verdict=UNKNOWN, confidence=LOW, reason_codes=[LLM_STUB]
-**And** no external LLM API calls are made
-**And** the full pipeline (hot path + cold path) executes end-to-end with stub output
-**When** failure-injection mode is active
-**Then** LLM timeout, unavailability, and malformed output scenarios can be simulated
-**And** each scenario produces the corresponding deterministic fallback DiagnosisReport
-**When** the environment is PROD
-**Then** LLM stub mode is NOT permitted — INTEGRATION_MODE_LLM must be LIVE
-**And** startup validation rejects MOCK/OFF mode for LLM in prod configuration
-**And** unit tests verify: stub output schema validity, no external calls in stub mode, failure-injection scenarios, prod mode enforcement
 
 ---
 
