@@ -82,7 +82,7 @@ development_status:
   5-4-sustained-and-confidence-threshold-gate-ag4: done
   5-5-action-deduplication-and-redis-degraded-mode-ag5: done
   5-6-postmortem-predicate-evaluation-ag6: done
-  5-7-pagerduty-page-trigger-execution: backlog
+  5-7-pagerduty-page-trigger-execution: review
   5-8-slack-notification-and-structured-log-fallback: backlog
   5-9-end-to-end-hot-path-pipeline-test: backlog
   epic-5-retrospective: optional
