@@ -1,5 +1,21 @@
 schema_version: "v1"
 enabled: false
+incident_table: "incident"
+tier1_correlation_fields:
+  - "u_pagerduty_incident_id"
+  - "correlation_id"
+  - "u_correlation_id"
+tier2_text_fields:
+  - "short_description"
+  - "description"
+tier2_include_work_notes: false
+tier3_window_minutes: 120
+tier3_assignment_groups: []
+live_timeout_seconds: 5.0
+max_results_per_tier: 25
 max_correlation_window_days: 7
-correlation_strategy: []
+correlation_strategy:
+  - "tier1"
+  - "tier2"
+  - "tier3"
 mi_creation_allowed: false    # FR67b: MI-1 posture — never allow automated MI creation

@@ -7,6 +7,7 @@ import pytest
 from pydantic import ValidationError
 
 import aiops_triage_pipeline.integrations.servicenow as servicenow_module
+from aiops_triage_pipeline.config.settings import IntegrationMode
 from aiops_triage_pipeline.contracts.sn_linkage import ServiceNowLinkageContractV1
 from aiops_triage_pipeline.models.case_file import (
     LABEL_COMPLETION_RATE_THRESHOLD,
@@ -211,13 +212,14 @@ def test_servicenow_integration_has_no_automated_mi_creation_paths() -> None:
     disallowed_tokens = (
         "create_major_incident",
         "major incident",
-        "/api/now/table/incident",
+        "/api/now/table/problem",
+        "method=\"post\"",
+        "method=\"patch\"",
+        "method=\"put\"",
+        "method=\"delete\"",
     )
     assert all(token not in source for token in disallowed_tokens)
 
-    public_callables = [
-        name
-        for name, value in vars(servicenow_module).items()
-        if callable(value) and not name.startswith("_")
-    ]
-    assert public_callables == []
+    assert hasattr(servicenow_module, "ServiceNowClient")
+    client = servicenow_module.ServiceNowClient(mode=IntegrationMode.OFF)
+    assert hasattr(client, "correlate_incident")

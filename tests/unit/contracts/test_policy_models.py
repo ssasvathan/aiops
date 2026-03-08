@@ -317,6 +317,26 @@ def test_sn_mi_creation_not_allowed(minimal_sn_linkage: ServiceNowLinkageContrac
     assert minimal_sn_linkage.mi_creation_allowed is False
 
 
+def test_sn_linkage_policy_artifact_contains_tiered_correlation_defaults() -> None:
+    policy_path = (
+        Path(__file__).resolve().parents[3] / "config/policies/servicenow-linkage-contract-v1.yaml"
+    )
+    policy = load_policy_yaml(policy_path, ServiceNowLinkageContractV1)
+
+    assert policy.incident_table == "incident"
+    assert policy.tier1_correlation_fields == (
+        "u_pagerduty_incident_id",
+        "correlation_id",
+        "u_correlation_id",
+    )
+    assert "short_description" in policy.tier2_text_fields
+    assert "description" in policy.tier2_text_fields
+    assert policy.tier2_include_work_notes is False
+    assert policy.tier3_window_minutes == 120
+    assert policy.live_timeout_seconds == 5.0
+    assert policy.max_results_per_tier == 25
+
+
 def test_prometheus_metrics_keys_accessible(
     minimal_prometheus_metrics: PrometheusMetricsContractV1,
 ) -> None:

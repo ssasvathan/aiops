@@ -101,7 +101,7 @@ development_status:
   7-6-case-labeling-schema-and-mi-1-posture-enforcement: done
   epic-7-retrospective: done
   epic-8: in-progress
-  8-1-tiered-servicenow-incident-correlation: ready-for-dev
+  8-1-tiered-servicenow-incident-correlation: review
   8-2-idempotent-problem-and-pir-task-upsert: backlog
   8-3-sn-linkage-retry-and-state-machine: backlog
   8-4-sn-correlation-fallback-rate-metrics: backlog

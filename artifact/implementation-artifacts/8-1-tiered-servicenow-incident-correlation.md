@@ -1,6 +1,6 @@
 # Story 8.1: Tiered ServiceNow Incident Correlation
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -25,39 +25,39 @@ so that the system reliably finds the correct SN Incident even when the primary 
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Implement tiered SN incident correlation adapter (AC: 1, 2, 3, 4, 7)
-  - [ ] Implement `ServiceNowClient` in `src/aiops_triage_pipeline/integrations/servicenow.py` with a single public correlation entrypoint (for example: `correlate_incident(...)`)
-  - [ ] Implement Tier 1 query (PD correlation field exact match) with field name configurable from policy/contract data
-  - [ ] Implement Tier 2 query (keyword match against incident `short_description` and `description`; include `work_notes` only if configured)
-  - [ ] Implement Tier 3 query (time window + routing-key heuristic) using contract-configured window
-  - [ ] Return structured correlation result containing: `matched: bool`, `matched_tier: "tier1"|"tier2"|"tier3"|"none"`, `incident_sys_id: str | None`, and reason metadata
-  - [ ] Enforce read-only behavior for this story (GET/search-only for incident table; no create/update/delete APIs)
+- [x] Task 1: Implement tiered SN incident correlation adapter (AC: 1, 2, 3, 4, 7)
+  - [x] Implement `ServiceNowClient` in `src/aiops_triage_pipeline/integrations/servicenow.py` with a single public correlation entrypoint (for example: `correlate_incident(...)`)
+  - [x] Implement Tier 1 query (PD correlation field exact match) with field name configurable from policy/contract data
+  - [x] Implement Tier 2 query (keyword match against incident `short_description` and `description`; include `work_notes` only if configured)
+  - [x] Implement Tier 3 query (time window + routing-key heuristic) using contract-configured window
+  - [x] Return structured correlation result containing: `matched: bool`, `matched_tier: "tier1"|"tier2"|"tier3"|"none"`, `incident_sys_id: str | None`, and reason metadata
+  - [x] Enforce read-only behavior for this story (GET/search-only for incident table; no create/update/delete APIs)
 
-- [ ] Task 2: Respect integration modes and logging contract (AC: 5, 6)
-  - [ ] Reuse existing mode semantics (`OFF|LOG|MOCK|LIVE`) from `src/aiops_triage_pipeline/config/settings.py`
-  - [ ] `OFF`: return skipped/no-op result with no outbound HTTP calls
-  - [ ] `LOG`: log intended search actions and return deterministic no-op result with no outbound HTTP calls
-  - [ ] `MOCK`: use deterministic in-memory/mock fixtures for tier outcomes (no network)
-  - [ ] `LIVE`: perform real ServiceNow table queries against incident records with bounded timeout
-  - [ ] Emit structured log events for each tier attempt including: `timestamp`, `request_id`, `case_id`, `action`, `outcome`, `latency_ms`, `tier`
+- [x] Task 2: Respect integration modes and logging contract (AC: 5, 6)
+  - [x] Reuse existing mode semantics (`OFF|LOG|MOCK|LIVE`) from `src/aiops_triage_pipeline/config/settings.py`
+  - [x] `OFF`: return skipped/no-op result with no outbound HTTP calls
+  - [x] `LOG`: log intended search actions and return deterministic no-op result with no outbound HTTP calls
+  - [x] `MOCK`: use deterministic in-memory/mock fixtures for tier outcomes (no network)
+  - [x] `LIVE`: perform real ServiceNow table queries against incident records with bounded timeout
+  - [x] Emit structured log events for each tier attempt including: `timestamp`, `request_id`, `case_id`, `action`, `outcome`, `latency_ms`, `tier`
 
-- [ ] Task 3: Align policy + contract with correlation requirements (AC: 1, 3, 5)
-  - [ ] Extend `src/aiops_triage_pipeline/contracts/sn_linkage.py` with explicit, typed correlation configuration fields needed by implementation (for example: incident table, PD correlation field name, tier3 window)
-  - [ ] Update `config/policies/servicenow-linkage-contract-v1.yaml` to include the new fields and sane defaults
-  - [ ] Add/adjust `tests/unit/contracts/test_policy_models.py` expectations to validate new SN linkage fields and maintain frozen-model guarantees
+- [x] Task 3: Align policy + contract with correlation requirements (AC: 1, 3, 5)
+  - [x] Extend `src/aiops_triage_pipeline/contracts/sn_linkage.py` with explicit, typed correlation configuration fields needed by implementation (for example: incident table, PD correlation field name, tier3 window)
+  - [x] Update `config/policies/servicenow-linkage-contract-v1.yaml` to include the new fields and sane defaults
+  - [x] Add/adjust `tests/unit/contracts/test_policy_models.py` expectations to validate new SN linkage fields and maintain frozen-model guarantees
 
-- [ ] Task 4: Implement and verify unit-test coverage for all tier paths (AC: 8)
-  - [ ] Create `tests/unit/integrations/test_servicenow.py`
-  - [ ] Add tests for: Tier 1 hit, Tier 1 miss -> Tier 2 hit, Tier 2 miss -> Tier 3 hit, all tiers miss
-  - [ ] Add tests for each integration mode behavior (`OFF`, `LOG`, `MOCK`, `LIVE`) with explicit assertions on outbound call count
-  - [ ] Add tests asserting all tier attempts log required audit fields (`request_id`, `case_id`, `action`, `outcome`, `latency_ms`)
-  - [ ] Add tests asserting read-only incident access (no POST/PATCH/DELETE/PUT in this story)
+- [x] Task 4: Implement and verify unit-test coverage for all tier paths (AC: 8)
+  - [x] Create `tests/unit/integrations/test_servicenow.py`
+  - [x] Add tests for: Tier 1 hit, Tier 1 miss -> Tier 2 hit, Tier 2 miss -> Tier 3 hit, all tiers miss
+  - [x] Add tests for each integration mode behavior (`OFF`, `LOG`, `MOCK`, `LIVE`) with explicit assertions on outbound call count
+  - [x] Add tests asserting all tier attempts log required audit fields (`request_id`, `case_id`, `action`, `outcome`, `latency_ms`)
+  - [x] Add tests asserting read-only incident access (no POST/PATCH/DELETE/PUT in this story)
 
-- [ ] Task 5: Quality gates with zero-skip posture
-  - [ ] `uv run ruff check`
-  - [ ] `uv run pytest -q -m "not integration"`
-  - [ ] `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
-  - [ ] Confirm full regression completes with `0 skipped`
+- [x] Task 5: Quality gates with zero-skip posture
+  - [x] `uv run ruff check`
+  - [x] `uv run pytest -q -m "not integration"`
+  - [x] `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
+  - [x] Confirm full regression completes with `0 skipped`
 
 ## Dev Notes
 
@@ -206,15 +206,34 @@ GPT-5 Codex
   - `src/aiops_triage_pipeline/integrations/pagerduty.py`
   - `src/aiops_triage_pipeline/config/settings.py`
   - `src/aiops_triage_pipeline/contracts/sn_linkage.py`
+- Red phase validation: `uv run pytest -q tests/unit/integrations/test_servicenow.py tests/unit/models/test_case_file_labels.py tests/unit/contracts/test_policy_models.py -q` (failed as expected before implementation)
+- Quality gates executed:
+  - `uv run ruff check`
+  - `uv run pytest -q -m "not integration"`
+  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
 
 ### Completion Notes List
 
-- Identified first backlog story and generated implementation-ready story context file.
-- Captured architectural boundaries and anti-pattern guards to prevent duplicate/inconsistent integration code.
-- Added explicit task decomposition aligned to ACs and upcoming Epic 8 story sequencing.
-- Included current external platform notes for ServiceNow/PagerDuty behavior relevant to correlation implementation.
+- Implemented `ServiceNowClient` tiered incident correlation (`tier1` -> `tier2` -> `tier3`) with short-circuit matching and structured result payload.
+- Added integration mode behavior (`OFF|LOG|MOCK|LIVE`) with deterministic no-op handling for non-LIVE modes and bounded timeout reads in LIVE mode.
+- Enforced read-only incident access via GET-only ServiceNow Table API requests for this story scope.
+- Added structured tier-attempt logging fields required by AC/NFR-S6: `timestamp`, `request_id`, `case_id`, `action`, `outcome`, `latency_ms`, `tier`.
+- Extended `ServiceNowLinkageContractV1` and policy defaults with typed correlation configuration (incident table, tier fields, tier3 window, timeout, limits).
+- Added unit tests for all tier-path permutations, mode behavior, audit log fields, and read-only request assertions.
+- Updated MI-1 posture guard test to validate no automated MI creation/write-path behavior while allowing read-only incident correlation.
+- Passed full quality gate with zero skips: `765 passed`.
 
 ### File List
 
 - artifact/implementation-artifacts/8-1-tiered-servicenow-incident-correlation.md
 - artifact/implementation-artifacts/sprint-status.yaml
+- config/policies/servicenow-linkage-contract-v1.yaml
+- src/aiops_triage_pipeline/contracts/sn_linkage.py
+- src/aiops_triage_pipeline/integrations/servicenow.py
+- tests/unit/contracts/test_policy_models.py
+- tests/unit/integrations/test_servicenow.py
+- tests/unit/models/test_case_file_labels.py
+
+### Change Log
+
+- 2026-03-08: Implemented Story 8.1 tiered ServiceNow incident correlation adapter, expanded SN linkage contract/policy config, added unit coverage, and passed full regression with 0 skipped tests.

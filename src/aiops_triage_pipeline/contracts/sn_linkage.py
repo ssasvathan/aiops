@@ -1,13 +1,43 @@
-"""ServiceNowLinkageContractV1 — Phase 1B SN incident correlation contract (stub for Phase 1A)."""
+"""ServiceNowLinkageContractV1 — Phase 1B ServiceNow linkage and correlation contract."""
 
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, model_validator
+
+_SNTextField = Literal["short_description", "description", "work_notes"]
 
 
 class ServiceNowLinkageContractV1(BaseModel, frozen=True):
     schema_version: Literal["v1"] = "v1"
     enabled: bool = False
+    incident_table: str = "incident"
+    tier1_correlation_fields: tuple[str, ...] = (
+        "u_pagerduty_incident_id",
+        "correlation_id",
+        "u_correlation_id",
+    )
+    tier2_text_fields: tuple[_SNTextField, ...] = ("short_description", "description")
+    tier2_include_work_notes: bool = False
+    tier3_window_minutes: int = Field(default=120, ge=1, le=720)
+    tier3_assignment_groups: tuple[str, ...] = ()
+    live_timeout_seconds: float = Field(default=5.0, gt=0)
+    max_results_per_tier: int = Field(default=25, ge=1, le=100)
     max_correlation_window_days: int = 7
-    correlation_strategy: tuple[str, ...] = ()
+    correlation_strategy: tuple[str, ...] = ("tier1", "tier2", "tier3")
     mi_creation_allowed: bool = False
+
+    @model_validator(mode="after")
+    def _validate_linkage_config(self) -> "ServiceNowLinkageContractV1":
+        if not self.incident_table.strip():
+            raise ValueError("incident_table must be non-empty")
+        if not self.tier1_correlation_fields:
+            raise ValueError("tier1_correlation_fields must contain at least one field")
+        if any(not field.strip() for field in self.tier1_correlation_fields):
+            raise ValueError("tier1_correlation_fields cannot contain empty values")
+        if self.tier2_include_work_notes and "work_notes" not in self.tier2_text_fields:
+            raise ValueError(
+                "tier2_include_work_notes=true requires 'work_notes' in tier2_text_fields"
+            )
+        if "tier1" not in self.correlation_strategy:
+            raise ValueError("correlation_strategy must include tier1")
+        return self
