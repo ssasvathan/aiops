@@ -262,7 +262,12 @@ def test_outbox_policy_default_monitoring_thresholds(minimal_outbox_policy: Outb
     assert retry.warning_seconds is None
     assert retry.critical_seconds == 1800
 
-    assert minimal_outbox_policy.dead_count_critical_threshold["prod"] == 0
+    assert minimal_outbox_policy.dead_count_critical_threshold == {
+        "local": 0,
+        "dev": 0,
+        "uat": 0,
+        "prod": 0,
+    }
     assert minimal_outbox_policy.delivery_slo.p95_target_seconds == 60
     assert minimal_outbox_policy.delivery_slo.p99_target_seconds == 300
     assert minimal_outbox_policy.delivery_slo.p99_critical_seconds == 600
@@ -280,7 +285,12 @@ def test_outbox_policy_artifact_enforces_fr52_fr53_thresholds() -> None:
     assert policy.state_age_thresholds.retry.critical_seconds == 1800
 
     assert set(policy.dead_count_critical_threshold.keys()) == {"local", "dev", "uat", "prod"}
-    assert policy.dead_count_critical_threshold["prod"] == 0
+    assert policy.dead_count_critical_threshold == {
+        "local": 0,
+        "dev": 0,
+        "uat": 0,
+        "prod": 0,
+    }
 
     assert policy.delivery_slo.p95_target_seconds == 60
     assert policy.delivery_slo.p99_target_seconds == 300

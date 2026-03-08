@@ -7,45 +7,53 @@ outbox:
     warning:
       rule_id: "ALERT_OUTBOX_PENDING_OBJECT_AGE_WARNING"
       component: "outbox"
+      severity: "warning"
       condition: "oldest_pending_object_age_seconds > outbox_policy.state_age_thresholds.pending_object.warning_seconds"
       recommended_action: "Investigate outbox backlog growth and ensure object storage confirms writes."
     critical:
       rule_id: "ALERT_OUTBOX_PENDING_OBJECT_AGE_CRITICAL"
       component: "outbox"
+      severity: "critical"
       condition: "oldest_pending_object_age_seconds > outbox_policy.state_age_thresholds.pending_object.critical_seconds"
       recommended_action: "Page on-call and restore outbox processing throughput."
   ready_age:
     warning:
       rule_id: "ALERT_OUTBOX_READY_AGE_WARNING"
       component: "outbox"
+      severity: "warning"
       condition: "oldest_ready_age_seconds > outbox_policy.state_age_thresholds.ready.warning_seconds"
       recommended_action: "Investigate publish lag and Kafka connectivity."
     critical:
       rule_id: "ALERT_OUTBOX_READY_AGE_CRITICAL"
       component: "outbox"
+      severity: "critical"
       condition: "oldest_ready_age_seconds > outbox_policy.state_age_thresholds.ready.critical_seconds"
       recommended_action: "Page on-call and remediate stalled outbox publishing immediately."
   retry_age:
     critical:
       rule_id: "ALERT_OUTBOX_RETRY_AGE_CRITICAL"
       component: "outbox"
+      severity: "critical"
       condition: "oldest_retry_age_seconds > outbox_policy.state_age_thresholds.retry.critical_seconds"
       recommended_action: "Investigate repeated publish failures and resolve dependency faults."
   dead_count:
     warning:
       rule_id: "ALERT_OUTBOX_DEAD_COUNT_WARNING"
       component: "outbox"
+      severity: "warning"
       condition: "dead_count > outbox_policy.dead_count_critical_threshold[app_env] (non-prod posture)"
       recommended_action: "Open an operational ticket and start manual replay investigation."
     critical:
       rule_id: "ALERT_OUTBOX_DEAD_COUNT_CRITICAL"
       component: "outbox"
+      severity: "critical"
       condition: "dead_count > outbox_policy.dead_count_critical_threshold[app_env] (prod posture)"
       recommended_action: "Page on-call and start immediate dead-letter investigation/recovery."
 
 redis_connection_loss:
   rule_id: "ALERT_REDIS_CONNECTION_LOSS"
   component: "redis"
+  severity: "critical"
   condition: "redis_connection_status == 0"
   recommended_action: "Restore Redis connectivity and validate dedupe-store health."
 
@@ -53,6 +61,7 @@ prometheus_unavailability:
   rule:
     rule_id: "ALERT_PROMETHEUS_UNAVAILABLE"
     component: "prometheus"
+    severity: "warning"
     condition: "telemetry_degraded_active == true"
     recommended_action: "Investigate Prometheus availability and restore telemetry ingestion."
   activation_cycles_by_env:
@@ -80,11 +89,13 @@ llm_error_rate:
     warning:
       rule_id: "ALERT_LLM_ERROR_RATE_SPIKE_WARNING"
       component: "llm"
+      severity: "warning"
       condition: "llm_error_rate > warning_threshold"
       recommended_action: "Investigate cold-path LLM dependency failures and fallback growth."
     critical:
       rule_id: "ALERT_LLM_ERROR_RATE_SPIKE_CRITICAL"
       component: "llm"
+      severity: "critical"
       condition: "llm_error_rate > critical_threshold"
       recommended_action: "Engage incident response and failover diagnostics path if needed."
 
@@ -106,11 +117,13 @@ scheduler_interval_drift_seconds:
     warning:
       rule_id: "ALERT_SCHEDULER_INTERVAL_DRIFT_WARNING"
       component: "scheduler"
+      severity: "warning"
       condition: "scheduler_drift_seconds > warning_threshold"
       recommended_action: "Inspect scheduler load, clock sync, and event-loop contention."
     critical:
       rule_id: "ALERT_SCHEDULER_INTERVAL_DRIFT_CRITICAL"
       component: "scheduler"
+      severity: "critical"
       condition: "scheduler_drift_seconds > critical_threshold"
       recommended_action: "Page platform on-call and restore scheduler cadence."
 
@@ -132,10 +145,12 @@ pipeline_stage_latency_seconds:
     warning:
       rule_id: "ALERT_PIPELINE_STAGE_LATENCY_WARNING"
       component: "pipeline"
+      severity: "warning"
       condition: "pipeline_stage_latency_seconds > warning_threshold"
       recommended_action: "Inspect slow stage dependencies and queue pressure."
     critical:
       rule_id: "ALERT_PIPELINE_STAGE_LATENCY_CRITICAL"
       component: "pipeline"
+      severity: "critical"
       condition: "pipeline_stage_latency_seconds > critical_threshold"
       recommended_action: "Engage incident response and restore pipeline SLO compliance."

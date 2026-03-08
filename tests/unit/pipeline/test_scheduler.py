@@ -1590,6 +1590,30 @@ async def test_emit_redis_degraded_mode_events_emits_structured_log(
     assert degraded_entries[0]["capped_action_level"] == "NOTIFY-only"
 
 
+async def test_emit_redis_degraded_mode_events_emits_operational_alert_rule(
+    log_stream: io.StringIO,
+) -> None:
+    store = RedisActionDedupeStore(_FailingRedis())
+    with pytest.raises(ConnectionError):
+        store.is_duplicate("fp-test")
+
+    await emit_redis_degraded_mode_events(
+        dedupe_store=store,
+        evaluation_time=datetime(2026, 3, 6, 12, 0, tzinfo=UTC),
+        health_registry=HealthRegistry(),
+        alert_evaluator=OperationalAlertEvaluator(
+            policy=load_operational_alert_policy(),
+            app_env="prod",
+        ),
+    )
+
+    log_entries = _parse_logs(log_stream)
+    alert_entries = [e for e in log_entries if e.get("event") == "operational_alert_rule_triggered"]
+    assert alert_entries
+    assert alert_entries[0]["rule_id"] == "ALERT_REDIS_CONNECTION_LOSS"
+    assert alert_entries[0]["component"] == "redis"
+
+
 # ── SlackClient LIVE mode tests ────────────────────────────────────────────────
 
 

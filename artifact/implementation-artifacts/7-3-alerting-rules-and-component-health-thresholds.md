@@ -1,6 +1,6 @@
 # Story 7.3: Alerting Rules and Component Health Thresholds
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -30,7 +30,7 @@ so that I am proactively notified when any component degrades beyond acceptable 
 
 - [x] Task 2: Implement centralized alert rule evaluation logic (AC: 1, 3, 4)
   - [x] Add `src/aiops_triage_pipeline/health/alerts.py` with a deterministic evaluator that produces normalized alert evaluations (`rule_id`, `component`, `severity`, `condition`, `recommended_action`)
-  - [ ] Reuse existing signals rather than duplicating telemetry logic:
+  - [x] Reuse existing signals rather than duplicating telemetry logic:
     - outbox backlog + SLO breach signals from `outbox/worker.py`
     - Redis status from `health/registry.py` / `health/metrics.py`
     - Prometheus degraded state from `run_evidence_stage_cycle()`
@@ -283,8 +283,8 @@ GPT-5 (Codex)
   - Added startup policy transparency in `src/aiops_triage_pipeline/__main__.py`.
 - Quality gates executed:
   - `uv run ruff check` → pass
-  - `uv run pytest -q -m "not integration"` → 692 passed, 19 deselected
-  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs` → 711 passed, 0 skipped
+  - `uv run pytest -q -m "not integration"` → 693 passed, 19 deselected
+  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs` → 712 passed, 0 skipped
 
 ### Completion Notes List
 
@@ -297,13 +297,16 @@ GPT-5 (Codex)
 - Integrated operational alert emission into outbox threshold checks, scheduler drift/prometheus/latency paths, and cold-path LLM completion paths.
 - Added/extended contract, evaluator, and runtime-integration unit tests covering severity mapping, threshold breaches, and env overrides.
 - Completed full regression with Docker-enabled execution and zero skipped tests.
+- Review fix pass addressed code-review findings: Redis runtime alert wiring, explicit severity in policy artifacts/contracts, and DEAD>0 threshold semantics across environments.
 
 ### File List
 
 - artifact/implementation-artifacts/7-3-alerting-rules-and-component-health-thresholds.md
+- config/policies/outbox-policy-v1.yaml
 - config/policies/operational-alert-policy-v1.yaml
 - src/aiops_triage_pipeline/__main__.py
 - src/aiops_triage_pipeline/contracts/__init__.py
+- src/aiops_triage_pipeline/contracts/outbox_policy.py
 - src/aiops_triage_pipeline/contracts/operational_alert_policy.py
 - src/aiops_triage_pipeline/diagnosis/graph.py
 - src/aiops_triage_pipeline/health/__init__.py
@@ -311,13 +314,27 @@ GPT-5 (Codex)
 - src/aiops_triage_pipeline/outbox/worker.py
 - src/aiops_triage_pipeline/pipeline/scheduler.py
 - tests/unit/contracts/test_operational_alert_policy.py
+- tests/unit/contracts/test_policy_models.py
 - tests/unit/diagnosis/test_graph.py
 - tests/unit/health/test_alerts.py
 - tests/unit/outbox/test_worker.py
 - tests/unit/pipeline/test_scheduler.py
 - artifact/implementation-artifacts/sprint-status.yaml
 
+### Senior Developer Review (AI)
+
+- 2026-03-08: Changes Requested findings were resolved and revalidated.
+- Fixed: Redis connection-loss operational rule now emits from runtime degradation path.
+- Fixed: Rule descriptors now include explicit `severity` in policy contract and artifact.
+- Fixed: `DEAD>0` now alerts in all environments (warning non-prod, critical prod).
+- Traceability: Story task/subtask completion state aligned with implemented behavior.
+- Verification:
+  - `uv run ruff check` → pass
+  - `uv run pytest -q -rs tests/unit/contracts/test_operational_alert_policy.py tests/unit/contracts/test_policy_models.py tests/unit/health/test_alerts.py tests/unit/outbox/test_worker.py tests/unit/pipeline/test_scheduler.py tests/unit/diagnosis/test_graph.py` → 146 passed
+  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs` → 712 passed, 0 skipped
+
 ## Change Log
 
 - 2026-03-08: Created Story 7.3 implementation-ready context file with architecture constraints, rule-definition guidance, and testing gates.
 - 2026-03-08: Implemented operational alert policy contract/artifact, runtime alert evaluation integration, startup transparency logging, and full zero-skip quality-gate validation.
+- 2026-03-08: Applied code-review remediation for Story 7.3 and revalidated with full zero-skip regression.

@@ -10,6 +10,7 @@ class AlertRuleDescriptor(BaseModel, frozen=True):
 
     rule_id: str = Field(pattern=r"^ALERT_[A-Z0-9_]+$")
     component: str = Field(min_length=1)
+    severity: Literal["warning", "critical"]
     condition: str = Field(min_length=1)
     recommended_action: str = Field(min_length=1)
 
@@ -19,6 +20,14 @@ class RuleBySeverity(BaseModel, frozen=True):
 
     warning: AlertRuleDescriptor | None = None
     critical: AlertRuleDescriptor
+
+    @model_validator(mode="after")
+    def _validate_severity_labels(self) -> "RuleBySeverity":
+        if self.warning is not None and self.warning.severity != "warning":
+            raise ValueError("warning rule severity must be 'warning'")
+        if self.critical.severity != "critical":
+            raise ValueError("critical rule severity must be 'critical'")
+        return self
 
 
 class ThresholdBySeverity(BaseModel, frozen=True):

@@ -436,6 +436,7 @@ async def emit_redis_degraded_mode_events(
     evaluation_time: datetime,
     health_registry: HealthRegistry | None = None,
     slack_client: SlackClient | None = None,
+    alert_evaluator: OperationalAlertEvaluator | None = None,
 ) -> tuple[DegradedModeEvent, ...]:
     """Emit DegradedModeEvent and update HealthRegistry when Redis is degraded.
 
@@ -485,6 +486,14 @@ async def emit_redis_degraded_mode_events(
                 estimated_impact_window=event.estimated_impact_window,
                 timestamp=event.timestamp.isoformat(),
             )
+            if alert_evaluator is not None:
+                alert = alert_evaluator.evaluate_redis_connection(healthy=False)
+                if alert is not None:
+                    _emit_operational_alert(
+                        logger=logger,
+                        alert=alert,
+                        redis_health="degraded",
+                    )
             if slack_client is not None:
                 await asyncio.to_thread(slack_client.send_degraded_mode_event, event)
             return (event,)

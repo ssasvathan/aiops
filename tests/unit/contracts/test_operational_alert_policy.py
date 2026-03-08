@@ -54,12 +54,14 @@ def test_operational_alert_policy_requires_non_empty_rule_metadata() -> None:
                         "warning": {
                             "rule_id": "ALERT_OUTBOX_PENDING_OBJECT_AGE_WARNING",
                             "component": "outbox",
+                            "severity": "warning",
                             "condition": "pending_object_age_seconds > threshold",
                             "recommended_action": "triage backlog",
                         },
                         "critical": {
                             "rule_id": "ALERT_OUTBOX_PENDING_OBJECT_AGE_CRITICAL",
                             "component": "outbox",
+                            "severity": "critical",
                             "condition": "pending_object_age_seconds > threshold",
                             "recommended_action": "page on-call",
                         },
@@ -68,12 +70,14 @@ def test_operational_alert_policy_requires_non_empty_rule_metadata() -> None:
                         "warning": {
                             "rule_id": "ALERT_OUTBOX_READY_AGE_WARNING",
                             "component": "outbox",
+                            "severity": "warning",
                             "condition": "ready_age_seconds > threshold",
                             "recommended_action": "triage backlog",
                         },
                         "critical": {
                             "rule_id": "ALERT_OUTBOX_READY_AGE_CRITICAL",
                             "component": "outbox",
+                            "severity": "critical",
                             "condition": "ready_age_seconds > threshold",
                             "recommended_action": "page on-call",
                         },
@@ -82,6 +86,7 @@ def test_operational_alert_policy_requires_non_empty_rule_metadata() -> None:
                         "critical": {
                             "rule_id": "ALERT_OUTBOX_RETRY_AGE_CRITICAL",
                             "component": "outbox",
+                            "severity": "critical",
                             "condition": "retry_age_seconds > threshold",
                             "recommended_action": "investigate retry loop",
                         }
@@ -90,12 +95,14 @@ def test_operational_alert_policy_requires_non_empty_rule_metadata() -> None:
                         "warning": {
                             "rule_id": "ALERT_OUTBOX_DEAD_COUNT_WARNING",
                             "component": "outbox",
+                            "severity": "warning",
                             "condition": "dead_count > threshold",
                             "recommended_action": "investigate dead records",
                         },
                         "critical": {
                             "rule_id": "ALERT_OUTBOX_DEAD_COUNT_CRITICAL",
                             "component": "outbox",
+                            "severity": "critical",
                             "condition": "dead_count > threshold",
                             "recommended_action": "page on-call",
                         },
@@ -104,6 +111,7 @@ def test_operational_alert_policy_requires_non_empty_rule_metadata() -> None:
                 "redis_connection_loss": {
                     "rule_id": "ALERT_REDIS_CONNECTION_LOSS",
                     "component": "redis",
+                    "severity": "critical",
                     "condition": "redis_connection_status == 0",
                     "recommended_action": "",
                 },
@@ -111,6 +119,7 @@ def test_operational_alert_policy_requires_non_empty_rule_metadata() -> None:
                     "rule": {
                         "rule_id": "ALERT_PROMETHEUS_UNAVAILABLE",
                         "component": "prometheus",
+                        "severity": "warning",
                         "condition": "telemetry_degraded_active == true",
                         "recommended_action": "investigate prometheus connectivity",
                     },
@@ -133,12 +142,14 @@ def test_operational_alert_policy_requires_non_empty_rule_metadata() -> None:
                         "warning": {
                             "rule_id": "ALERT_LLM_ERROR_RATE_SPIKE_WARNING",
                             "component": "llm",
+                            "severity": "warning",
                             "condition": "llm_error_rate > warning_threshold",
                             "recommended_action": "investigate llm failures",
                         },
                         "critical": {
                             "rule_id": "ALERT_LLM_ERROR_RATE_SPIKE_CRITICAL",
                             "component": "llm",
+                            "severity": "critical",
                             "condition": "llm_error_rate > critical_threshold",
                             "recommended_action": "engage incident response",
                         },
@@ -155,12 +166,14 @@ def test_operational_alert_policy_requires_non_empty_rule_metadata() -> None:
                         "warning": {
                             "rule_id": "ALERT_SCHEDULER_INTERVAL_DRIFT_WARNING",
                             "component": "scheduler",
+                            "severity": "warning",
                             "condition": "scheduler_drift_seconds > warning_threshold",
                             "recommended_action": "inspect scheduler load",
                         },
                         "critical": {
                             "rule_id": "ALERT_SCHEDULER_INTERVAL_DRIFT_CRITICAL",
                             "component": "scheduler",
+                            "severity": "critical",
                             "condition": "scheduler_drift_seconds > critical_threshold",
                             "recommended_action": "page platform on-call",
                         },
@@ -177,12 +190,14 @@ def test_operational_alert_policy_requires_non_empty_rule_metadata() -> None:
                         "warning": {
                             "rule_id": "ALERT_PIPELINE_STAGE_LATENCY_WARNING",
                             "component": "pipeline",
+                            "severity": "warning",
                             "condition": "pipeline_stage_latency_seconds > warning_threshold",
                             "recommended_action": "inspect stage latency",
                         },
                         "critical": {
                             "rule_id": "ALERT_PIPELINE_STAGE_LATENCY_CRITICAL",
                             "component": "pipeline",
+                            "severity": "critical",
                             "condition": "pipeline_stage_latency_seconds > critical_threshold",
                             "recommended_action": "engage incident response",
                         },

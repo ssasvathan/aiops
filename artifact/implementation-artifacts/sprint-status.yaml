@@ -95,7 +95,7 @@ development_status:
   epic-7: in-progress
   7-1-outbox-health-monitoring-and-dead-0-posture: done
   7-2-opentelemetry-instrumentation-and-otlp-export: done
-  7-3-alerting-rules-and-component-health-thresholds: review
+  7-3-alerting-rules-and-component-health-thresholds: done
   7-4-policy-version-stamping-and-decision-reproducibility: backlog
   7-5-exposure-denylist-governance-and-llm-narrative-compliance: backlog
   7-6-case-labeling-schema-and-mi-1-posture-enforcement: backlog

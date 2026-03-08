@@ -28,9 +28,9 @@ state_age_thresholds:
     critical_seconds: 1800
 
 dead_count_critical_threshold:
-  local: 1
-  dev: 1
-  uat: 1
+  local: 0
+  dev: 0
+  uat: 0
   prod: 0
 
 delivery_slo:

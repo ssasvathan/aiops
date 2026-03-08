@@ -55,9 +55,9 @@ class OutboxDeliverySLOThresholds(BaseModel, frozen=True):
 
 def _default_dead_count_critical_threshold() -> dict[str, int]:
     return {
-        "local": 1,
-        "dev": 1,
-        "uat": 1,
+        "local": 0,
+        "dev": 0,
+        "uat": 0,
         "prod": 0,
     }
 

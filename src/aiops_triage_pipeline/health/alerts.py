@@ -261,6 +261,11 @@ class OperationalAlertEvaluator:
         threshold_value: float | None = None,
         **metadata: Any,
     ) -> OperationalAlertEvaluation:
+        if rule.severity != severity:
+            raise ValueError(
+                f"Alert rule severity mismatch for {rule.rule_id}: "
+                f"policy={rule.severity!r}, evaluation={severity!r}"
+            )
         return OperationalAlertEvaluation(
             rule_id=rule.rule_id,
             component=rule.component,
