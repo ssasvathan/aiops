@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import get_args, get_type_hints
 
 import pytest
@@ -9,10 +10,12 @@ import aiops_triage_pipeline.integrations.servicenow as servicenow_module
 from aiops_triage_pipeline.contracts.sn_linkage import ServiceNowLinkageContractV1
 from aiops_triage_pipeline.models.case_file import (
     LABEL_COMPLETION_RATE_THRESHOLD,
+    LABEL_CONSISTENCY_RULES,
     LABEL_ELIGIBLE_FIELDS,
     LABELS_HASH_PLACEHOLDER,
     CaseFileLabelDataV1,
     CaseFileLabelsV1,
+    evaluate_label_consistency_issues,
 )
 from aiops_triage_pipeline.storage.casefile_io import (
     compute_casefile_labels_hash,
@@ -80,6 +83,28 @@ def test_label_data_fields_typed_correctly() -> None:
     assert missing_reason_args == {str, type(None)}
 
 
+def test_label_data_runtime_validation_accepts_valid_payload() -> None:
+    label_data = CaseFileLabelDataV1.model_validate(
+        {
+            "owner_confirmed": True,
+            "resolution_category": "FALSE_POSITIVE",
+            "false_positive": True,
+            "missing_evidence_reason": None,
+        }
+    )
+    assert label_data.owner_confirmed is True
+    assert label_data.false_positive is True
+    assert label_data.resolution_category == "FALSE_POSITIVE"
+
+
+def test_label_data_runtime_validation_rejects_invalid_payload_types() -> None:
+    with pytest.raises(ValidationError):
+        CaseFileLabelDataV1.model_validate({"owner_confirmed": {"invalid": "type"}})
+
+    with pytest.raises(ValidationError):
+        CaseFileLabelDataV1.model_validate({"missing_evidence_reason": ["not", "a", "string"]})
+
+
 def test_label_data_is_frozen() -> None:
     label_data = CaseFileLabelDataV1(owner_confirmed=True)
 
@@ -107,6 +132,36 @@ def test_label_eligible_fields_are_defined() -> None:
     assert "owner_confirmed" in LABEL_ELIGIBLE_FIELDS
     assert "resolution_category" in LABEL_ELIGIBLE_FIELDS
     assert "false_positive" in LABEL_ELIGIBLE_FIELDS
+
+
+def test_label_consistency_rules_are_defined() -> None:
+    assert len(LABEL_CONSISTENCY_RULES) == 3
+    assert any("false_positive=True" in rule for rule in LABEL_CONSISTENCY_RULES)
+    assert any("owner_confirmed=True" in rule for rule in LABEL_CONSISTENCY_RULES)
+
+
+def test_evaluate_label_consistency_issues_returns_expected_violations() -> None:
+    label_data = CaseFileLabelDataV1(
+        owner_confirmed=True,
+        resolution_category="TRUE_POSITIVE",
+        false_positive=True,
+        missing_evidence_reason="telemetry gap",
+    )
+    issues = evaluate_label_consistency_issues(label_data)
+    assert (
+        "false_positive=True requires resolution_category to be None or 'FALSE_POSITIVE'" in issues
+    )
+    assert "owner_confirmed=True requires missing_evidence_reason to be None" in issues
+
+
+def test_evaluate_label_consistency_issues_accepts_consistent_data() -> None:
+    label_data = CaseFileLabelDataV1(
+        owner_confirmed=True,
+        resolution_category="FALSE_POSITIVE",
+        false_positive=True,
+        missing_evidence_reason=None,
+    )
+    assert evaluate_label_consistency_issues(label_data) == ()
 
 
 def test_labels_json_write_once_creates_file() -> None:
@@ -149,5 +204,20 @@ def test_mi_creation_contract_is_frozen() -> None:
         linkage.mi_creation_allowed = True  # type: ignore[misc]
 
 
-def test_servicenow_integration_has_no_create_major_incident() -> None:
-    assert not hasattr(servicenow_module, "create_major_incident")
+def test_servicenow_integration_has_no_automated_mi_creation_paths() -> None:
+    module_path = Path(servicenow_module.__file__ or "")
+    assert module_path.exists()
+    source = module_path.read_text(encoding="utf-8").lower()
+    disallowed_tokens = (
+        "create_major_incident",
+        "major incident",
+        "/api/now/table/incident",
+    )
+    assert all(token not in source for token in disallowed_tokens)
+
+    public_callables = [
+        name
+        for name, value in vars(servicenow_module).items()
+        if callable(value) and not name.startswith("_")
+    ]
+    assert public_callables == []

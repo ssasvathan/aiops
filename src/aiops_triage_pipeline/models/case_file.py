@@ -166,6 +166,11 @@ LABEL_ELIGIBLE_FIELDS: tuple[str, ...] = (
     "resolution_category",
     "false_positive",
 )
+LABEL_CONSISTENCY_RULES: tuple[str, ...] = (
+    "false_positive=True requires resolution_category to be None or 'FALSE_POSITIVE'",
+    "owner_confirmed=True requires missing_evidence_reason to be None",
+    "resolution_category='FALSE_POSITIVE' cannot pair with false_positive=False",
+)
 
 
 class CaseFileLabelDataV1(BaseModel, frozen=True):
@@ -175,6 +180,28 @@ class CaseFileLabelDataV1(BaseModel, frozen=True):
     resolution_category: str | None = None
     false_positive: bool | None = None
     missing_evidence_reason: str | None = None
+
+
+def evaluate_label_consistency_issues(label_data: CaseFileLabelDataV1) -> tuple[str, ...]:
+    """Evaluate FR64 label consistency checks without enforcing them at runtime."""
+    issues: list[str] = []
+    if label_data.false_positive is True and label_data.resolution_category not in (
+        None,
+        "FALSE_POSITIVE",
+    ):
+        issues.append(
+            "false_positive=True requires resolution_category to be None or 'FALSE_POSITIVE'"
+        )
+    if label_data.owner_confirmed is True and label_data.missing_evidence_reason is not None:
+        issues.append("owner_confirmed=True requires missing_evidence_reason to be None")
+    if (
+        label_data.resolution_category == "FALSE_POSITIVE"
+        and label_data.false_positive is False
+    ):
+        issues.append(
+            "resolution_category='FALSE_POSITIVE' cannot pair with false_positive=False"
+        )
+    return tuple(issues)
 
 
 class CaseFileLabelsV1(BaseModel, frozen=True):

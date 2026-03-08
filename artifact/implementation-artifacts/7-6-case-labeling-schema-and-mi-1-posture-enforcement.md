@@ -1,6 +1,6 @@
 # Story 7.6: Case Labeling Schema & MI-1 Posture Enforcement
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -71,6 +71,13 @@ so that the Phase 2 labeling workflow has its schema foundation ready and the sy
   - [x] `uv run pytest -q -m "not integration"`
   - [x] `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
   - [x] Verify full run reports `0 skipped`
+
+### Review Follow-ups (AI)
+
+- [x] [AI-Review][HIGH] Defined FR64 consistency checks via `LABEL_CONSISTENCY_RULES` and `evaluate_label_consistency_issues(...)` and added unit tests proving rule behavior. [src/aiops_triage_pipeline/models/case_file.py:169]
+- [x] [AI-Review][MEDIUM] Strengthened MI-1 posture coverage to assert no disallowed MI tokens in module source and no public callable integration entrypoints in `integrations/servicenow.py`. [tests/unit/models/test_case_file_labels.py:193]
+- [x] [AI-Review][MEDIUM] Added runtime typed-validation tests for accepted/rejected `CaseFileLabelDataV1` payloads. [tests/unit/models/test_case_file_labels.py:85]
+- [x] [AI-Review][MEDIUM] Added implementation commit reference (`751d4e2`) to improve traceability beyond local working-tree diff state. [artifact/implementation-artifacts/7-6-case-labeling-schema-and-mi-1-posture-enforcement.md:340]
 
 ## Dev Notes
 
@@ -329,13 +336,25 @@ claude-sonnet-4-6
   - `uv run ruff check` (after import-order fix in `models/__init__.py`) → `All checks passed!`
   - `uv run pytest -q -m "not integration"` → `731 passed, 19 deselected`.
   - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs` → `750 passed` with `0 skipped`.
+- AI review fix pass:
+  - Implemented FR64 consistency rule definitions and evaluator in `models/case_file.py`.
+  - Strengthened MI-1 posture test to inspect module source and assert no public callable code paths.
+  - Added runtime payload validation tests for accepted and invalid `CaseFileLabelDataV1` inputs.
+  - `uv run ruff check src/aiops_triage_pipeline/models/case_file.py tests/unit/models/test_case_file_labels.py` → `All checks passed!`
+  - `uv run pytest -q tests/unit/models/test_case_file_labels.py` → `17 passed`.
+  - `uv run pytest -q -m "not integration"` → `736 passed, 19 deselected`.
+  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs` → `755 passed` with `0 skipped`.
+- Implementation traceability:
+  - `git log` reference: `751d4e2 feat(story-7.6): add typed case labels schema and MI-1 posture tests`
 
 ### Completion Notes List
 
 - Implemented typed label schema support by adding `CaseFileLabelDataV1` and replacing `CaseFileLabelsV1.labels` with `CaseFileLabelsV1.label_data`.
 - Added schema-layer label quality constants (`LABEL_COMPLETION_RATE_THRESHOLD`, `LABEL_ELIGIBLE_FIELDS`) for FR64 while deferring runtime enforcement to Phase 2.
+- Added FR64 consistency-rule definitions (`LABEL_CONSISTENCY_RULES`) and a non-enforcing evaluator (`evaluate_label_consistency_issues`) to make consistency checks explicit and testable ahead of Phase 2 workflow enforcement.
 - Updated all existing `CaseFileLabelsV1` test helpers to construct `label_data` instead of legacy `labels` dict payloads.
 - Added a new `tests/unit/models/test_case_file_labels.py` suite covering required label fields, type annotations, frozen-model behavior, labels write-once behavior, and MI-1 posture checks.
+- Expanded `tests/unit/models/test_case_file_labels.py` with runtime payload validation and stronger MI-1 posture assertions (no disallowed MI tokens and no public callable integration entrypoints).
 - Verified quality gates and regressions with zero-skip posture across full suite.
 
 ### File List
@@ -349,7 +368,28 @@ claude-sonnet-4-6
 - artifact/implementation-artifacts/sprint-status.yaml
 - artifact/implementation-artifacts/7-6-case-labeling-schema-and-mi-1-posture-enforcement.md
 
+## Senior Developer Review (AI)
+
+Date: 2026-03-08
+Reviewer: Sas (AI)
+Outcome: Approved after fixes
+
+### Findings (Resolved)
+
+1. HIGH — Resolved: added FR64 consistency rules and evaluator with direct tests. Evidence: `src/aiops_triage_pipeline/models/case_file.py`, `tests/unit/models/test_case_file_labels.py`.
+2. MEDIUM — Resolved: expanded MI-1 posture test coverage to scan module source and assert no public callable entrypoints. Evidence: `tests/unit/models/test_case_file_labels.py`.
+3. MEDIUM — Resolved: added runtime validation tests for accepted and invalid label payloads. Evidence: `tests/unit/models/test_case_file_labels.py`.
+4. MEDIUM — Resolved: added commit-based traceability evidence in Dev Agent Record (`751d4e2`). Evidence: `git log --oneline`.
+
+### Validation Runs (review-time)
+
+- `uv run ruff check` → All checks passed.
+- `uv run pytest -q -m "not integration"` → 736 passed, 19 deselected.
+- `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs` → 755 passed, 0 skipped.
+
 ## Change Log
 
 - 2026-03-08: Created Story 7.6 implementation-ready context file with CaseFileLabelDataV1 schema design, label quality constants, MI-1 posture tests, and comprehensive developer guardrails.
 - 2026-03-08: Implemented Story 7.6 schema and test changes, added labels model test package, and validated full regression with zero skipped tests.
+- 2026-03-08: Senior Developer Review (AI) completed; status moved to in-progress with 1 high and 3 medium findings logged as follow-up tasks.
+- 2026-03-08: Applied all AI review follow-up fixes (FR64 consistency-rule encoding, MI-1 test hardening, runtime label validation tests, commit traceability) and re-ran quality gates; story returned to done.
