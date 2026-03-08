@@ -40,4 +40,22 @@ class ServiceNowLinkageContractV1(BaseModel, frozen=True):
             )
         if "tier1" not in self.correlation_strategy:
             raise ValueError("correlation_strategy must include tier1")
+        if len(set(self.correlation_strategy)) != len(self.correlation_strategy):
+            raise ValueError("correlation_strategy cannot contain duplicate tiers")
+        allowed_tiers = {"tier1", "tier2", "tier3"}
+        if any(tier not in allowed_tiers for tier in self.correlation_strategy):
+            raise ValueError("correlation_strategy contains unsupported tier")
+        tier_positions = {tier: idx for idx, tier in enumerate(self.correlation_strategy)}
+        if (
+            "tier1" in tier_positions
+            and "tier2" in tier_positions
+            and tier_positions["tier1"] > tier_positions["tier2"]
+        ):
+            raise ValueError("correlation_strategy must evaluate tier1 before tier2")
+        if (
+            "tier2" in tier_positions
+            and "tier3" in tier_positions
+            and tier_positions["tier2"] > tier_positions["tier3"]
+        ):
+            raise ValueError("correlation_strategy must evaluate tier2 before tier3")
         return self

@@ -60,6 +60,22 @@ class ServiceNowClient:
         """Correlate a PD incident to a ServiceNow incident via Tier 1 -> Tier 2 -> Tier 3."""
         request_id = uuid4().hex
         effective_timestamp = case_timestamp or datetime.now(timezone.utc)
+        missing_fields = self._missing_required_values(
+            case_id=case_id,
+            pd_incident_id=pd_incident_id,
+            routing_key=routing_key,
+        )
+        if missing_fields:
+            return ServiceNowCorrelationResult(
+                matched=False,
+                matched_tier="none",
+                reason="invalid_input",
+                reason_metadata={
+                    "request_id": request_id,
+                    "missing_fields": missing_fields,
+                },
+            )
+        tier_order = self._contract.correlation_strategy
 
         if self._mode == IntegrationMode.OFF:
             return ServiceNowCorrelationResult(
@@ -70,7 +86,7 @@ class ServiceNowClient:
             )
 
         if self._mode == IntegrationMode.LOG:
-            for tier in ("tier1", "tier2", "tier3"):
+            for tier in tier_order:
                 self._log_tier_attempt(
                     request_id=request_id,
                     case_id=case_id,
@@ -103,7 +119,7 @@ class ServiceNowClient:
         request_id: str,
         case_id: str,
     ) -> ServiceNowCorrelationResult:
-        for tier in ("tier1", "tier2", "tier3"):
+        for tier in self._contract.correlation_strategy:
             if tier == self._mock_match_tier:
                 self._log_tier_attempt(
                     request_id=request_id,
@@ -152,10 +168,13 @@ class ServiceNowClient:
                 reason_metadata={"request_id": request_id},
             )
 
+        query_by_tier_map = {
+            "tier1": self._build_tier1_query(pd_incident_id),
+            "tier2": self._build_tier2_query(pd_incident_id, case_id, routing_key, keywords),
+            "tier3": self._build_tier3_query(routing_key, case_timestamp),
+        }
         query_by_tier = (
-            ("tier1", self._build_tier1_query(pd_incident_id)),
-            ("tier2", self._build_tier2_query(pd_incident_id, case_id, routing_key, keywords)),
-            ("tier3", self._build_tier3_query(routing_key, case_timestamp)),
+            (tier, query_by_tier_map[tier]) for tier in self._contract.correlation_strategy
         )
         errors: list[str] = []
 
@@ -170,7 +189,7 @@ class ServiceNowClient:
                 error=error,
             )
             if incidents:
-                incident = incidents[0]
+                incident = self._rank_incidents(incidents)[0]
                 return ServiceNowCorrelationResult(
                     matched=True,
                     matched_tier=tier,
@@ -222,7 +241,7 @@ class ServiceNowClient:
         effective_case_timestamp = case_timestamp.astimezone(timezone.utc)
         window = timedelta(minutes=self._contract.tier3_window_minutes)
         window_start = (effective_case_timestamp - window).strftime("%Y-%m-%d %H:%M:%S")
-        window_end = (effective_case_timestamp + window).strftime("%Y-%m-%d %H:%M:%S")
+        window_end = effective_case_timestamp.strftime("%Y-%m-%d %H:%M:%S")
         escaped_routing_key = self._escape_query_value(routing_key)
 
         routing_clauses = [
@@ -256,9 +275,7 @@ class ServiceNowClient:
             {
                 "sysparm_query": query,
                 "sysparm_limit": str(self._contract.max_results_per_tier),
-                "sysparm_fields": (
-                    "sys_id,number,short_description,description,work_notes,sys_created_on"
-                ),
+                "sysparm_fields": self._build_sysparm_fields(),
             }
         )
         url = (
@@ -330,3 +347,59 @@ class ServiceNowClient:
         if value is None:
             return None
         return str(value)
+
+    @staticmethod
+    def _missing_required_values(
+        *,
+        case_id: str,
+        pd_incident_id: str,
+        routing_key: str,
+    ) -> tuple[str, ...]:
+        missing: list[str] = []
+        if not case_id.strip():
+            missing.append("case_id")
+        if not pd_incident_id.strip():
+            missing.append("pd_incident_id")
+        if not routing_key.strip():
+            missing.append("routing_key")
+        return tuple(missing)
+
+    def _build_sysparm_fields(self) -> str:
+        fields = [
+            "sys_id",
+            "number",
+            "short_description",
+            "description",
+            "sys_created_on",
+        ]
+        if self._contract.tier2_include_work_notes:
+            fields.append("work_notes")
+        return ",".join(fields)
+
+    @classmethod
+    def _rank_incidents(cls, incidents: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return sorted(
+            incidents,
+            key=lambda incident: (
+                cls._parse_created_on(cls._coerce_to_string(incident.get("sys_created_on"))),
+                cls._coerce_to_string(incident.get("sys_id")) or "",
+            ),
+            reverse=True,
+        )
+
+    @staticmethod
+    def _parse_created_on(value: str | None) -> datetime:
+        if not value:
+            return datetime.min.replace(tzinfo=timezone.utc)
+        normalized = value.replace("Z", "+00:00")
+        try:
+            parsed = datetime.fromisoformat(normalized)
+            if parsed.tzinfo is None:
+                return parsed.replace(tzinfo=timezone.utc)
+            return parsed.astimezone(timezone.utc)
+        except ValueError:
+            pass
+        try:
+            return datetime.strptime(value, "%Y-%m-%d %H:%M:%S").replace(tzinfo=timezone.utc)
+        except ValueError:
+            return datetime.min.replace(tzinfo=timezone.utc)

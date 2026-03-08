@@ -337,6 +337,21 @@ def test_sn_linkage_policy_artifact_contains_tiered_correlation_defaults() -> No
     assert policy.max_results_per_tier == 25
 
 
+def test_sn_linkage_rejects_duplicate_correlation_tiers() -> None:
+    with pytest.raises(ValidationError):
+        ServiceNowLinkageContractV1(correlation_strategy=("tier1", "tier1"))
+
+
+def test_sn_linkage_rejects_unsupported_correlation_tier() -> None:
+    with pytest.raises(ValidationError):
+        ServiceNowLinkageContractV1(correlation_strategy=("tier1", "tier4"))
+
+
+def test_sn_linkage_rejects_out_of_order_correlation_tiers() -> None:
+    with pytest.raises(ValidationError):
+        ServiceNowLinkageContractV1(correlation_strategy=("tier2", "tier1"))
+
+
 def test_prometheus_metrics_keys_accessible(
     minimal_prometheus_metrics: PrometheusMetricsContractV1,
 ) -> None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
+from urllib.parse import parse_qs, urlsplit
 
 import structlog.testing
 
@@ -31,12 +32,13 @@ def _make_client(
     *,
     mode: IntegrationMode,
     mock_match_tier: str = "none",
+    linkage_contract: ServiceNowLinkageContractV1 | None = None,
 ) -> ServiceNowClient:
     return ServiceNowClient(
         mode=mode,
         base_url=_SN_BASE_URL,
         auth_token="test-token",
-        linkage_contract=ServiceNowLinkageContractV1(),
+        linkage_contract=linkage_contract or ServiceNowLinkageContractV1(),
         mock_match_tier=mock_match_tier,
     )
 
@@ -173,3 +175,107 @@ def test_live_mode_uses_get_only_incident_reads() -> None:
     request = mock_urlopen.call_args[0][0]
     assert request.method == "GET"
     assert "/api/now/table/incident" in request.full_url
+
+
+def test_live_mode_excludes_work_notes_field_by_default() -> None:
+    client = _make_client(mode=IntegrationMode.LIVE)
+    with patch(
+        _URLOPEN_PATH,
+        side_effect=[_make_sn_response([{"sys_id": "inc-sys-1", "number": "INC001"}])],
+    ) as mock_urlopen:
+        _correlate(client)
+
+    request = mock_urlopen.call_args[0][0]
+    params = parse_qs(urlsplit(request.full_url).query)
+    assert (
+        params["sysparm_fields"][0]
+        == "sys_id,number,short_description,description,sys_created_on"
+    )
+
+
+def test_live_mode_includes_work_notes_field_when_enabled() -> None:
+    contract = ServiceNowLinkageContractV1(
+        tier2_text_fields=("short_description", "description", "work_notes"),
+        tier2_include_work_notes=True,
+    )
+    client = _make_client(mode=IntegrationMode.LIVE, linkage_contract=contract)
+    with patch(
+        _URLOPEN_PATH,
+        side_effect=[_make_sn_response([{"sys_id": "inc-sys-1", "number": "INC001"}])],
+    ) as mock_urlopen:
+        _correlate(client)
+
+    request = mock_urlopen.call_args[0][0]
+    params = parse_qs(urlsplit(request.full_url).query)
+    assert "work_notes" in params["sysparm_fields"][0]
+
+
+def test_tier3_query_uses_backward_looking_window() -> None:
+    client = _make_client(mode=IntegrationMode.LIVE)
+    with patch(
+        _URLOPEN_PATH,
+        side_effect=[
+            _make_sn_response([]),
+            _make_sn_response([]),
+            _make_sn_response([{"sys_id": "inc-sys-3", "number": "INC003"}]),
+        ],
+    ) as mock_urlopen:
+        _correlate(client)
+
+    tier3_request = mock_urlopen.call_args_list[2][0][0]
+    tier3_query = parse_qs(urlsplit(tier3_request.full_url).query)["sysparm_query"][0]
+    assert "sys_created_on>=2026-03-08 10:00:00" in tier3_query
+    assert "sys_created_on<=2026-03-08 12:00:00" in tier3_query
+    assert "2026-03-08 14:00:00" not in tier3_query
+
+
+def test_live_mode_picks_most_recent_incident_deterministically() -> None:
+    client = _make_client(mode=IntegrationMode.LIVE)
+    records = [
+        {
+            "sys_id": "inc-sys-old",
+            "number": "INC001",
+            "sys_created_on": "2026-03-08 10:00:00",
+        },
+        {
+            "sys_id": "inc-sys-new",
+            "number": "INC002",
+            "sys_created_on": "2026-03-08 11:59:59",
+        },
+    ]
+    with patch(_URLOPEN_PATH, side_effect=[_make_sn_response(records)]):
+        result = _correlate(client)
+
+    assert result.matched is True
+    assert result.incident_sys_id == "inc-sys-new"
+    assert result.reason_metadata["incident_number"] == "INC002"
+
+
+def test_invalid_identifiers_return_invalid_input_without_http_calls() -> None:
+    client = _make_client(mode=IntegrationMode.LIVE)
+    with patch(_URLOPEN_PATH) as mock_urlopen:
+        result = client.correlate_incident(
+            case_id="",
+            pd_incident_id=" ",
+            routing_key="",
+        )
+
+    assert result.matched is False
+    assert result.reason == "invalid_input"
+    assert result.reason_metadata["missing_fields"] == (
+        "case_id",
+        "pd_incident_id",
+        "routing_key",
+    )
+    mock_urlopen.assert_not_called()
+
+
+def test_live_mode_respects_correlation_strategy_order_and_scope() -> None:
+    contract = ServiceNowLinkageContractV1(correlation_strategy=("tier1",))
+    client = _make_client(mode=IntegrationMode.LIVE, linkage_contract=contract)
+    with patch(_URLOPEN_PATH, side_effect=[_make_sn_response([])]) as mock_urlopen:
+        result = _correlate(client)
+
+    assert result.matched is False
+    assert result.matched_tier == "none"
+    assert mock_urlopen.call_count == 1
