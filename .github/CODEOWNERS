@@ -3,4 +3,6 @@
 # Changes to the exposure denylist require review by the security team.
 # See: Story 7.5 (FR62) — denylist change management enforcement.
 
+# TODO(ops): Replace @security-team with your org's real GitHub team handle
+# before enabling branch protection rules to enforce this review requirement.
 config/denylist.yaml  @security-team

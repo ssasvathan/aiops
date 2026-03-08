@@ -1,6 +1,6 @@
 # Story 7.5: Exposure Denylist Governance & LLM Narrative Compliance
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -242,7 +242,7 @@ Research timestamp: 2026-03-08.
 - **Pydantic 2.12.5 nested model in YAML:** `DenylistChangelogEntry` as a nested `BaseModel, frozen=True` within `DenylistV1` works with `pyyaml`'s `safe_load` + `model_validate`. Each changelog entry in YAML becomes a dict; Pydantic validates it into `DenylistChangelogEntry`.
 - **CODEOWNERS syntax:** Standard GitHub CODEOWNERS — one rule per line: `config/denylist.yaml  @handle`. Place in `.github/CODEOWNERS` (preferred) or repo root `CODEOWNERS`. No runtime impact.
 - **`apply_denylist()` on DiagnosisReportV1 dict:** `DiagnosisReportV1.model_dump(mode="json")` returns a plain dict with all string fields serialized. Applying `apply_denylist()` to it before `model_validate()` correctly filters narrative fields. The `reason_codes` tuple becomes a list in JSON mode — `apply_denylist()` handles lists recursively already.
-- **Test pattern for real YAML loading:** Use `pathlib.Path(__file__).parents[4] / "config" / "denylist.yaml"` from within `tests/unit/denylist/test_governance.py` to reach the project root (4 levels up: test_governance.py → denylist → unit → tests → project_root). Alternatively, use `pytest`'s `rootdir` conftest fixture if available. The simpler approach: use `conftest.py` to provide a `real_denylist_path` fixture.
+- **Test pattern for real YAML loading:** Use `pathlib.Path(__file__).parents[3] / "config" / "denylist.yaml"` from within `tests/unit/denylist/test_governance.py` to reach the project root (`parents[3]` = 3 hops from the file's directory: denylist → unit → tests → project_root). Alternatively, use `pytest`'s `rootdir` conftest fixture if available. The simpler approach: use `conftest.py` to provide a `real_denylist_path` fixture.
 
 ### Project Context Reference
 
@@ -309,6 +309,7 @@ claude-sonnet-4-6
 - ✅ Task 4: Created `tests/unit/denylist/test_governance.py` with 3 governance tests: version semver format, changelog has initial entry with all fields non-empty, latest changelog version matches denylist_version.
 - ✅ Task 5: Added 4 LLM narrative output sanitization tests to `tests/unit/diagnosis/test_graph.py`. Updated `test_denylist_applied_to_triage_excerpt` to account for two `apply_denylist` calls (INPUT + OUTPUT).
 - ✅ Task 6: Quality gates — ruff: clean, unit tests: 718 passed 0 skipped, full suite: 737 passed 0 skipped (7 new tests added: 3 governance + 4 graph output sanitization).
+- ✅ Code Review fixes (2026-03-08): Added ISO date validator to `DenylistChangelogEntry.date`; removed dead mock setup in clean-output test; renamed misleading test to `test_llm_narrative_required_field_denied_triggers_schema_invalid_fallback`; added new happy-path test `test_llm_narrative_optional_field_denied_sanitized_and_persisted`; added missing positive assertion to `test_llm_narrative_sanitization_uses_active_denylist`. Unit tests: 719, 0 skipped.
 
 ### File List
 
@@ -318,9 +319,10 @@ claude-sonnet-4-6
 - `src/aiops_triage_pipeline/diagnosis/graph.py` (modified — apply `apply_denylist()` to LLM output narrative before `DiagnosisReportV1` reconstruction)
 - `config/denylist.yaml` (modified — added `changelog` section with v1.0.0 initial entry)
 - `tests/unit/denylist/test_governance.py` (new — 3 governance tests)
-- `tests/unit/diagnosis/test_graph.py` (modified — 4 new LLM output sanitization tests + updated existing denylist test)
+- `tests/unit/diagnosis/test_graph.py` (modified — 5 new LLM output sanitization tests + updated existing denylist test; 1 test renamed)
 
 ## Change Log
 
+- 2026-03-08: Code review fixes — ISO date validation on DenylistChangelogEntry, dead code removed, misleading test renamed, happy-path sanitize-and-persist test added, missing assertion added. 719 unit tests, 0 skipped. Status → done.
 - 2026-03-08: Implemented Story 7.5 — denylist governance (CODEOWNERS, changelog schema) and LLM narrative output sanitization. 737 tests, 0 skipped.
 - 2026-03-08: Created Story 7.5 implementation-ready context file with denylist governance design, LLM narrative output sanitization gap, CODEOWNERS approach, DenylistChangelogEntry schema, and comprehensive developer guardrails.

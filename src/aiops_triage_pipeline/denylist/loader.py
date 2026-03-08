@@ -24,6 +24,13 @@ class DenylistChangelogEntry(BaseModel, frozen=True):
     reviewer: str = Field(min_length=1)
     summary: str = Field(min_length=1)
 
+    @field_validator("date")
+    @classmethod
+    def validate_iso_date(cls, value: str) -> str:
+        if not re.match(r"^\d{4}-\d{2}-\d{2}$", value):
+            raise ValueError(f"date {value!r} must be in YYYY-MM-DD format")
+        return value
+
 
 class DenylistV1(BaseModel, frozen=True):
     """Versioned exposure denylist loaded from config/denylist.yaml at startup.

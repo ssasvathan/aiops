@@ -945,8 +945,9 @@ def _make_mock_llm_client(report: DiagnosisReportV1) -> MagicMock:
     return mock_client
 
 
-async def test_llm_narrative_output_sanitized_before_persist() -> None:
-    """LLM verdict containing Bearer token is denied: returned report does not contain the token."""
+async def test_llm_narrative_required_field_denied_triggers_schema_invalid_fallback() -> None:
+    """LLM verdict (required field) containing Bearer token: denied verdict causes ValidationError
+    on reconstruction → LLM_SCHEMA_INVALID fallback returned, dirty token never appears."""
     registry = HealthRegistry()
     dirty_verdict = "Bearer AbCdEfGhIjKlMnOpQrSt12345"
     mock_client = _make_mock_llm_client(_make_llm_report_with_verdict(dirty_verdict))
@@ -962,9 +963,34 @@ async def test_llm_narrative_output_sanitized_before_persist() -> None:
         triage_hash=_FAKE_TRIAGE_HASH,
     )
 
-    # verdict containing Bearer token was denied → report reconstructed as LLM_SCHEMA_INVALID
-    # fallback, so verdict is "UNKNOWN" (does not contain the token)
+    # verdict denied → absent from sanitized dict → ValidationError → LLM_SCHEMA_INVALID fallback
     assert dirty_verdict not in report.verdict
+    assert "LLM_SCHEMA_INVALID" in report.reason_codes
+
+
+async def test_llm_narrative_optional_field_denied_sanitized_and_persisted() -> None:
+    """LLM fact (optional list item) containing Bearer token is removed; clean fact is preserved
+    and the sanitized report is successfully persisted (happy-path sanitize-and-persist)."""
+    registry = HealthRegistry()
+    dirty_fact = "Authorization: Bearer AbCdEfGhIjKlMnOpQrSt12345"
+    clean_fact = "Consumer lag elevated: 45000 messages behind."
+    mock_client = _make_mock_llm_client(_make_llm_report_with_facts(dirty_fact, clean_fact))
+
+    report = await run_cold_path_diagnosis(
+        case_id="test-output-sanitize-persist",
+        triage_excerpt=_make_eligible_excerpt("test-output-sanitize-persist"),
+        evidence_summary=_EVIDENCE_SUMMARY,
+        llm_client=mock_client,
+        denylist=_BEARER_TOKEN_DENYLIST,
+        health_registry=registry,
+        object_store_client=_make_mock_store(),
+        triage_hash=_FAKE_TRIAGE_HASH,
+    )
+
+    # Sanitized report persisted successfully — no fallback triggered
+    assert not report.reason_codes
+    assert dirty_fact not in report.evidence_pack.facts
+    assert clean_fact in report.evidence_pack.facts
 
 
 async def test_llm_narrative_denied_field_in_facts_sanitized() -> None:
@@ -998,15 +1024,9 @@ async def test_llm_narrative_clean_output_passes_through_unchanged() -> None:
     clean_verdict = "Consumer lag caused by upstream producer stall in payments stream."
     clean_fact = "Consumer group payments-consumer lag: 45000 messages."
     mock_client = _make_mock_llm_client(
-        _make_llm_report_with_facts(clean_fact)
-    )
-
-    # Monkeypatch the verdict too by using a report with a clean verdict
-    clean_report = _make_llm_report_with_verdict(clean_verdict)
-    mock_client.invoke = AsyncMock(
-        return_value=DiagnosisReportV1(
+        DiagnosisReportV1(
             verdict=clean_verdict,
-            confidence=clean_report.confidence,
+            confidence=DiagnosisConfidence.LOW,
             evidence_pack=EvidencePack(
                 facts=(clean_fact,), missing_evidence=(), matched_rules=()
             ),
@@ -1063,4 +1083,5 @@ async def test_llm_narrative_sanitization_uses_active_denylist() -> None:
     )
 
     assert dirty_fact not in report.evidence_pack.facts
+    assert clean_fact in report.evidence_pack.facts
     assert clean_fact in report.evidence_pack.facts
