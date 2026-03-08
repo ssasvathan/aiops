@@ -92,14 +92,14 @@ development_status:
   6-3-structured-diagnosisreport-output-and-evidence-citation: done
   6-4-llm-output-schema-validation-and-deterministic-fallback: done
   epic-6-retrospective: done
-  epic-7: in-progress
+  epic-7: done
   7-1-outbox-health-monitoring-and-dead-0-posture: done
   7-2-opentelemetry-instrumentation-and-otlp-export: done
   7-3-alerting-rules-and-component-health-thresholds: done
   7-4-policy-version-stamping-and-decision-reproducibility: done
   7-5-exposure-denylist-governance-and-llm-narrative-compliance: done
   7-6-case-labeling-schema-and-mi-1-posture-enforcement: done
-  epic-7-retrospective: optional
+  epic-7-retrospective: done
   epic-8: backlog
   8-1-tiered-servicenow-incident-correlation: backlog
   8-2-idempotent-problem-and-pir-task-upsert: backlog
