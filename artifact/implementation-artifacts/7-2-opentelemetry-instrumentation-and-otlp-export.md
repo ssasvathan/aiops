@@ -1,6 +1,6 @@
 # Story 7.2: OpenTelemetry Instrumentation & OTLP Export
 
-Status: review
+Status: done
 
 ## Story
 
@@ -284,6 +284,7 @@ GPT-5 (Codex)
 ### Completion Notes List
 
 - Completed Story 7.2 implementation and moved status to `review`.
+- Completed review follow-ups and finalized Story 7.2 status to `done`.
 - Added centralized OTLP bootstrap (`MeterProvider`, periodic reader, OTLP exporter) with safe no-endpoint defaults and idempotent setup.
 - Added OTLP runtime settings/env support (endpoint/protocol/headers/export interval/service resource attributes) and masked header logging.
 - Preserved canonical `aiops.outbox.*` metric names and stable labels (`state`, `severity`, `quantile`).
@@ -325,3 +326,4 @@ GPT-5 (Codex)
 
 - 2026-03-07: Created Story 7.2 implementation-ready context file with architecture, testing, and OTLP export guardrails.
 - 2026-03-08: Implemented Story 7.2 OTLP bootstrap and telemetry expansion across Redis, LLM, evidence/scheduler, and pipeline; added unit/integration coverage and passed full regression with zero skipped tests.
+- 2026-03-08: Closed review cycle after follow-up fixes; story status set to `done` and sprint tracking synchronized.
