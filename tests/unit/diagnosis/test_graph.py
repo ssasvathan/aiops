@@ -6,6 +6,8 @@ import asyncio
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from aiops_triage_pipeline.config.settings import AppEnv, IntegrationMode
 from aiops_triage_pipeline.contracts.enums import CriticalityTier, Environment
 from aiops_triage_pipeline.contracts.triage_excerpt import TriageExcerptV1
@@ -283,5 +285,54 @@ async def test_timeout_raises_asyncio_timeout_error() -> None:
         assert False, "Expected TimeoutError"
     except asyncio.TimeoutError:
         pass
+
+    assert registry.get("llm") == HealthStatus.DEGRADED
+
+
+# ---------------------------------------------------------------------------
+# run_cold_path_diagnosis — inflight gauge balance
+# ---------------------------------------------------------------------------
+
+
+async def test_inflight_gauge_balanced_on_failure() -> None:
+    """llm_inflight_add(-1) is called in finally even when invocation fails."""
+    registry = HealthRegistry()
+    mock_client = MagicMock(spec=LLMClient)
+    mock_client.invoke = AsyncMock(side_effect=RuntimeError("llm exploded"))
+
+    with patch(
+        "aiops_triage_pipeline.diagnosis.graph.llm_inflight_add",
+    ) as mock_gauge:
+        with pytest.raises(RuntimeError, match="llm exploded"):
+            await run_cold_path_diagnosis(
+                case_id="test-gauge-balance",
+                triage_excerpt=_make_eligible_excerpt("test-gauge-balance"),
+                evidence_summary=_EVIDENCE_SUMMARY,
+                llm_client=mock_client,
+                denylist=_EMPTY_DENYLIST,
+                health_registry=registry,
+            )
+
+    # +1 on entry, -1 in finally — always balanced regardless of exception
+    assert mock_gauge.call_count == 2
+    assert mock_gauge.call_args_list[0][0][0] == 1
+    assert mock_gauge.call_args_list[1][0][0] == -1
+
+
+async def test_health_registry_degraded_on_generic_exception() -> None:
+    """HealthRegistry 'llm' → DEGRADED when invocation raises a non-timeout exception."""
+    registry = HealthRegistry()
+    mock_client = MagicMock(spec=LLMClient)
+    mock_client.invoke = AsyncMock(side_effect=RuntimeError("unexpected llm error"))
+
+    with pytest.raises(RuntimeError, match="unexpected llm error"):
+        await run_cold_path_diagnosis(
+            case_id="test-degraded-generic",
+            triage_excerpt=_make_eligible_excerpt("test-degraded-generic"),
+            evidence_summary=_EVIDENCE_SUMMARY,
+            llm_client=mock_client,
+            denylist=_EMPTY_DENYLIST,
+            health_registry=registry,
+        )
 
     assert registry.get("llm") == HealthStatus.DEGRADED

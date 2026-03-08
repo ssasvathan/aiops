@@ -85,8 +85,8 @@ async def run_cold_path_diagnosis(
     _logger.info("cold_path_diagnosis_started", case_id=case_id, timeout_seconds=timeout_seconds)
     await health_registry.update("llm", HealthStatus.HEALTHY, reason="cold_path_invocation_started")
     llm_inflight_add(+1)
-    graph = build_diagnosis_graph(llm_client)
     try:
+        graph = build_diagnosis_graph(llm_client)
         result = await asyncio.wait_for(
             graph.ainvoke(
                 {
@@ -99,6 +99,10 @@ async def run_cold_path_diagnosis(
             timeout=timeout_seconds,
         )
         report = result["diagnosis_report"]
+        if report is None:
+            raise RuntimeError(
+                f"LangGraph node did not populate diagnosis_report for case {case_id}"
+            )
         await health_registry.update("llm", HealthStatus.HEALTHY)
         _logger.info("cold_path_diagnosis_completed", case_id=case_id)
         return report

@@ -1,6 +1,6 @@
 # Story 6.2: Cold-Path LLM Invocation & Hot-Path Independence
 
-Status: review
+Status: done
 
 ## Story
 
@@ -114,7 +114,7 @@ criteria (FR36, FR42, FR66).
 
 - [x] Task 6: Quality gates
   - [x] `uv run ruff check` — 0 new errors (2 pre-existing E501 in unrelated files)
-  - [x] `uv run pytest -q -m "not integration"` — 607 passed, 0 skipped, 0 failures
+  - [x] `uv run pytest -q -m "not integration"` — 603 passed, 0 skipped, 0 failures (Docker tests excluded; 608 with Docker)
 
 ## Dev Notes
 
@@ -514,6 +514,30 @@ claude-sonnet-4-6
 - 17 new unit tests added: 15 in `test_graph.py` + 2 new LIVE mode tests in `test_llm.py`.
   Replaced `test_live_mode_raises_not_implemented`. Updated import-guard test to allow httpx.
 - Regression: 607 passed, 0 skipped, 0 failures (baseline 590 + 17 new).
+
+### Senior Developer Review (AI)
+
+**Reviewer:** Sas | **Date:** 2026-03-07 | **Outcome:** Approved with fixes
+
+**Issues fixed (3 MEDIUM):**
+
+- **M1** `diagnosis/graph.py` — `build_diagnosis_graph()` was outside the `try/finally` block;
+  if it raised, `llm_inflight_add(-1)` would not execute, permanently leaking the in-flight gauge.
+  Fix: moved `build_diagnosis_graph()` inside the `try` block so `finally` always balances the gauge.
+
+- **M2** `diagnosis/graph.py` — `result["diagnosis_report"]` was returned without a `None` check.
+  Story spec explicitly requires assert/raise if the LangGraph node fails to populate the field.
+  Fix: added `RuntimeError` raise when `report is None`.
+
+- **M3** `tests/unit/diagnosis/test_graph.py` — no test verified `llm_inflight_add` is decremented
+  on the failure path (AC8 + AC5 gap). Fix: added `test_inflight_gauge_balanced_on_failure` which
+  patches `llm_inflight_add` and asserts `+1` / `-1` call sequence on a `RuntimeError` invocation.
+
+**Issues deferred (3 LOW):** Field ordering in `settings.py` (cosmetic), missing non-timeout
+exception→DEGRADED test (low risk, BaseException covers it), `httpx>=0.27` range vs exact-pin
+convention (safe for now, revisit at Story 6.3).
+
+**Post-fix regression:** 608 passed, 0 skipped, 0 failures (`-m "not integration"`).
 
 ### File List
 
