@@ -220,10 +220,10 @@ def record_evidence_unknown_rate(
     unknown_count: int,
     total_count: int,
 ) -> None:
+    # No denominator means no meaningful rate; avoid emitting synthetic 0.0.
     if total_count <= 0:
-        rate = 0.0
-    else:
-        rate = min(max(unknown_count / total_count, 0.0), 1.0)
+        return
+    rate = min(max(unknown_count / total_count, 0.0), 1.0)
     _evidence_unknown_rate.record(
         rate,
         attributes={

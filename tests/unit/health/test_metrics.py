@@ -123,3 +123,18 @@ def test_record_prometheus_degraded_active_tracks_state_transitions(monkeypatch)
         (1, {"component": "prometheus"}),
         (-1, {"component": "prometheus"}),
     ]
+
+
+def test_record_evidence_unknown_rate_skips_emission_when_total_count_is_zero(monkeypatch) -> None:
+    from aiops_triage_pipeline.health import metrics
+
+    unknown_rate = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_evidence_unknown_rate", unknown_rate)
+
+    metrics.record_evidence_unknown_rate(
+        metric_key="topic_messages_in_per_sec",
+        unknown_count=0,
+        total_count=0,
+    )
+
+    assert unknown_rate.calls == []

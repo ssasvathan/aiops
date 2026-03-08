@@ -63,6 +63,14 @@ so that I can monitor the observer itself through Dynatrace and detect degradati
   - [x] Verify label shape and no metric drift/double-counting across repeated cycles
   - [x] Run quality gates: `uv run ruff check`, targeted unit tests, and Docker-enabled full suite with 0 skipped
 
+### Review Follow-ups (AI)
+
+- [x] [AI-Review][HIGH] OTLP collector fixture now fails fast on environment prerequisite errors (no skip fallback path) [`tests/integration/conftest.py`]
+- [x] [AI-Review][HIGH] `__main__` now dispatches `hot-path`/`cold-path` explicitly and performs shared runtime bootstrap (settings + OTLP init) for every mode [`src/aiops_triage_pipeline/__main__.py`]
+- [x] [AI-Review][MEDIUM] OTLP integration assertions now validate representative exported metric values in addition to names/labels [`tests/integration/test_otlp_export.py`]
+- [x] [AI-Review][MEDIUM] Unknown-rate emission now skips no-denominator cases instead of recording synthetic `0.0` values [`src/aiops_triage_pipeline/health/metrics.py`]
+- [x] [AI-Review][MEDIUM] Story traceability now references implementation commit evidence for Story 7.2 changes [`2fc3e44`]
+
 ## Dev Notes
 
 ### Developer Context Section
@@ -253,6 +261,7 @@ GPT-5 (Codex)
 
 ### Debug Log References
 
+- Story 7.2 implementation baseline commit: `2fc3e44` (`feat: implement story 7.2 OTLP instrumentation and export`)
 - Implemented OTLP bootstrap module with idempotent `MeterProvider` initialization and exporter flush/shutdown controls (`health/otlp.py`)
 - Added OTLP settings/runtime defaults and masked OTLP headers in startup config logging (`config/settings.py`, env templates)
 - Wired OTLP bootstrap in process entrypoint before worker metric emission (`__main__.py`)

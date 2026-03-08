@@ -41,6 +41,12 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    if args.mode == "hot-path":
+        _run_hot_path()
+        return
+    if args.mode == "cold-path":
+        _run_cold_path()
+        return
     if args.mode == "outbox-publisher":
         _run_outbox_publisher(once=args.once)
         return
@@ -48,15 +54,43 @@ def main() -> None:
         _run_casefile_lifecycle(once=args.once)
         return
 
-    print(f"Starting {args.mode} mode...")
+    raise RuntimeError(f"Unsupported mode: {args.mode}")
 
 
-def _run_outbox_publisher(*, once: bool) -> None:
+def _bootstrap_mode(mode: str):
     settings = get_settings()
     configure_logging()
     logger = get_logger("__main__")
     settings.log_active_config(logger)
-    configure_otlp_metrics(settings)
+    otlp_result = configure_otlp_metrics(settings)
+    logger.info(
+        "runtime_mode_bootstrap_completed",
+        event_type="runtime.mode_bootstrap",
+        mode=mode,
+        otlp_configured=otlp_result.configured,
+        otlp_reason=otlp_result.reason,
+    )
+    return settings, logger
+
+
+def _run_hot_path() -> None:
+    _bootstrap_mode("hot-path")
+    raise RuntimeError(
+        "hot-path mode runtime loop is not wired in __main__. "
+        "Use dedicated pipeline orchestration entrypoint."
+    )
+
+
+def _run_cold_path() -> None:
+    _bootstrap_mode("cold-path")
+    raise RuntimeError(
+        "cold-path mode runtime loop is not wired in __main__. "
+        "Use dedicated diagnosis orchestration entrypoint."
+    )
+
+
+def _run_outbox_publisher(*, once: bool) -> None:
+    settings, logger = _bootstrap_mode("outbox-publisher")
 
     policy = load_policy_yaml(_OUTBOX_POLICY_PATH, OutboxPolicyV1)
     denylist = load_denylist(_DENYLIST_PATH)
@@ -92,11 +126,7 @@ def _run_outbox_publisher(*, once: bool) -> None:
 
 
 def _run_casefile_lifecycle(*, once: bool) -> None:
-    settings = get_settings()
-    configure_logging()
-    logger = get_logger("__main__")
-    settings.log_active_config(logger)
-    configure_otlp_metrics(settings)
+    settings, logger = _bootstrap_mode("casefile-lifecycle")
 
     policy = load_policy_yaml(_CASEFILE_RETENTION_POLICY_PATH, CasefileRetentionPolicyV1)
     runner = CasefileLifecycleRunner(
