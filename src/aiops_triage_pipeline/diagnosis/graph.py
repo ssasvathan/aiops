@@ -25,6 +25,10 @@ from aiops_triage_pipeline.denylist.enforcement import apply_denylist
 from aiops_triage_pipeline.denylist.loader import DenylistV1
 from aiops_triage_pipeline.diagnosis.fallback import build_fallback_report
 from aiops_triage_pipeline.diagnosis.prompt import build_llm_prompt
+from aiops_triage_pipeline.health.alerts import (
+    OperationalAlertEvaluation,
+    OperationalAlertEvaluator,
+)
 from aiops_triage_pipeline.health.metrics import (
     llm_inflight_add,
     record_llm_error,
@@ -45,6 +49,30 @@ from aiops_triage_pipeline.storage.casefile_io import (
 from aiops_triage_pipeline.storage.client import ObjectStoreClientProtocol
 
 _logger = get_logger("diagnosis.graph")
+
+
+def _emit_operational_alert(
+    *,
+    alert: OperationalAlertEvaluation,
+    **fields: object,
+) -> None:
+    log_fn = _logger.critical if alert.severity == "critical" else _logger.warning
+    payload: dict[str, object] = {
+        "event_type": "operational_alert_rule_triggered",
+        "rule_id": alert.rule_id,
+        "component": alert.component,
+        "severity": alert.severity,
+        "condition": alert.condition,
+        "recommended_action": alert.recommended_action,
+        "observed_value": alert.observed_value,
+        "threshold_value": alert.threshold_value,
+    }
+    payload.update(alert.metadata)
+    payload.update(fields)
+    log_fn(
+        "operational_alert_rule_triggered",
+        **payload,
+    )
 
 
 class ColdPathDiagnosisState(TypedDict):
@@ -145,6 +173,7 @@ async def run_cold_path_diagnosis(
     object_store_client: ObjectStoreClientProtocol,
     triage_hash: str,
     timeout_seconds: float = 60.0,
+    alert_evaluator: OperationalAlertEvaluator | None = None,
 ) -> DiagnosisReportV1:
     """Invoke LLM diagnosis with denylist enforcement, health tracking, and timeout.
 
@@ -181,6 +210,16 @@ async def run_cold_path_diagnosis(
             record_llm_error(error_type=error_type)
         if fallback_reason is not None:
             record_llm_fallback(reason_code=fallback_reason)
+        if alert_evaluator is not None:
+            alert = alert_evaluator.record_llm_invocation_result(result=result)
+            if alert is not None:
+                _emit_operational_alert(
+                    alert=alert,
+                    case_id=case_id,
+                    llm_result=result,
+                    fallback_reason=fallback_reason,
+                    error_type=error_type,
+                )
 
     try:
         graph = build_diagnosis_graph(llm_client)
@@ -404,6 +443,7 @@ def spawn_cold_path_diagnosis_task(
     triage_hash: str,
     app_env: AppEnv,
     timeout_seconds: float = 60.0,
+    alert_evaluator: OperationalAlertEvaluator | None = None,
 ) -> "asyncio.Task[DiagnosisReportV1] | None":
     """Spawn a fire-and-forget cold-path diagnosis task if the case is eligible.
 
@@ -431,5 +471,6 @@ def spawn_cold_path_diagnosis_task(
             object_store_client=object_store_client,
             triage_hash=triage_hash,
             timeout_seconds=timeout_seconds,
+            alert_evaluator=alert_evaluator,
         )
     )

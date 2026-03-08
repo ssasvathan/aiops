@@ -10,6 +10,10 @@ from aiops_triage_pipeline.config.settings import get_settings, load_policy_yaml
 from aiops_triage_pipeline.contracts.casefile_retention_policy import CasefileRetentionPolicyV1
 from aiops_triage_pipeline.contracts.outbox_policy import OutboxPolicyV1
 from aiops_triage_pipeline.denylist.loader import load_denylist
+from aiops_triage_pipeline.health.alerts import (
+    OperationalAlertEvaluator,
+    load_operational_alert_policy,
+)
 from aiops_triage_pipeline.health.otlp import configure_otlp_metrics
 from aiops_triage_pipeline.integrations.kafka import ConfluentKafkaCaseEventPublisher
 from aiops_triage_pipeline.logging.setup import configure_logging, get_logger
@@ -23,6 +27,9 @@ _CASEFILE_RETENTION_POLICY_PATH = (
     Path(__file__).resolve().parents[2] / "config/policies/casefile-retention-policy-v1.yaml"
 )
 _DENYLIST_PATH = Path(__file__).resolve().parents[2] / "config/denylist.yaml"
+_OPERATIONAL_ALERT_POLICY_PATH = (
+    Path(__file__).resolve().parents[2] / "config/policies/operational-alert-policy-v1.yaml"
+)
 
 
 def main() -> None:
@@ -62,6 +69,18 @@ def _bootstrap_mode(mode: str):
     configure_logging()
     logger = get_logger("__main__")
     settings.log_active_config(logger)
+    operational_alert_policy = load_operational_alert_policy(_OPERATIONAL_ALERT_POLICY_PATH)
+    alert_evaluator = OperationalAlertEvaluator(
+        policy=operational_alert_policy,
+        app_env=settings.APP_ENV.value,
+    )
+    logger.info(
+        "operational_alert_policy_loaded",
+        event_type="runtime.operational_alert_policy",
+        policy_id=operational_alert_policy.policy_id,
+        policy_schema_version=operational_alert_policy.schema_version,
+        app_env_profile=settings.APP_ENV.value,
+    )
     otlp_result = configure_otlp_metrics(settings)
     logger.info(
         "runtime_mode_bootstrap_completed",
@@ -70,7 +89,7 @@ def _bootstrap_mode(mode: str):
         otlp_configured=otlp_result.configured,
         otlp_reason=otlp_result.reason,
     )
-    return settings, logger
+    return settings, logger, alert_evaluator
 
 
 def _run_hot_path() -> None:
@@ -90,7 +109,7 @@ def _run_cold_path() -> None:
 
 
 def _run_outbox_publisher(*, once: bool) -> None:
-    settings, logger = _bootstrap_mode("outbox-publisher")
+    settings, logger, alert_evaluator = _bootstrap_mode("outbox-publisher")
 
     policy = load_policy_yaml(_OUTBOX_POLICY_PATH, OutboxPolicyV1)
     denylist = load_denylist(_DENYLIST_PATH)
@@ -108,6 +127,7 @@ def _run_outbox_publisher(*, once: bool) -> None:
         denylist=denylist,
         policy=policy,
         app_env=settings.APP_ENV.value,
+        alert_evaluator=alert_evaluator,
         batch_size=settings.OUTBOX_PUBLISHER_BATCH_SIZE,
         poll_interval_seconds=settings.OUTBOX_PUBLISHER_POLL_INTERVAL_SECONDS,
     )
@@ -126,7 +146,7 @@ def _run_outbox_publisher(*, once: bool) -> None:
 
 
 def _run_casefile_lifecycle(*, once: bool) -> None:
-    settings, logger = _bootstrap_mode("casefile-lifecycle")
+    settings, logger, _ = _bootstrap_mode("casefile-lifecycle")
 
     policy = load_policy_yaml(_CASEFILE_RETENTION_POLICY_PATH, CasefileRetentionPolicyV1)
     runner = CasefileLifecycleRunner(

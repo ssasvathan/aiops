@@ -14,6 +14,10 @@ from aiops_triage_pipeline.errors.exceptions import (
     DenylistSanitizationError,
     PublishAfterDenylistError,
 )
+from aiops_triage_pipeline.health.alerts import (
+    OperationalAlertEvaluation,
+    OperationalAlertEvaluator,
+)
 from aiops_triage_pipeline.logging.setup import get_logger
 from aiops_triage_pipeline.outbox.metrics import (
     record_outbox_delivery_slo_breach,
@@ -88,6 +92,7 @@ class OutboxPublisherWorker:
         denylist: DenylistV1,
         policy: OutboxPolicyV1,
         app_env: str,
+        alert_evaluator: OperationalAlertEvaluator | None = None,
         batch_size: int = 100,
         poll_interval_seconds: float = 5.0,
     ) -> None:
@@ -102,6 +107,7 @@ class OutboxPublisherWorker:
         self._denylist = denylist
         self._policy = policy
         self._app_env = app_env
+        self._alert_evaluator = alert_evaluator
         self._batch_size = batch_size
         self._poll_interval_seconds = poll_interval_seconds
         self._logger = get_logger("outbox.worker")
@@ -290,6 +296,21 @@ class OutboxPublisherWorker:
                 threshold_value=threshold_value,
                 app_env=self._app_env,
             )
+            if self._alert_evaluator is not None:
+                alert = self._alert_evaluator.evaluate_outbox_state_age(
+                    state=state,
+                    actual_age_seconds=actual_age,
+                    warning_threshold_seconds=warning_threshold,
+                    critical_threshold_seconds=critical_threshold,
+                )
+                if alert is not None:
+                    self._emit_operational_alert(
+                        alert=alert,
+                        state=state,
+                        app_env=self._app_env,
+                        actual_value=actual_age,
+                        threshold_value=threshold_value,
+                    )
 
     def _emit_dead_count_threshold_breach(self, *, health: OutboxHealthSnapshot) -> None:
         critical_threshold = self._policy.dead_count_critical_threshold.get(self._app_env, 0)
@@ -318,6 +339,19 @@ class OutboxPublisherWorker:
             app_env=self._app_env,
             message="DEAD records require human investigation and explicit replay/resolution.",
         )
+        if self._alert_evaluator is not None:
+            alert = self._alert_evaluator.evaluate_outbox_dead_count(
+                dead_count=health.dead_count,
+                critical_threshold=critical_threshold,
+            )
+            if alert is not None:
+                self._emit_operational_alert(
+                    alert=alert,
+                    state="DEAD",
+                    app_env=self._app_env,
+                    actual_value=float(health.dead_count),
+                    threshold_value=float(critical_threshold),
+                )
 
     def _record_delivery_latency_sample(self, *, seconds: float) -> None:
         self._delivery_latency_samples_seconds.append(max(seconds, 0.0))
@@ -422,6 +456,30 @@ class OutboxPublisherWorker:
                 removed_field_count=exc.removed_field_count,
                 error_code=exc.error_code,
             )
+
+    def _emit_operational_alert(
+        self,
+        *,
+        alert: OperationalAlertEvaluation,
+        **fields: object,
+    ) -> None:
+        log_fn = self._logger.critical if alert.severity == "critical" else self._logger.warning
+        payload: dict[str, object] = {
+            "event_type": "operational_alert_rule_triggered",
+            "rule_id": alert.rule_id,
+            "component": alert.component,
+            "severity": alert.severity,
+            "condition": alert.condition,
+            "recommended_action": alert.recommended_action,
+            "observed_value": alert.observed_value,
+            "threshold_value": alert.threshold_value,
+        }
+        payload.update(alert.metadata)
+        payload.update(fields)
+        log_fn(
+            "operational_alert_rule_triggered",
+            **payload,
+        )
 
 
 def _resolve_now(now: datetime | None) -> datetime:

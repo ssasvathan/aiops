@@ -19,6 +19,13 @@ from aiops_triage_pipeline.contracts.gate_input import Finding, GateInputV1
 
 # ── Policy Contracts (Story 1.3) ─────────────────────────────────────────────
 from aiops_triage_pipeline.contracts.local_dev import LocalDevContractV1, LocalDevIntegrationModes
+from aiops_triage_pipeline.contracts.operational_alert_policy import (
+    AlertRuleDescriptor,
+    LlmErrorRateAlertRule,
+    OperationalAlertPolicyV1,
+    ThresholdBySeverity,
+    ThresholdedAlertRule,
+)
 from aiops_triage_pipeline.contracts.outbox_policy import OutboxPolicyV1, OutboxRetentionPolicy
 from aiops_triage_pipeline.contracts.peak_policy import PeakPolicyV1, PeakThresholdPolicy
 from aiops_triage_pipeline.contracts.prometheus_metrics import (
@@ -81,6 +88,11 @@ __all__ = [
     "RedisTtlsByEnv",
     "OutboxPolicyV1",
     "OutboxRetentionPolicy",
+    "AlertRuleDescriptor",
+    "LlmErrorRateAlertRule",
+    "OperationalAlertPolicyV1",
+    "ThresholdBySeverity",
+    "ThresholdedAlertRule",
     "ServiceNowLinkageContractV1",
     "LocalDevContractV1",
     "LocalDevIntegrationModes",

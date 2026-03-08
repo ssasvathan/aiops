@@ -16,6 +16,10 @@ from aiops_triage_pipeline.contracts.gate_input import Finding, GateInputV1
 from aiops_triage_pipeline.contracts.outbox_policy import OutboxPolicyV1, OutboxRetentionPolicy
 from aiops_triage_pipeline.denylist.loader import DenylistV1
 from aiops_triage_pipeline.errors.exceptions import CriticalDependencyError
+from aiops_triage_pipeline.health.alerts import (
+    OperationalAlertEvaluator,
+    load_operational_alert_policy,
+)
 from aiops_triage_pipeline.models.case_file import (
     TRIAGE_HASH_PLACEHOLDER,
     CaseFileEvidenceSnapshot,
@@ -753,6 +757,48 @@ def test_outbox_worker_emits_dead_count_critical_in_prod_with_manual_resolution_
     ]
     assert dead_manual_events
     assert "human investigation" in dead_manual_events[0][2]["message"]
+
+
+def test_outbox_worker_emits_operational_alert_rule_event_for_ready_age_breach() -> None:
+    snapshot = OutboxHealthSnapshot(
+        pending_object_count=0,
+        ready_count=1,
+        retry_count=0,
+        dead_count=0,
+        sent_count=0,
+        oldest_pending_object_age_seconds=0.0,
+        oldest_ready_age_seconds=601.0,
+        oldest_retry_age_seconds=0.0,
+        oldest_dead_age_seconds=0.0,
+    )
+    alert_evaluator = OperationalAlertEvaluator(
+        policy=load_operational_alert_policy(),
+        app_env="local",
+    )
+    worker = OutboxPublisherWorker(
+        outbox_repository=_SnapshotOnlyRepository(snapshot),
+        object_store_client=_InMemoryObjectStoreClient(),
+        publisher=_RecordingPublisher(),
+        denylist=_denylist_for_tests(),
+        policy=_policy_with_max_retry(max_retry_attempts=3),
+        app_env="local",
+        alert_evaluator=alert_evaluator,
+    )
+    logger = _RecordingLogger()
+    worker._logger = logger  # noqa: SLF001
+
+    worker.run_once(now=datetime(2026, 3, 6, 12, 3, tzinfo=UTC))
+
+    alert_events = [
+        event
+        for event in logger.events
+        if event[2].get("event_type") == "operational_alert_rule_triggered"
+    ]
+    assert alert_events
+    _, _, fields = alert_events[0]
+    assert fields["rule_id"] == "ALERT_OUTBOX_READY_AGE_CRITICAL"
+    assert fields["component"] == "outbox"
+    assert fields["severity"] == "critical"
 
 
 def test_outbox_worker_p99_critical_breach_when_latency_exceeds_ten_minutes(monkeypatch) -> None:

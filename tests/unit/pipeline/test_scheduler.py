@@ -11,6 +11,10 @@ from aiops_triage_pipeline.contracts.enums import Action, CriticalityTier, Evide
 from aiops_triage_pipeline.contracts.gate_input import Finding, GateInputV1
 from aiops_triage_pipeline.contracts.peak_policy import PeakPolicyV1, PeakThresholdPolicy
 from aiops_triage_pipeline.contracts.redis_ttl_policy import RedisTtlPolicyV1, RedisTtlsByEnv
+from aiops_triage_pipeline.health.alerts import (
+    OperationalAlertEvaluator,
+    load_operational_alert_policy,
+)
 from aiops_triage_pipeline.health.registry import HealthRegistry
 from aiops_triage_pipeline.integrations.prometheus import MetricQueryDefinition
 from aiops_triage_pipeline.integrations.slack import SlackClient, SlackIntegrationMode
@@ -213,6 +217,30 @@ def test_evaluate_scheduler_tick_emits_interval_adherence_metric() -> None:
         missed_intervals=2,
         interval_seconds=300,
     )
+
+
+def test_evaluate_scheduler_tick_emits_operational_alert_rule_event(
+    log_stream: io.StringIO,
+) -> None:
+    _ = evaluate_scheduler_tick(
+        actual_fire_time=datetime(2026, 3, 2, 12, 5, 35, tzinfo=UTC),
+        previous_boundary=datetime(2026, 3, 2, 12, 0, 0, tzinfo=UTC),
+        interval_seconds=300,
+        drift_threshold_seconds=30,
+        alert_evaluator=OperationalAlertEvaluator(
+            policy=load_operational_alert_policy(),
+            app_env="prod",
+        ),
+    )
+
+    alert_events = [
+        entry
+        for entry in _parse_logs(log_stream)
+        if entry.get("event") == "operational_alert_rule_triggered"
+    ]
+    assert alert_events
+    assert alert_events[0]["rule_id"] == "ALERT_SCHEDULER_INTERVAL_DRIFT_WARNING"
+    assert alert_events[0]["component"] == "scheduler"
 
 
 async def test_run_evidence_stage_cycle_wires_collection_to_anomaly_output() -> None:
@@ -504,6 +532,71 @@ async def test_run_evidence_stage_cycle_records_prometheus_degraded_metrics() ->
     assert degraded_active.call_args_list[1].kwargs == {"active": False}
     assert degraded_transition.call_args_list[0].kwargs == {"transition": "active"}
     assert degraded_transition.call_args_list[1].kwargs == {"transition": "cleared"}
+
+
+async def test_run_evidence_stage_cycle_emits_prometheus_operational_alert(
+    log_stream: io.StringIO,
+) -> None:
+    class _OutageClient:
+        def query_instant(self, metric_name: str, at_time: datetime) -> list[dict]:  # noqa: ARG002
+            raise URLError(f"source unavailable for {metric_name}")
+
+    _ = await run_evidence_stage_cycle(
+        client=_OutageClient(),
+        metric_queries=_metric_queries_for_degraded_tests(),
+        evaluation_time=datetime(2026, 3, 2, 12, 5, tzinfo=UTC),
+        health_registry=HealthRegistry(),
+        alert_evaluator=OperationalAlertEvaluator(
+            policy=load_operational_alert_policy(),
+            app_env="prod",
+        ),
+    )
+
+    alert_events = [
+        entry
+        for entry in _parse_logs(log_stream)
+        if entry.get("event") == "operational_alert_rule_triggered"
+    ]
+    assert alert_events
+    assert alert_events[0]["rule_id"] == "ALERT_PROMETHEUS_UNAVAILABLE"
+    assert alert_events[0]["component"] == "prometheus"
+
+
+async def test_run_evidence_stage_cycle_emits_pipeline_latency_operational_alert(
+    log_stream: io.StringIO,
+) -> None:
+    class _Client:
+        def query_instant(self, metric_name: str, at_time: datetime) -> list[dict]:  # noqa: ARG002
+            if metric_name == "kafka_server_brokertopicmetrics_messagesinpersec":
+                return []
+            if metric_name == "kafka_consumergroup_group_lag":
+                return []
+            return []
+
+    with patch("aiops_triage_pipeline.pipeline.scheduler.time.perf_counter") as perf_counter:
+        perf_counter.side_effect = [100.0, 103.0]
+        _ = await run_evidence_stage_cycle(
+            client=_Client(),
+            metric_queries=_metric_queries_for_degraded_tests(),
+            evaluation_time=datetime(2026, 3, 2, 12, 5, tzinfo=UTC),
+            alert_evaluator=OperationalAlertEvaluator(
+                policy=load_operational_alert_policy(),
+                app_env="prod",
+            ),
+        )
+
+    alert_events = [
+        entry
+        for entry in _parse_logs(log_stream)
+        if entry.get("event") == "operational_alert_rule_triggered"
+    ]
+    assert alert_events
+    latency_events = [
+        entry
+        for entry in alert_events
+        if entry.get("rule_id") == "ALERT_PIPELINE_STAGE_LATENCY_CRITICAL"
+    ]
+    assert latency_events
 
 
 def test_run_peak_stage_cycle_wires_stage1_rows_to_peak_output() -> None:

@@ -20,6 +20,10 @@ from aiops_triage_pipeline.diagnosis.graph import (
     run_cold_path_diagnosis,
     spawn_cold_path_diagnosis_task,
 )
+from aiops_triage_pipeline.health.alerts import (
+    OperationalAlertEvaluator,
+    load_operational_alert_policy,
+)
 from aiops_triage_pipeline.health.registry import HealthRegistry
 from aiops_triage_pipeline.integrations.llm import LLMClient
 from aiops_triage_pipeline.models.health import HealthStatus
@@ -406,6 +410,69 @@ async def test_timeout_path_emits_llm_timeout_error_and_fallback_metrics() -> No
     mock_timeout.assert_called_once_with()
     mock_error.assert_called_once_with(error_type="TimeoutError")
     mock_fallback.assert_called_once_with(reason_code="LLM_TIMEOUT")
+
+
+async def test_run_cold_path_diagnosis_emits_operational_alert_for_llm_error_rate() -> None:
+    class _CaptureLogger:
+        def __init__(self) -> None:
+            self.events: list[tuple[str, str, dict[str, object]]] = []
+
+        def info(self, event: str, **kwargs: object) -> None:
+            self.events.append(("info", event, kwargs))
+
+        def warning(self, event: str, **kwargs: object) -> None:
+            self.events.append(("warning", event, kwargs))
+
+        def critical(self, event: str, **kwargs: object) -> None:
+            self.events.append(("critical", event, kwargs))
+
+    policy = load_operational_alert_policy()
+    policy = policy.model_copy(
+        update={
+            "llm_error_rate": policy.llm_error_rate.model_copy(update={"window_size": 3}),
+        }
+    )
+    evaluator = OperationalAlertEvaluator(policy=policy, app_env="local")
+    logger = _CaptureLogger()
+    registry = HealthRegistry()
+
+    with patch("aiops_triage_pipeline.diagnosis.graph._logger", logger):
+        failing_client = MagicMock(spec=LLMClient)
+        failing_client.invoke = AsyncMock(side_effect=RuntimeError("llm exploded"))
+        for case_id in ("test-llm-err-rate-1", "test-llm-err-rate-2"):
+            _ = await run_cold_path_diagnosis(
+                case_id=case_id,
+                triage_excerpt=_make_eligible_excerpt(case_id),
+                evidence_summary=_EVIDENCE_SUMMARY,
+                llm_client=failing_client,
+                denylist=_EMPTY_DENYLIST,
+                health_registry=registry,
+                object_store_client=_make_mock_store(),
+                triage_hash=_FAKE_TRIAGE_HASH,
+                alert_evaluator=evaluator,
+            )
+
+        _ = await run_cold_path_diagnosis(
+            case_id="test-llm-err-rate-3",
+            triage_excerpt=_make_eligible_excerpt("test-llm-err-rate-3"),
+            evidence_summary=_EVIDENCE_SUMMARY,
+            llm_client=_make_mock_client(),
+            denylist=_EMPTY_DENYLIST,
+            health_registry=registry,
+            object_store_client=_make_mock_store(),
+            triage_hash=_FAKE_TRIAGE_HASH,
+            alert_evaluator=evaluator,
+        )
+
+    alert_events = [
+        event
+        for event in logger.events
+        if event[2].get("event_type") == "operational_alert_rule_triggered"
+    ]
+    assert alert_events
+    _, _, fields = alert_events[0]
+    assert fields["rule_id"] == "ALERT_LLM_ERROR_RATE_SPIKE_CRITICAL"
+    assert fields["component"] == "llm"
 
 
 async def test_health_registry_degraded_on_generic_exception() -> None:

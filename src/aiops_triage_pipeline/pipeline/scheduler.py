@@ -14,6 +14,10 @@ from aiops_triage_pipeline.contracts.gate_input import GateInputV1
 from aiops_triage_pipeline.contracts.peak_policy import PeakPolicyV1
 from aiops_triage_pipeline.contracts.redis_ttl_policy import RedisTtlPolicyV1
 from aiops_triage_pipeline.contracts.rulebook import RulebookV1
+from aiops_triage_pipeline.health.alerts import (
+    OperationalAlertEvaluation,
+    OperationalAlertEvaluator,
+)
 from aiops_triage_pipeline.health.metrics import (
     record_evidence_interval_tick,
     record_pipeline_case_throughput,
@@ -85,6 +89,7 @@ def evaluate_scheduler_tick(
     previous_boundary: datetime | None,
     interval_seconds: int = 300,
     drift_threshold_seconds: int = 30,
+    alert_evaluator: OperationalAlertEvaluator | None = None,
 ) -> SchedulerTick:
     """Evaluate scheduler cadence, returning drift and missed interval details."""
     expected_boundary = floor_to_interval_boundary(
@@ -115,6 +120,17 @@ def evaluate_scheduler_tick(
             drift_seconds=drift_seconds,
             drift_threshold_seconds=drift_threshold_seconds,
         )
+    if alert_evaluator is not None:
+        alert = alert_evaluator.evaluate_scheduler_drift(drift_seconds=drift_seconds)
+        if alert is not None:
+            _emit_operational_alert(
+                logger=get_logger("pipeline.scheduler"),
+                alert=alert,
+                drift_seconds=drift_seconds,
+                drift_threshold_seconds=drift_threshold_seconds,
+                expected_boundary=expected_boundary.isoformat(),
+                actual_fire_time=actual_fire_time.isoformat(),
+            )
 
     tick = SchedulerTick(
         expected_boundary=expected_boundary,
@@ -138,6 +154,7 @@ async def run_evidence_stage_cycle(
     findings_cache_client: FindingsCacheClientProtocol | None = None,
     redis_ttl_policy: RedisTtlPolicyV1 | None = None,
     health_registry: HealthRegistry | None = None,
+    alert_evaluator: OperationalAlertEvaluator | None = None,
 ) -> EvidenceStageOutput:
     """Run Stage 1 evidence collection and anomaly derivation for one scheduler cycle."""
     started_at = time.perf_counter()
@@ -170,6 +187,14 @@ async def run_evidence_stage_cycle(
                         timestamp=evaluation_time.astimezone(UTC),
                     ),
                 )
+            if alert_evaluator is not None:
+                alert = alert_evaluator.record_prometheus_unavailability(is_total_outage=True)
+                if alert is not None:
+                    _emit_operational_alert(
+                        logger=get_logger("pipeline.scheduler"),
+                        alert=alert,
+                        telemetry_degraded_active=True,
+                    )
         elif previous_prometheus_status == HealthStatus.UNAVAILABLE:
             await registry.update("prometheus", HealthStatus.HEALTHY)
             record_prometheus_degraded_transition(transition="cleared")
@@ -180,8 +205,12 @@ async def run_evidence_stage_cycle(
                     recovery_status="resolved",
                     severity="info",
                     timestamp=evaluation_time.astimezone(UTC),
-                ),
-            )
+                    ),
+                )
+            if alert_evaluator is not None:
+                alert_evaluator.record_prometheus_unavailability(is_total_outage=False)
+        elif alert_evaluator is not None:
+            alert_evaluator.record_prometheus_unavailability(is_total_outage=False)
 
         return collect_evidence_stage_output(
             diagnostics.samples_by_metric,
@@ -193,10 +222,22 @@ async def run_evidence_stage_cycle(
             max_safe_action=Action.NOTIFY if diagnostics.is_total_outage else None,
         )
     finally:
+        elapsed_seconds = time.perf_counter() - started_at
         record_pipeline_compute_latency(
             stage="stage1_evidence",
-            seconds=time.perf_counter() - started_at,
+            seconds=elapsed_seconds,
         )
+        if alert_evaluator is not None:
+            alert = alert_evaluator.evaluate_pipeline_stage_latency(
+                seconds=elapsed_seconds,
+                stage="stage1_evidence",
+            )
+            if alert is not None:
+                _emit_operational_alert(
+                    logger=get_logger("pipeline.scheduler"),
+                    alert=alert,
+                    stage="stage1_evidence",
+                )
 
 
 def run_peak_stage_cycle(
@@ -209,6 +250,7 @@ def run_peak_stage_cycle(
     evaluation_time: datetime,
     peak_policy: PeakPolicyV1 | None = None,
     rulebook_policy: RulebookV1 | None = None,
+    alert_evaluator: OperationalAlertEvaluator | None = None,
 ) -> PeakStageOutput:
     """Run Stage 2 peak classification from Stage 1 normalized rows.
 
@@ -228,16 +270,29 @@ def run_peak_stage_cycle(
             rulebook_policy=rulebook_policy,
         )
     finally:
+        elapsed_seconds = time.perf_counter() - started_at
         record_pipeline_compute_latency(
             stage="stage2_peak",
-            seconds=time.perf_counter() - started_at,
+            seconds=elapsed_seconds,
         )
+        if alert_evaluator is not None:
+            alert = alert_evaluator.evaluate_pipeline_stage_latency(
+                seconds=elapsed_seconds,
+                stage="stage2_peak",
+            )
+            if alert is not None:
+                _emit_operational_alert(
+                    logger=get_logger("pipeline.scheduler"),
+                    alert=alert,
+                    stage="stage2_peak",
+                )
 
 
 def run_topology_stage_cycle(
     *,
     evidence_output: EvidenceStageOutput,
     snapshot: TopologyRegistrySnapshot,
+    alert_evaluator: OperationalAlertEvaluator | None = None,
 ) -> TopologyStageOutput:
     """Run Stage 3 topology resolution from Stage 1 findings."""
     started_at = time.perf_counter()
@@ -247,10 +302,22 @@ def run_topology_stage_cycle(
             evidence_output=evidence_output,
         )
     finally:
+        elapsed_seconds = time.perf_counter() - started_at
         record_pipeline_compute_latency(
             stage="stage3_topology",
-            seconds=time.perf_counter() - started_at,
+            seconds=elapsed_seconds,
         )
+        if alert_evaluator is not None:
+            alert = alert_evaluator.evaluate_pipeline_stage_latency(
+                seconds=elapsed_seconds,
+                stage="stage3_topology",
+            )
+            if alert is not None:
+                _emit_operational_alert(
+                    logger=get_logger("pipeline.scheduler"),
+                    alert=alert,
+                    stage="stage3_topology",
+                )
 
 
 def run_gate_input_stage_cycle(
@@ -258,6 +325,7 @@ def run_gate_input_stage_cycle(
     evidence_output: EvidenceStageOutput,
     peak_output: PeakStageOutput,
     context_by_scope: Mapping[tuple[str, ...], GateInputContext],
+    alert_evaluator: OperationalAlertEvaluator | None = None,
 ) -> dict[tuple[str, ...], tuple[GateInputV1, ...]]:
     """Run Stage 6 gate-input assembly from Stage 1 and Stage 2 outputs."""
     started_at = time.perf_counter()
@@ -299,10 +367,22 @@ def run_gate_input_stage_cycle(
             max_safe_action=filtered_evidence_output.max_safe_action,
         )
     finally:
+        elapsed_seconds = time.perf_counter() - started_at
         record_pipeline_compute_latency(
             stage="stage4_gate_input",
-            seconds=time.perf_counter() - started_at,
+            seconds=elapsed_seconds,
         )
+        if alert_evaluator is not None:
+            alert = alert_evaluator.evaluate_pipeline_stage_latency(
+                seconds=elapsed_seconds,
+                stage="stage4_gate_input",
+            )
+            if alert is not None:
+                _emit_operational_alert(
+                    logger=get_logger("pipeline.scheduler"),
+                    alert=alert,
+                    stage="stage4_gate_input",
+                )
 
 
 def run_gate_decision_stage_cycle(
@@ -311,6 +391,7 @@ def run_gate_decision_stage_cycle(
     rulebook_policy: RulebookV1 | None = None,
     dedupe_store: GateDedupeStoreProtocol | None = None,
     latency_warning_threshold_ms: int = 500,
+    alert_evaluator: OperationalAlertEvaluator | None = None,
 ) -> dict[tuple[str, ...], tuple[ActionDecisionV1, ...]]:
     """Run Stage 6 rulebook decision evaluation for assembled gate inputs."""
     started_at = time.perf_counter()
@@ -327,10 +408,22 @@ def run_gate_decision_stage_cycle(
             latency_warning_threshold_ms=latency_warning_threshold_ms,
         )
     finally:
+        elapsed_seconds = time.perf_counter() - started_at
         record_pipeline_compute_latency(
             stage="stage5_gate_decision",
-            seconds=time.perf_counter() - started_at,
+            seconds=elapsed_seconds,
         )
+        if alert_evaluator is not None:
+            alert = alert_evaluator.evaluate_pipeline_stage_latency(
+                seconds=elapsed_seconds,
+                stage="stage5_gate_decision",
+            )
+            if alert is not None:
+                _emit_operational_alert(
+                    logger=get_logger("pipeline.scheduler"),
+                    alert=alert,
+                    stage="stage5_gate_decision",
+                )
 
     produced_cases = sum(len(decisions) for decisions in decisions_by_scope.values())
     record_pipeline_case_throughput(case_count=produced_cases)
@@ -405,6 +498,31 @@ async def emit_redis_degraded_mode_events(
             previous_status=previous_redis_status.value,
         )
     return ()
+
+
+def _emit_operational_alert(
+    *,
+    logger,
+    alert: OperationalAlertEvaluation,
+    **fields: object,
+) -> None:
+    log_fn = logger.critical if alert.severity == "critical" else logger.warning
+    payload: dict[str, object] = {
+        "event_type": "operational_alert_rule_triggered",
+        "rule_id": alert.rule_id,
+        "component": alert.component,
+        "severity": alert.severity,
+        "condition": alert.condition,
+        "recommended_action": alert.recommended_action,
+        "observed_value": alert.observed_value,
+        "threshold_value": alert.threshold_value,
+    }
+    payload.update(alert.metadata)
+    payload.update(fields)
+    log_fn(
+        "operational_alert_rule_triggered",
+        **payload,
+    )
 
 
 def _has_gate_input_context(
