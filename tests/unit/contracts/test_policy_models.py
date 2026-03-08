@@ -339,6 +339,16 @@ def test_sn_linkage_policy_artifact_contains_tiered_correlation_defaults() -> No
     assert policy.live_timeout_seconds == 5.0
     assert policy.max_results_per_tier == 25
     assert policy.max_upsert_lookup_results == 5
+    assert policy.retry_window_minutes == 120
+    assert policy.retry_base_seconds == 30
+    assert policy.retry_max_seconds == 900
+    assert policy.retry_jitter_ratio == 0.2
+    assert policy.transient_error_classifications == (
+        "timeout",
+        "connection_error",
+        "http_429",
+        "http_5xx",
+    )
 
 
 def test_sn_linkage_rejects_incident_table_for_problem_or_task_writes() -> None:
@@ -362,6 +372,11 @@ def test_sn_linkage_rejects_unsupported_correlation_tier() -> None:
 def test_sn_linkage_rejects_out_of_order_correlation_tiers() -> None:
     with pytest.raises(ValidationError):
         ServiceNowLinkageContractV1(correlation_strategy=("tier2", "tier1"))
+
+
+def test_sn_linkage_rejects_retry_base_larger_than_retry_max() -> None:
+    with pytest.raises(ValidationError):
+        ServiceNowLinkageContractV1(retry_base_seconds=901, retry_max_seconds=900)
 
 
 def test_prometheus_metrics_keys_accessible(

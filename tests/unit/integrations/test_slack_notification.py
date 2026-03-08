@@ -327,3 +327,77 @@ def test_live_mode_denylist_field_denied_absent_from_webhook_payload() -> None:
         f"Expected denied case_id to be absent from webhook text; got: {body['text']}"
     )
     assert "[redacted]" in body["text"]
+
+
+def test_failed_final_log_mode_emits_structured_escalation_without_http() -> None:
+    client = _make_client(mode=SlackIntegrationMode.LOG)
+    with structlog.testing.capture_logs() as cap_logs:
+        with patch(_URLOPEN_PATH) as mock_urlopen:
+            client.send_linkage_failed_final_escalation(
+                case_id=_CASE_ID,
+                request_id="req-final-1",
+                pd_incident_id="pd-inc-001",
+                incident_sys_id="inc-001",
+                reason_code="retry_window_exhausted",
+                error_message="http_status=503",
+                attempt_count=4,
+                retry_window_minutes=120,
+                latency_ms=12.5,
+                denylist=_make_empty_denylist(),
+            )
+            mock_urlopen.assert_not_called()
+
+    entry = next(
+        e for e in cap_logs if e.get("event") == "sn_linkage_failed_final_escalation_dispatch"
+    )
+    assert entry.get("case_id") == _CASE_ID
+    assert entry.get("request_id") == "req-final-1"
+    assert entry.get("action") == "sn_linkage_failed_final_escalation"
+    assert entry.get("outcome") == "FAILED_FINAL"
+    assert entry.get("slack_mode") == SlackIntegrationMode.LOG.value
+
+
+def test_failed_final_mock_mode_increments_send_count() -> None:
+    client = _make_client(mode=SlackIntegrationMode.MOCK)
+    with patch(_URLOPEN_PATH) as mock_urlopen:
+        client.send_linkage_failed_final_escalation(
+            case_id=_CASE_ID,
+            request_id="req-final-2",
+            pd_incident_id="pd-inc-001",
+            incident_sys_id="inc-001",
+            reason_code="http_5xx",
+            error_message="http_status=503",
+            attempt_count=2,
+            retry_window_minutes=120,
+            latency_ms=8.0,
+            denylist=_make_empty_denylist(),
+        )
+        mock_urlopen.assert_not_called()
+    assert client.mock_send_count == 1
+
+
+def test_failed_final_live_mode_applies_denylist_to_webhook_payload() -> None:
+    client = _make_client(mode=SlackIntegrationMode.LIVE, webhook_url=_WEBHOOK_URL)
+    denylist = DenylistV1(
+        denylist_version="deny-case-id",
+        denied_field_names=("case_id",),
+        denied_value_patterns=(),
+    )
+    with patch(_URLOPEN_PATH, return_value=_make_live_response()) as mock_urlopen:
+        client.send_linkage_failed_final_escalation(
+            case_id=_CASE_ID,
+            request_id="req-final-3",
+            pd_incident_id="pd-inc-001",
+            incident_sys_id="inc-001",
+            reason_code="retry_window_exhausted",
+            error_message="http_status=503",
+            attempt_count=5,
+            retry_window_minutes=120,
+            latency_ms=20.0,
+            denylist=denylist,
+        )
+
+    req = mock_urlopen.call_args[0][0]
+    body = json.loads(req.data.decode())
+    assert _CASE_ID not in body["text"]
+    assert "[redacted]" in body["text"]

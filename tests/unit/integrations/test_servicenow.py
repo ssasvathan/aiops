@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
+from email.message import Message
 from unittest.mock import MagicMock, patch
+from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlsplit
 
 import structlog.testing
@@ -583,3 +585,30 @@ def test_upsert_problem_and_pir_tasks_rejects_empty_task_type_list() -> None:
     assert outcome.linkage_status == "failed"
     assert outcome.linkage_reason == "invalid_input"
     assert outcome.reason_metadata["missing_fields"] == ("pir_task_types",)
+
+
+def test_upsert_orchestration_surfaces_http_429_error_code_and_retry_after() -> None:
+    client = _make_client(mode=IntegrationMode.LIVE)
+    headers = Message()
+    headers["Retry-After"] = "7"
+    http_429 = HTTPError(
+        url=f"{_SN_BASE_URL}/api/now/table/problem",
+        code=429,
+        msg="Too Many Requests",
+        hdrs=headers,
+        fp=None,
+    )
+    with patch(_URLOPEN_PATH, side_effect=http_429):
+        outcome = client.upsert_problem_and_pir_tasks(
+            case_id=_CASE_ID,
+            pd_incident_id=_PD_INCIDENT_ID,
+            incident_sys_id="inc-001",
+            summary="link case",
+            pir_task_types=("timeline",),
+            context={"routing_key": _ROUTING_KEY},
+        )
+
+    assert outcome.linkage_status == "failed"
+    assert outcome.reason_metadata["problem_reason"] == "lookup_error"
+    assert outcome.reason_metadata["error_code"] == "http_429"
+    assert outcome.reason_metadata["retry_after_seconds"] == 7

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+
+from sqlalchemy import create_engine
 
 from aiops_triage_pipeline.contracts.action_decision import ActionDecisionV1
 from aiops_triage_pipeline.contracts.enums import (
@@ -10,7 +12,9 @@ from aiops_triage_pipeline.contracts.enums import (
     EvidenceStatus,
 )
 from aiops_triage_pipeline.contracts.gate_input import Finding, GateInputV1
+from aiops_triage_pipeline.contracts.sn_linkage import ServiceNowLinkageContractV1
 from aiops_triage_pipeline.integrations.servicenow import ServiceNowLinkageWriteResult
+from aiops_triage_pipeline.linkage.repository import ServiceNowLinkageRetrySqlRepository
 from aiops_triage_pipeline.models.case_file import (
     TRIAGE_HASH_PLACEHOLDER,
     CaseFileEvidenceSnapshot,
@@ -62,6 +66,28 @@ class _FakeServiceNowClient:
     def upsert_problem_and_pir_tasks(self, **kwargs: object) -> ServiceNowLinkageWriteResult:
         self.calls.append(kwargs)
         return self.result
+
+
+class _SequencedServiceNowClient:
+    def __init__(
+        self,
+        *,
+        results: tuple[ServiceNowLinkageWriteResult, ...],
+        linkage_contract: ServiceNowLinkageContractV1,
+    ) -> None:
+        self._results = list(results)
+        self._linkage_contract = linkage_contract
+        self.calls: list[dict[str, object]] = []
+
+    @property
+    def linkage_contract(self) -> ServiceNowLinkageContractV1:
+        return self._linkage_contract
+
+    def upsert_problem_and_pir_tasks(self, **kwargs: object) -> ServiceNowLinkageWriteResult:
+        self.calls.append(kwargs)
+        if not self._results:
+            raise AssertionError("No fake ServiceNow linkage results left")
+        return self._results.pop(0)
 
 
 def _sample_casefile() -> CaseFileTriageV1:
@@ -214,3 +240,162 @@ def test_execute_servicenow_linkage_and_persist_records_failed_linkage_result() 
     assert serialize_casefile_triage(triage) == object_store_client.store[
         f"cases/{triage.case_id}/triage.json"
     ]
+
+
+def test_execute_servicenow_linkage_and_persist_retries_failed_temp_then_links() -> None:
+    object_store_client = _FakeObjectStoreClient()
+    triage = _sample_casefile()
+    persist_casefile_triage_write_once(
+        object_store_client=object_store_client,
+        casefile=triage,
+    )
+    repository = ServiceNowLinkageRetrySqlRepository(
+        engine=create_engine("sqlite+pysqlite:///:memory:")
+    )
+    repository.ensure_schema()
+    contract = ServiceNowLinkageContractV1(
+        retry_window_minutes=120,
+        retry_base_seconds=1,
+        retry_max_seconds=2,
+        retry_jitter_ratio=0.1,
+    )
+    servicenow_client = _SequencedServiceNowClient(
+        linkage_contract=contract,
+        results=(
+            ServiceNowLinkageWriteResult(
+                linkage_status="failed",
+                linkage_reason="upsert_error",
+                request_id="req-temp",
+                incident_sys_id="inc-001",
+                reason_metadata={
+                    "error": "http_status=503",
+                    "error_code": "http_5xx",
+                },
+            ),
+            ServiceNowLinkageWriteResult(
+                linkage_status="linked",
+                linkage_reason="linked",
+                request_id="req-linked",
+                incident_sys_id="inc-001",
+                problem_sys_id="prb-001",
+                problem_external_id="aiops:problem:case:pd:hash",
+                pir_task_sys_ids=("ptsk-001",),
+                pir_task_external_ids=("aiops:pir-task:case:pd:hash:timeline",),
+            ),
+        ),
+    )
+    now = datetime(2026, 3, 8, 12, 0, tzinfo=UTC)
+
+    first = execute_servicenow_linkage_and_persist(
+        case_id=triage.case_id,
+        pd_incident_id="pd-inc-001",
+        incident_sys_id="inc-001",
+        summary="link case",
+        triage_hash=triage.triage_hash,
+        object_store_client=object_store_client,
+        servicenow_client=servicenow_client,  # type: ignore[arg-type]
+        pir_task_types=("timeline",),
+        linkage_retry_repository=repository,
+        now=now,
+    )
+    assert first.linkage_result.linkage_state == "FAILED_TEMP"
+    assert first.linkage_casefile is None
+    assert first.linkage_object_path is None
+    assert len(servicenow_client.calls) == 1
+
+    scheduled = execute_servicenow_linkage_and_persist(
+        case_id=triage.case_id,
+        pd_incident_id="pd-inc-001",
+        incident_sys_id="inc-001",
+        summary="link case",
+        triage_hash=triage.triage_hash,
+        object_store_client=object_store_client,
+        servicenow_client=servicenow_client,  # type: ignore[arg-type]
+        pir_task_types=("timeline",),
+        linkage_retry_repository=repository,
+        now=now,
+    )
+    assert scheduled.linkage_result.linkage_reason == "retry_scheduled"
+    assert len(servicenow_client.calls) == 1
+
+    final = execute_servicenow_linkage_and_persist(
+        case_id=triage.case_id,
+        pd_incident_id="pd-inc-001",
+        incident_sys_id="inc-001",
+        summary="link case",
+        triage_hash=triage.triage_hash,
+        object_store_client=object_store_client,
+        servicenow_client=servicenow_client,  # type: ignore[arg-type]
+        pir_task_types=("timeline",),
+        linkage_retry_repository=repository,
+        now=now + timedelta(seconds=5),
+    )
+    assert final.linkage_result.linkage_state == "LINKED"
+    assert final.linkage_object_path == f"cases/{triage.case_id}/linkage.json"
+    assert final.linkage_casefile is not None
+    assert len(servicenow_client.calls) == 2
+
+
+def test_execute_servicenow_linkage_and_persist_terminal_failed_final_skips_retries() -> None:
+    object_store_client = _FakeObjectStoreClient()
+    triage = _sample_casefile()
+    persist_casefile_triage_write_once(
+        object_store_client=object_store_client,
+        casefile=triage,
+    )
+    repository = ServiceNowLinkageRetrySqlRepository(
+        engine=create_engine("sqlite+pysqlite:///:memory:")
+    )
+    repository.ensure_schema()
+    contract = ServiceNowLinkageContractV1(
+        retry_window_minutes=1,
+        retry_base_seconds=120,
+        retry_max_seconds=120,
+        retry_jitter_ratio=0.1,
+    )
+    servicenow_client = _SequencedServiceNowClient(
+        linkage_contract=contract,
+        results=(
+            ServiceNowLinkageWriteResult(
+                linkage_status="failed",
+                linkage_reason="upsert_error",
+                request_id="req-final",
+                incident_sys_id="inc-001",
+                reason_metadata={
+                    "error": "http_status=503",
+                    "error_code": "http_5xx",
+                },
+            ),
+        ),
+    )
+    now = datetime(2026, 3, 8, 12, 0, tzinfo=UTC)
+
+    first = execute_servicenow_linkage_and_persist(
+        case_id=triage.case_id,
+        pd_incident_id="pd-inc-001",
+        incident_sys_id="inc-001",
+        summary="link case",
+        triage_hash=triage.triage_hash,
+        object_store_client=object_store_client,
+        servicenow_client=servicenow_client,  # type: ignore[arg-type]
+        linkage_retry_repository=repository,
+        now=now + timedelta(minutes=2),
+    )
+    assert first.linkage_result.linkage_state == "FAILED_FINAL"
+    assert first.linkage_casefile is not None
+    assert first.linkage_casefile.linkage_status == "failed"
+    assert len(servicenow_client.calls) == 1
+
+    second = execute_servicenow_linkage_and_persist(
+        case_id=triage.case_id,
+        pd_incident_id="pd-inc-001",
+        incident_sys_id="inc-001",
+        summary="link case",
+        triage_hash=triage.triage_hash,
+        object_store_client=object_store_client,
+        servicenow_client=servicenow_client,  # type: ignore[arg-type]
+        linkage_retry_repository=repository,
+        now=now + timedelta(minutes=5),
+    )
+    assert second.linkage_result.linkage_reason == "failed_final_terminal"
+    assert len(servicenow_client.calls) == 1

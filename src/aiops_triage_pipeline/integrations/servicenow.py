@@ -5,9 +5,11 @@ from __future__ import annotations
 import hashlib
 import json
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 from typing import Any, Literal, Mapping
 from uuid import uuid4
 
@@ -22,6 +24,7 @@ from aiops_triage_pipeline.logging.setup import get_logger
 _CorrelationTier = Literal["tier1", "tier2", "tier3", "none"]
 _UpsertOutcome = Literal["created", "updated", "skipped", "failed"]
 _LinkageStatus = Literal["linked", "not-linked", "skipped", "failed"]
+_LinkageState = Literal["PENDING", "SEARCHING", "FAILED_TEMP", "LINKED", "FAILED_FINAL"]
 
 
 class ServiceNowCorrelationResult(BaseModel, frozen=True):
@@ -57,6 +60,9 @@ class ServiceNowLinkageWriteResult(BaseModel, frozen=True):
     problem_external_id: str | None = None
     pir_task_sys_ids: tuple[str, ...] = ()
     pir_task_external_ids: tuple[str, ...] = ()
+    linkage_state: _LinkageState | None = None
+    retryable: bool | None = None
+    next_attempt_at: datetime | None = None
     reason_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -84,6 +90,11 @@ class ServiceNowClient:
         )
         self._logger = get_logger("integrations.servicenow")
         self._mock_upsert_sys_ids: dict[tuple[str, str], str] = {}
+
+    @property
+    def linkage_contract(self) -> ServiceNowLinkageContractV1:
+        """Return the active ServiceNow linkage contract."""
+        return self._contract
 
     def correlate_incident(
         self,
@@ -320,13 +331,14 @@ class ServiceNowClient:
                 request_id=request_id,
             )
             if problem.outcome == "failed":
+                problem_metadata = {"problem_reason": problem.reason, **problem.reason_metadata}
                 return ServiceNowLinkageWriteResult(
                     linkage_status="failed",
                     linkage_reason="upsert_error",
                     request_id=request_id,
                     incident_sys_id=incident_sys_id,
                     problem_external_id=problem.external_id,
-                    reason_metadata={"problem_reason": problem.reason},
+                    reason_metadata=problem_metadata,
                 )
             if problem.outcome == "skipped":
                 return ServiceNowLinkageWriteResult(
@@ -360,6 +372,7 @@ class ServiceNowClient:
                 )
                 pir_task_external_ids.append(upsert.external_id)
                 if upsert.outcome == "failed":
+                    pir_metadata = {"pir_task_reason": upsert.reason, **upsert.reason_metadata}
                     return ServiceNowLinkageWriteResult(
                         linkage_status="failed",
                         linkage_reason="upsert_error",
@@ -369,7 +382,7 @@ class ServiceNowClient:
                         problem_external_id=problem.external_id,
                         pir_task_sys_ids=tuple(pir_task_sys_ids),
                         pir_task_external_ids=tuple(pir_task_external_ids),
-                        reason_metadata={"pir_task_reason": upsert.reason},
+                        reason_metadata=pir_metadata,
                     )
                 if upsert.outcome == "skipped":
                     return ServiceNowLinkageWriteResult(
@@ -400,7 +413,7 @@ class ServiceNowClient:
                 linkage_reason="upsert_error",
                 request_id=request_id,
                 incident_sys_id=incident_sys_id,
-                reason_metadata={"error": str(exc)},
+                reason_metadata=self._build_error_metadata(str(exc)),
             )
 
     def _correlate_mock(
@@ -685,7 +698,7 @@ class ServiceNowClient:
                 outcome="failed",
                 reason="lookup_error",
                 request_id=request_id,
-                reason_metadata={"error": lookup_error},
+                reason_metadata=self._build_error_metadata(lookup_error),
             )
 
         try:
@@ -706,7 +719,7 @@ class ServiceNowClient:
                 outcome="failed",
                 reason="lookup_error",
                 request_id=request_id,
-                reason_metadata={"error": str(exc)},
+                reason_metadata=self._build_error_metadata(str(exc)),
             )
 
         if existing_sys_id is None:
@@ -732,7 +745,7 @@ class ServiceNowClient:
                     outcome="failed",
                     reason="create_error",
                     request_id=request_id,
-                    reason_metadata={"error": write_error},
+                    reason_metadata=self._build_error_metadata(write_error),
                 )
             created_sys_id = self._extract_sys_id_from_result(write_result)
             if created_sys_id is None:
@@ -751,7 +764,7 @@ class ServiceNowClient:
                     outcome="failed",
                     reason="create_error",
                     request_id=request_id,
-                    reason_metadata={"error": "missing_sys_id"},
+                    reason_metadata=self._build_error_metadata("missing_sys_id"),
                 )
 
             self._log_write_attempt(
@@ -794,7 +807,7 @@ class ServiceNowClient:
                 outcome="failed",
                 reason="update_error",
                 request_id=request_id,
-                reason_metadata={"error": write_error},
+                reason_metadata=self._build_error_metadata(write_error),
             )
 
         resolved_sys_id = self._extract_sys_id_from_result(write_result) or existing_sys_id
@@ -843,6 +856,9 @@ class ServiceNowClient:
             records = [entry for entry in result if isinstance(entry, dict)]
             latency_ms = round((time.monotonic() - start) * 1000, 2)
             return records, latency_ms, None
+        except urllib.error.HTTPError as exc:
+            latency_ms = round((time.monotonic() - start) * 1000, 2)
+            return [], latency_ms, self._format_http_error(exc)
         except Exception as exc:  # noqa: BLE001 - surfaced as structured outcomes
             latency_ms = round((time.monotonic() - start) * 1000, 2)
             return [], latency_ms, str(exc)
@@ -879,6 +895,9 @@ class ServiceNowClient:
                 result = {}
             latency_ms = round((time.monotonic() - start) * 1000, 2)
             return result, latency_ms, None
+        except urllib.error.HTTPError as exc:
+            latency_ms = round((time.monotonic() - start) * 1000, 2)
+            return {}, latency_ms, self._format_http_error(exc)
         except Exception as exc:  # noqa: BLE001 - surfaced as structured outcomes
             latency_ms = round((time.monotonic() - start) * 1000, 2)
             return {}, latency_ms, str(exc)
@@ -1111,6 +1130,90 @@ class ServiceNowClient:
         if error:
             payload["error"] = error
         self._logger.info("sn_write_attempt", **payload)
+
+    @staticmethod
+    def _format_http_error(exc: urllib.error.HTTPError) -> str:
+        parts = [f"http_status={exc.code}"]
+        retry_after = ServiceNowClient._parse_retry_after_header(
+            exc.headers.get("Retry-After") if exc.headers else None
+        )
+        if retry_after is not None:
+            parts.append(f"retry_after_seconds={retry_after}")
+        if exc.reason:
+            parts.append(f"reason={exc.reason}")
+        return ";".join(parts)
+
+    @classmethod
+    def _build_error_metadata(cls, error: str | None) -> dict[str, Any]:
+        if not error:
+            return {}
+        metadata: dict[str, Any] = {"error": error}
+        error_code = cls._extract_error_code(error)
+        if error_code is not None:
+            metadata["error_code"] = error_code
+        retry_after = cls._extract_retry_after_seconds(error)
+        if retry_after is not None:
+            metadata["retry_after_seconds"] = retry_after
+        return metadata
+
+    @staticmethod
+    def _extract_error_code(error: str) -> str | None:
+        normalized = error.lower()
+        if "http_status=429" in normalized or "http error 429" in normalized:
+            return "http_429"
+        if any(
+            marker in normalized
+            for marker in (
+                "http_status=500",
+                "http_status=502",
+                "http_status=503",
+                "http_status=504",
+                "http error 500",
+                "http error 502",
+                "http error 503",
+                "http error 504",
+            )
+        ):
+            return "http_5xx"
+        if "timed out" in normalized or "timeout" in normalized:
+            return "timeout"
+        if any(
+            marker in normalized
+            for marker in ("connection refused", "connection reset", "connection aborted")
+        ):
+            return "connection_error"
+        return None
+
+    @staticmethod
+    def _extract_retry_after_seconds(error: str) -> int | None:
+        marker = "retry_after_seconds="
+        if marker not in error:
+            return None
+        try:
+            value = error.split(marker, 1)[1].split(";", 1)[0].strip()
+            parsed = int(value)
+            return parsed if parsed > 0 else None
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _parse_retry_after_header(value: str | None) -> int | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            return None
+        if normalized.isdigit():
+            parsed = int(normalized)
+            return parsed if parsed > 0 else None
+        try:
+            parsed_dt = parsedate_to_datetime(normalized)
+        except (TypeError, ValueError):
+            return None
+        if parsed_dt.tzinfo is None:
+            parsed_dt = parsed_dt.replace(tzinfo=timezone.utc)
+        delta_seconds = int((parsed_dt - datetime.now(timezone.utc)).total_seconds())
+        return max(delta_seconds, 1)
 
     @staticmethod
     def _escape_query_value(value: str) -> str:

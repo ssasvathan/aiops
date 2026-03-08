@@ -22,4 +22,13 @@ correlation_strategy:
   - "tier1"
   - "tier2"
   - "tier3"
+retry_window_minutes: 120
+retry_base_seconds: 30
+retry_max_seconds: 900
+retry_jitter_ratio: 0.2
+transient_error_classifications:
+  - "timeout"
+  - "connection_error"
+  - "http_429"
+  - "http_5xx"
 mi_creation_allowed: false    # FR67b: MI-1 posture — never allow automated MI creation

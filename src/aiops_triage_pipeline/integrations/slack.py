@@ -2,6 +2,7 @@
 
 import json
 import urllib.request
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 
@@ -178,6 +179,92 @@ class SlackClient:
             logger.warning(
                 "postmortem_notification_send_failed",
                 slack_mode=self._mode.value,
+                error=str(exc),
+            )
+
+    def send_linkage_failed_final_escalation(
+        self,
+        *,
+        case_id: str,
+        request_id: str,
+        pd_incident_id: str,
+        incident_sys_id: str | None,
+        reason_code: str,
+        error_message: str | None,
+        attempt_count: int,
+        retry_window_minutes: int,
+        latency_ms: float,
+        denylist: DenylistV1,
+    ) -> None:
+        """Dispatch FAILED_FINAL linkage escalation with denylist-safe payloads."""
+        if self._mode == SlackIntegrationMode.OFF:
+            return
+
+        logger = get_logger("integrations.slack")
+        raw_fields: dict[str, Any] = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "request_id": request_id,
+            "case_id": case_id,
+            "action": "sn_linkage_failed_final_escalation",
+            "outcome": "FAILED_FINAL",
+            "latency_ms": latency_ms,
+            "pd_incident_id": pd_incident_id,
+            "incident_sys_id": incident_sys_id,
+            "reason_code": reason_code,
+            "error_message": error_message,
+            "attempt_count": attempt_count,
+            "retry_window_minutes": retry_window_minutes,
+        }
+        sanitized = apply_denylist(raw_fields, denylist)
+        logger.warning(
+            "sn_linkage_failed_final_escalation_dispatch",
+            slack_mode=self._mode.value,
+            **sanitized,
+        )
+
+        if self._mode == SlackIntegrationMode.LOG:
+            return
+
+        if self._mode == SlackIntegrationMode.MOCK:
+            self._mock_send_count += 1
+            return
+
+        if not self._webhook_url:
+            logger.warning(
+                "sn_linkage_failed_final_no_webhook",
+                slack_mode=self._mode.value,
+                request_id=request_id,
+                case_id=case_id,
+            )
+            return
+
+        payload = {
+            "text": (
+                ":warning: *ServiceNow Linkage FAILED_FINAL*\n"
+                f"Case: `{sanitized.get('case_id', '[redacted]')}`\n"
+                f"Request: `{sanitized.get('request_id', '[redacted]')}`\n"
+                f"PD Incident: `{sanitized.get('pd_incident_id', '[redacted]')}`\n"
+                f"SN Incident: `{sanitized.get('incident_sys_id') or 'N/A'}`\n"
+                f"Reason: `{sanitized.get('reason_code', '[redacted]')}`\n"
+                f"Attempts: `{sanitized.get('attempt_count', '[redacted]')}` over "
+                f"`{sanitized.get('retry_window_minutes', '[redacted]')}m`"
+            )
+        }
+        req = urllib.request.Request(
+            self._webhook_url,
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=5):
+                pass
+        except Exception as exc:
+            logger.warning(
+                "sn_linkage_failed_final_send_failed",
+                slack_mode=self._mode.value,
+                request_id=request_id,
+                case_id=case_id,
                 error=str(exc),
             )
 

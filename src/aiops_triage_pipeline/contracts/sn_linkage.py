@@ -28,6 +28,16 @@ class ServiceNowLinkageContractV1(BaseModel, frozen=True):
     max_upsert_lookup_results: int = Field(default=5, ge=1, le=100)
     max_correlation_window_days: int = 7
     correlation_strategy: tuple[str, ...] = ("tier1", "tier2", "tier3")
+    retry_window_minutes: int = Field(default=120, ge=1, le=720)
+    retry_base_seconds: int = Field(default=30, ge=1, le=3600)
+    retry_max_seconds: int = Field(default=900, ge=1, le=86400)
+    retry_jitter_ratio: float = Field(default=0.2, ge=0.0, le=1.0)
+    transient_error_classifications: tuple[str, ...] = (
+        "timeout",
+        "connection_error",
+        "http_429",
+        "http_5xx",
+    )
     mi_creation_allowed: bool = False
 
     @model_validator(mode="after")
@@ -55,6 +65,17 @@ class ServiceNowLinkageContractV1(BaseModel, frozen=True):
         allowed_tiers = {"tier1", "tier2", "tier3"}
         if any(tier not in allowed_tiers for tier in self.correlation_strategy):
             raise ValueError("correlation_strategy contains unsupported tier")
+        if self.retry_base_seconds > self.retry_max_seconds:
+            raise ValueError("retry_base_seconds must be <= retry_max_seconds")
+        if any(
+            not classification.strip()
+            for classification in self.transient_error_classifications
+        ):
+            raise ValueError("transient_error_classifications cannot contain empty values")
+        if len(set(self.transient_error_classifications)) != len(
+            self.transient_error_classifications
+        ):
+            raise ValueError("transient_error_classifications cannot contain duplicates")
         tier_positions = {tier: idx for idx, tier in enumerate(self.correlation_strategy)}
         if (
             "tier1" in tier_positions
