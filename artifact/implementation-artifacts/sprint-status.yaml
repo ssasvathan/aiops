@@ -90,10 +90,10 @@ development_status:
   6-1-llm-stub-and-failure-injection-mode: done
   6-2-cold-path-llm-invocation-and-hot-path-independence: done
   6-3-structured-diagnosisreport-output-and-evidence-citation: done
-  6-4-llm-output-schema-validation-and-deterministic-fallback: review
-  epic-6-retrospective: optional
-  epic-7: backlog
-  7-1-outbox-health-monitoring-and-dead-0-posture: backlog
+  6-4-llm-output-schema-validation-and-deterministic-fallback: done
+  epic-6-retrospective: done
+  epic-7: in-progress
+  7-1-outbox-health-monitoring-and-dead-0-posture: ready-for-dev
   7-2-opentelemetry-instrumentation-and-otlp-export: backlog
   7-3-alerting-rules-and-component-health-thresholds: backlog
   7-4-policy-version-stamping-and-decision-reproducibility: backlog

@@ -1,6 +1,6 @@
 # Story 6.4: LLM Output Schema Validation & Deterministic Fallback
 
-Status: review
+Status: done
 
 ## Story
 
@@ -572,6 +572,7 @@ GPT-5 (Codex)
 
 ## Change Log
 
+- 2026-03-07: Final code-review closeout completed (approved, no open high/medium findings); status moved to done and sprint-status synced.
 - 2026-03-07: Implemented follow-up fix pack from re-review (critical fail-loud persistence path, new regression test, metadata refresh); status moved to review; validation passed (`30` unit, `654` full, `0 skipped`).
 - 2026-03-07: Senior developer re-review executed; status moved to in-progress; 3 follow-up items added (1 High, 1 Medium, 1 Low).
 - 2026-03-08: Implemented Story 6.4 fallback schema-validation and deterministic fallback flow; expanded tests; passed full regression (650 passed, 0 skipped).
