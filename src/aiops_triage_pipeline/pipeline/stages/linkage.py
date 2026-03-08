@@ -8,6 +8,7 @@ from typing import Any, Mapping, Protocol
 
 from pydantic import BaseModel
 
+from aiops_triage_pipeline.denylist.enforcement import apply_denylist
 from aiops_triage_pipeline.denylist.loader import DenylistV1
 from aiops_triage_pipeline.integrations.servicenow import (
     ServiceNowClient,
@@ -27,7 +28,10 @@ from aiops_triage_pipeline.models.case_file import (
     CaseFileLinkageV1,
 )
 from aiops_triage_pipeline.pipeline.stages.casefile import persist_casefile_linkage_stage
-from aiops_triage_pipeline.storage.casefile_io import compute_casefile_linkage_hash
+from aiops_triage_pipeline.storage.casefile_io import (
+    compute_casefile_linkage_hash,
+    read_casefile_stage_json_or_none,
+)
 from aiops_triage_pipeline.storage.client import ObjectStoreClientProtocol
 
 
@@ -127,29 +131,44 @@ def execute_servicenow_linkage_and_persist(
     )
 
     if retry_state.state == "LINKED":
-        return ServiceNowLinkagePersistResult(
-            linkage_result=ServiceNowLinkageWriteResult(
-                linkage_status="linked",
-                linkage_reason="already_linked",
-                request_id=retry_state.request_id or "unknown",
-                incident_sys_id=retry_state.incident_sys_id,
-                linkage_state="LINKED",
-                retryable=False,
-            ),
+        terminal_result = _build_terminal_linkage_result_from_retry_state(
+            retry_state=retry_state,
+            fallback_incident_sys_id=incident_sys_id,
+        )
+        linkage_casefile, linkage_object_path = _ensure_terminal_linkage_stage(
+            case_id=case_id,
+            incident_sys_id=incident_sys_id,
+            triage_hash=triage_hash,
+            diagnosis_hash=diagnosis_hash,
+            object_store_client=object_store_client,
+            linkage_result=terminal_result,
             linkage_retry_state=retry_state,
         )
-    if retry_state.state == "FAILED_FINAL":
         return ServiceNowLinkagePersistResult(
-            linkage_result=ServiceNowLinkageWriteResult(
-                linkage_status="failed",
-                linkage_reason="failed_final_terminal",
-                request_id=retry_state.request_id or "unknown",
-                incident_sys_id=retry_state.incident_sys_id,
-                linkage_state="FAILED_FINAL",
-                retryable=False,
-                reason_metadata=retry_state.last_reason_metadata,
-            ),
+            linkage_result=terminal_result,
             linkage_retry_state=retry_state,
+            linkage_casefile=linkage_casefile,
+            linkage_object_path=linkage_object_path,
+        )
+    if retry_state.state == "FAILED_FINAL":
+        terminal_result = _build_terminal_linkage_result_from_retry_state(
+            retry_state=retry_state,
+            fallback_incident_sys_id=incident_sys_id,
+        )
+        linkage_casefile, linkage_object_path = _ensure_terminal_linkage_stage(
+            case_id=case_id,
+            incident_sys_id=incident_sys_id,
+            triage_hash=triage_hash,
+            diagnosis_hash=diagnosis_hash,
+            object_store_client=object_store_client,
+            linkage_result=terminal_result,
+            linkage_retry_state=retry_state,
+        )
+        return ServiceNowLinkagePersistResult(
+            linkage_result=terminal_result,
+            linkage_retry_state=retry_state,
+            linkage_casefile=linkage_casefile,
+            linkage_object_path=linkage_object_path,
         )
     if retry_state.state == "FAILED_TEMP" and not is_retry_due(record=retry_state, now=now):
         return ServiceNowLinkagePersistResult(
@@ -190,6 +209,7 @@ def execute_servicenow_linkage_and_persist(
             record=retry_state,
             request_id=linkage_result.request_id,
             incident_sys_id=linkage_result.incident_sys_id or incident_sys_id,
+            reason_metadata=_build_linked_retry_reason_metadata(linkage_result=linkage_result),
             now=now,
         )
         retry_state = linkage_retry_repository.persist_transition(
@@ -269,15 +289,14 @@ def execute_servicenow_linkage_and_persist(
             "reason_metadata": retry_state.last_reason_metadata,
         }
     )
-    if linkage_result.linkage_status == "failed":
-        _emit_failed_final_escalation(
-            case_id=case_id,
-            pd_incident_id=pd_incident_id,
-            retry_state=retry_state,
-            latency_ms=latency_ms,
-            slack_client=slack_client,
-            denylist=denylist,
-        )
+    _emit_failed_final_escalation(
+        case_id=case_id,
+        pd_incident_id=pd_incident_id,
+        retry_state=retry_state,
+        latency_ms=latency_ms,
+        slack_client=slack_client,
+        denylist=denylist,
+    )
     linkage_casefile, linkage_object_path = _persist_terminal_linkage_stage(
         case_id=case_id,
         incident_sys_id=incident_sys_id,
@@ -326,6 +345,97 @@ def _persist_terminal_linkage_stage(
         object_store_client=object_store_client,
     )
     return linkage_casefile, linkage_object_path
+
+
+def _ensure_terminal_linkage_stage(
+    *,
+    case_id: str,
+    incident_sys_id: str | None,
+    triage_hash: str,
+    diagnosis_hash: str | None,
+    object_store_client: ObjectStoreClientProtocol,
+    linkage_result: ServiceNowLinkageWriteResult,
+    linkage_retry_state: LinkageRetryRecordV1 | None,
+) -> tuple[CaseFileLinkageV1, str]:
+    existing = read_casefile_stage_json_or_none(
+        object_store_client=object_store_client,
+        case_id=case_id,
+        stage="linkage",
+    )
+    if existing is not None:
+        return existing, f"cases/{case_id}/linkage.json"
+    return _persist_terminal_linkage_stage(
+        case_id=case_id,
+        incident_sys_id=incident_sys_id,
+        triage_hash=triage_hash,
+        diagnosis_hash=diagnosis_hash,
+        object_store_client=object_store_client,
+        linkage_result=linkage_result,
+        linkage_retry_state=linkage_retry_state,
+    )
+
+
+def _build_linked_retry_reason_metadata(
+    *,
+    linkage_result: ServiceNowLinkageWriteResult,
+) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "linkage_status": linkage_result.linkage_status,
+        "linkage_reason": linkage_result.linkage_reason,
+    }
+    if linkage_result.problem_sys_id is not None:
+        metadata["problem_sys_id"] = linkage_result.problem_sys_id
+    if linkage_result.problem_external_id is not None:
+        metadata["problem_external_id"] = linkage_result.problem_external_id
+    if linkage_result.pir_task_sys_ids:
+        metadata["pir_task_sys_ids"] = list(linkage_result.pir_task_sys_ids)
+    if linkage_result.pir_task_external_ids:
+        metadata["pir_task_external_ids"] = list(linkage_result.pir_task_external_ids)
+    return metadata
+
+
+def _build_terminal_linkage_result_from_retry_state(
+    *,
+    retry_state: LinkageRetryRecordV1,
+    fallback_incident_sys_id: str | None,
+) -> ServiceNowLinkageWriteResult:
+    metadata = dict(retry_state.last_reason_metadata)
+    problem_sys_id = _as_non_empty_string(metadata.get("problem_sys_id"))
+    problem_external_id = _as_non_empty_string(metadata.get("problem_external_id"))
+    pir_task_sys_ids = _as_string_tuple(metadata.get("pir_task_sys_ids"))
+    pir_task_external_ids = _as_string_tuple(metadata.get("pir_task_external_ids"))
+
+    if retry_state.state == "LINKED":
+        return ServiceNowLinkageWriteResult(
+            linkage_status="linked",
+            linkage_reason=_as_non_empty_string(metadata.get("linkage_reason")) or "already_linked",
+            request_id=retry_state.request_id or "unknown",
+            incident_sys_id=retry_state.incident_sys_id or fallback_incident_sys_id,
+            problem_sys_id=problem_sys_id,
+            problem_external_id=problem_external_id,
+            pir_task_sys_ids=pir_task_sys_ids,
+            pir_task_external_ids=pir_task_external_ids,
+            linkage_state="LINKED",
+            retryable=False,
+            next_attempt_at=None,
+            reason_metadata=metadata,
+        )
+
+    return ServiceNowLinkageWriteResult(
+        linkage_status=_as_non_empty_string(metadata.get("linkage_status")) or "failed",
+        linkage_reason=_as_non_empty_string(metadata.get("linkage_reason"))
+        or "failed_final_terminal",
+        request_id=retry_state.request_id or "unknown",
+        incident_sys_id=retry_state.incident_sys_id or fallback_incident_sys_id,
+        problem_sys_id=problem_sys_id,
+        problem_external_id=problem_external_id,
+        pir_task_sys_ids=pir_task_sys_ids,
+        pir_task_external_ids=pir_task_external_ids,
+        linkage_state="FAILED_FINAL",
+        retryable=False,
+        next_attempt_at=None,
+        reason_metadata=metadata,
+    )
 
 
 def _classify_failure_from_linkage_result(
@@ -405,30 +515,34 @@ def _emit_failed_final_escalation(
     denylist: DenylistV1 | None,
 ) -> None:
     logger = get_logger("pipeline.stages.linkage")
-    request_id = retry_state.request_id or "unknown"
-    timestamp = datetime.now(tz=UTC).isoformat()
-    reason_code = retry_state.last_error_code or "FAILED_FINAL"
-    logger.warning(
-        "sn_linkage_failed_final_escalation_fallback",
-        timestamp=timestamp,
-        request_id=request_id,
-        case_id=case_id,
-        action="sn_linkage_failed_final_escalation",
-        outcome="FAILED_FINAL",
-        latency_ms=latency_ms,
-        pd_incident_id=pd_incident_id,
-        incident_sys_id=retry_state.incident_sys_id,
-        reason_code=reason_code,
-        attempt_count=retry_state.attempt_count,
-        retry_window_minutes=retry_state.retry_window_minutes,
-    )
-    if slack_client is None:
-        return
     effective_denylist = denylist or DenylistV1(
         denylist_version="unset",
         denied_field_names=(),
         denied_value_patterns=(),
     )
+    request_id = retry_state.request_id or "unknown"
+    reason_code = retry_state.last_error_code or "FAILED_FINAL"
+    raw_fields = {
+        "timestamp": datetime.now(tz=UTC).isoformat(),
+        "request_id": request_id,
+        "case_id": case_id,
+        "action": "sn_linkage_failed_final_escalation",
+        "outcome": "FAILED_FINAL",
+        "latency_ms": latency_ms,
+        "pd_incident_id": pd_incident_id,
+        "incident_sys_id": retry_state.incident_sys_id,
+        "reason_code": reason_code,
+        "error_message": retry_state.last_error_message,
+        "attempt_count": retry_state.attempt_count,
+        "retry_window_minutes": retry_state.retry_window_minutes,
+    }
+    sanitized = apply_denylist(raw_fields, effective_denylist)
+    logger.warning(
+        "sn_linkage_failed_final_escalation_fallback",
+        **sanitized,
+    )
+    if slack_client is None:
+        return
     slack_client.send_linkage_failed_final_escalation(
         case_id=case_id,
         request_id=request_id,
@@ -458,3 +572,16 @@ def _as_positive_int(value: object) -> int | None:
     except (TypeError, ValueError):
         return None
     return parsed if parsed > 0 else None
+
+
+def _as_string_tuple(value: object) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, tuple):
+        return tuple(str(item) for item in value if str(item).strip())
+    if isinstance(value, list):
+        return tuple(str(item) for item in value if str(item).strip())
+    if isinstance(value, str):
+        normalized = value.strip()
+        return (normalized,) if normalized else ()
+    return ()

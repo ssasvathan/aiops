@@ -70,12 +70,14 @@ def mark_linkage_success(
     record: LinkageRetryRecordV1,
     request_id: str | None,
     incident_sys_id: str | None,
+    reason_metadata: dict[str, Any] | None = None,
     now: datetime | None = None,
 ) -> LinkageRetryRecordV1:
     """Transition SEARCHING to LINKED on successful linkage."""
     if record.state != "SEARCHING":
         raise InvariantViolation(f"cannot mark linkage success from state={record.state}")
     resolved_now = _resolve_transition_now(record=record, now=now)
+    metadata = dict(reason_metadata or {})
     return record.model_copy(
         update={
             "state": "LINKED",
@@ -87,7 +89,7 @@ def mark_linkage_success(
             "last_error_code": None,
             "last_error_message": None,
             "last_retry_after_seconds": None,
-            "last_reason_metadata": {},
+            "last_reason_metadata": metadata,
         }
     )
 

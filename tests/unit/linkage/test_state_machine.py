@@ -9,6 +9,7 @@ from aiops_triage_pipeline.linkage.state_machine import (
     mark_linkage_searching,
     mark_linkage_success,
 )
+from aiops_triage_pipeline.outbox.state_machine import compute_retry_delay_seconds
 
 
 def _pending_record() -> tuple[datetime, object]:
@@ -129,3 +130,106 @@ def test_is_retry_due_checks_next_attempt_timestamp() -> None:
     assert failed_temp.next_attempt_at is not None
     assert is_retry_due(record=failed_temp, now=base) is False
     assert is_retry_due(record=failed_temp, now=failed_temp.next_attempt_at) is True
+
+
+def test_mark_linkage_failure_exponential_backoff_progresses_per_attempt() -> None:
+    base, record = _pending_record()
+    searching = mark_linkage_searching(record=record, now=base)
+    first_failure = mark_linkage_failure(
+        record=searching,
+        transient=True,
+        error_code="timeout",
+        error_message="timed out",
+        request_id="req-exp-1",
+        retry_base_seconds=30,
+        retry_max_seconds=900,
+        retry_jitter_ratio=0.0,
+        now=base,
+    )
+    second_searching = mark_linkage_searching(
+        record=first_failure,
+        now=first_failure.next_attempt_at or (base + timedelta(seconds=30)),
+    )
+    second_failure = mark_linkage_failure(
+        record=second_searching,
+        transient=True,
+        error_code="timeout",
+        error_message="timed out",
+        request_id="req-exp-2",
+        retry_base_seconds=30,
+        retry_max_seconds=900,
+        retry_jitter_ratio=0.0,
+        now=second_searching.updated_at,
+    )
+
+    assert first_failure.next_attempt_at is not None
+    assert second_failure.next_attempt_at is not None
+    first_delay = int((first_failure.next_attempt_at - first_failure.updated_at).total_seconds())
+    second_delay = int((second_failure.next_attempt_at - second_failure.updated_at).total_seconds())
+    expected_first = compute_retry_delay_seconds(
+        case_id=first_failure.case_id,
+        attempt_number=1,
+        base_seconds=30,
+        max_seconds=900,
+        jitter_ratio=0.0,
+    )
+    expected_second = compute_retry_delay_seconds(
+        case_id=second_failure.case_id,
+        attempt_number=2,
+        base_seconds=30,
+        max_seconds=900,
+        jitter_ratio=0.0,
+    )
+    assert first_delay == expected_first
+    assert second_delay == expected_second
+    assert second_delay > first_delay
+
+
+def test_mark_linkage_failure_jitter_is_bounded_for_attempt() -> None:
+    base, record = _pending_record()
+    searching = mark_linkage_searching(record=record, now=base)
+    failed_temp = mark_linkage_failure(
+        record=searching,
+        transient=True,
+        error_code="http_5xx",
+        error_message="http_status=503",
+        request_id="req-jitter",
+        retry_base_seconds=30,
+        retry_max_seconds=900,
+        retry_jitter_ratio=0.2,
+        now=base,
+    )
+
+    assert failed_temp.next_attempt_at is not None
+    scheduled_delay = int((failed_temp.next_attempt_at - failed_temp.updated_at).total_seconds())
+    expected_delay = compute_retry_delay_seconds(
+        case_id=failed_temp.case_id,
+        attempt_number=1,
+        base_seconds=30,
+        max_seconds=900,
+        jitter_ratio=0.2,
+    )
+    assert scheduled_delay == expected_delay
+    assert 24 <= scheduled_delay <= 36
+
+
+def test_mark_linkage_failure_retry_after_is_bounded_by_retry_max_seconds() -> None:
+    base, record = _pending_record()
+    searching = mark_linkage_searching(record=record, now=base)
+    failed_temp = mark_linkage_failure(
+        record=searching,
+        transient=True,
+        error_code="http_429",
+        error_message="http_status=429",
+        request_id="req-retry-after",
+        retry_base_seconds=30,
+        retry_max_seconds=900,
+        retry_jitter_ratio=0.2,
+        retry_after_seconds=9_999,
+        now=base,
+    )
+
+    assert failed_temp.next_attempt_at is not None
+    assert failed_temp.last_retry_after_seconds == 900
+    scheduled_delay = int((failed_temp.next_attempt_at - failed_temp.updated_at).total_seconds())
+    assert scheduled_delay == 900

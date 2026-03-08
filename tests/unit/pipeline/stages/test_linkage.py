@@ -15,6 +15,11 @@ from aiops_triage_pipeline.contracts.gate_input import Finding, GateInputV1
 from aiops_triage_pipeline.contracts.sn_linkage import ServiceNowLinkageContractV1
 from aiops_triage_pipeline.integrations.servicenow import ServiceNowLinkageWriteResult
 from aiops_triage_pipeline.linkage.repository import ServiceNowLinkageRetrySqlRepository
+from aiops_triage_pipeline.linkage.state_machine import (
+    mark_linkage_failure,
+    mark_linkage_searching,
+    mark_linkage_success,
+)
 from aiops_triage_pipeline.models.case_file import (
     TRIAGE_HASH_PLACEHOLDER,
     CaseFileEvidenceSnapshot,
@@ -88,6 +93,14 @@ class _SequencedServiceNowClient:
         if not self._results:
             raise AssertionError("No fake ServiceNow linkage results left")
         return self._results.pop(0)
+
+
+class _FakeSlackClient:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def send_linkage_failed_final_escalation(self, **kwargs: object) -> None:
+        self.calls.append(kwargs)
 
 
 def _sample_casefile() -> CaseFileTriageV1:
@@ -399,3 +412,185 @@ def test_execute_servicenow_linkage_and_persist_terminal_failed_final_skips_retr
     )
     assert second.linkage_result.linkage_reason == "failed_final_terminal"
     assert len(servicenow_client.calls) == 1
+
+
+def test_execute_servicenow_linkage_and_persist_restores_missing_stage_for_linked_state() -> None:
+    object_store_client = _FakeObjectStoreClient()
+    triage = _sample_casefile()
+    persist_casefile_triage_write_once(
+        object_store_client=object_store_client,
+        casefile=triage,
+    )
+    repository = ServiceNowLinkageRetrySqlRepository(
+        engine=create_engine("sqlite+pysqlite:///:memory:")
+    )
+    repository.ensure_schema()
+    now = datetime(2026, 3, 8, 12, 0, tzinfo=UTC)
+    pending = repository.get_or_create_pending(
+        case_id=triage.case_id,
+        pd_incident_id="pd-inc-001",
+        incident_sys_id="inc-001",
+        retry_window_minutes=120,
+        now=now,
+    )
+    searching = repository.persist_transition(
+        case_id=triage.case_id,
+        next_record=mark_linkage_searching(record=pending, now=now + timedelta(seconds=1)),
+        expected_source_statuses={"PENDING"},
+    )
+    linked = repository.persist_transition(
+        case_id=triage.case_id,
+        next_record=mark_linkage_success(
+            record=searching,
+            request_id="req-linked-terminal",
+            incident_sys_id="inc-001",
+            reason_metadata={
+                "problem_sys_id": "prb-001",
+                "problem_external_id": "aiops:problem:case:pd:hash",
+                "pir_task_sys_ids": ["ptsk-001"],
+                "pir_task_external_ids": ["aiops:pir-task:case:pd:hash:timeline"],
+            },
+            now=now + timedelta(seconds=2),
+        ),
+        expected_source_statuses={"SEARCHING"},
+    )
+    assert linked.state == "LINKED"
+
+    servicenow_client = _SequencedServiceNowClient(
+        linkage_contract=ServiceNowLinkageContractV1(),
+        results=(),
+    )
+    persisted = execute_servicenow_linkage_and_persist(
+        case_id=triage.case_id,
+        pd_incident_id="pd-inc-001",
+        incident_sys_id="inc-001",
+        summary="link case",
+        triage_hash=triage.triage_hash,
+        object_store_client=object_store_client,
+        servicenow_client=servicenow_client,  # type: ignore[arg-type]
+        linkage_retry_repository=repository,
+        now=now + timedelta(minutes=1),
+    )
+
+    assert persisted.linkage_result.linkage_state == "LINKED"
+    assert persisted.linkage_casefile is not None
+    assert persisted.linkage_object_path == f"cases/{triage.case_id}/linkage.json"
+    assert persisted.linkage_casefile.problem_sys_id == "prb-001"
+    assert persisted.linkage_casefile.pir_task_sys_ids == ("ptsk-001",)
+    assert len(servicenow_client.calls) == 0
+
+
+def test_failed_final_escalates_for_non_failed_linkage_status() -> None:
+    object_store_client = _FakeObjectStoreClient()
+    triage = _sample_casefile()
+    persist_casefile_triage_write_once(
+        object_store_client=object_store_client,
+        casefile=triage,
+    )
+    repository = ServiceNowLinkageRetrySqlRepository(
+        engine=create_engine("sqlite+pysqlite:///:memory:")
+    )
+    repository.ensure_schema()
+    contract = ServiceNowLinkageContractV1(
+        retry_window_minutes=120,
+        retry_base_seconds=30,
+        retry_max_seconds=900,
+        retry_jitter_ratio=0.2,
+    )
+    servicenow_client = _SequencedServiceNowClient(
+        linkage_contract=contract,
+        results=(
+            ServiceNowLinkageWriteResult(
+                linkage_status="not-linked",
+                linkage_reason="missing_incident_sys_id",
+                request_id="req-not-linked",
+                incident_sys_id=None,
+            ),
+        ),
+    )
+    slack_client = _FakeSlackClient()
+    now = datetime(2026, 3, 8, 12, 0, tzinfo=UTC)
+
+    persisted = execute_servicenow_linkage_and_persist(
+        case_id=triage.case_id,
+        pd_incident_id="pd-inc-001",
+        incident_sys_id=None,
+        summary="link case",
+        triage_hash=triage.triage_hash,
+        object_store_client=object_store_client,
+        servicenow_client=servicenow_client,  # type: ignore[arg-type]
+        linkage_retry_repository=repository,
+        slack_client=slack_client,  # type: ignore[arg-type]
+        now=now,
+    )
+
+    assert persisted.linkage_result.linkage_state == "FAILED_FINAL"
+    assert persisted.linkage_casefile is not None
+    assert persisted.linkage_casefile.linkage_status == "not-linked"
+    assert len(slack_client.calls) == 1
+
+
+def test_execute_servicenow_linkage_and_persist_restores_missing_stage_for_failed_final_state(
+) -> None:
+    object_store_client = _FakeObjectStoreClient()
+    triage = _sample_casefile()
+    persist_casefile_triage_write_once(
+        object_store_client=object_store_client,
+        casefile=triage,
+    )
+    repository = ServiceNowLinkageRetrySqlRepository(
+        engine=create_engine("sqlite+pysqlite:///:memory:")
+    )
+    repository.ensure_schema()
+    now = datetime(2026, 3, 8, 12, 0, tzinfo=UTC)
+    pending = repository.get_or_create_pending(
+        case_id=triage.case_id,
+        pd_incident_id="pd-inc-001",
+        incident_sys_id="inc-001",
+        retry_window_minutes=120,
+        now=now,
+    )
+    searching = repository.persist_transition(
+        case_id=triage.case_id,
+        next_record=mark_linkage_searching(record=pending, now=now + timedelta(seconds=1)),
+        expected_source_statuses={"PENDING"},
+    )
+    failed_final = repository.persist_transition(
+        case_id=triage.case_id,
+        next_record=mark_linkage_failure(
+            record=searching,
+            transient=False,
+            error_code="invalid_input",
+            error_message="missing_incident_sys_id",
+            request_id="req-final-terminal",
+            retry_base_seconds=30,
+            retry_max_seconds=900,
+            retry_jitter_ratio=0.2,
+            reason_metadata={"linkage_status": "not-linked"},
+            now=now + timedelta(seconds=2),
+        ),
+        expected_source_statuses={"SEARCHING"},
+    )
+    assert failed_final.state == "FAILED_FINAL"
+
+    servicenow_client = _SequencedServiceNowClient(
+        linkage_contract=ServiceNowLinkageContractV1(),
+        results=(),
+    )
+    persisted = execute_servicenow_linkage_and_persist(
+        case_id=triage.case_id,
+        pd_incident_id="pd-inc-001",
+        incident_sys_id="inc-001",
+        summary="link case",
+        triage_hash=triage.triage_hash,
+        object_store_client=object_store_client,
+        servicenow_client=servicenow_client,  # type: ignore[arg-type]
+        linkage_retry_repository=repository,
+        now=now + timedelta(minutes=1),
+    )
+
+    assert persisted.linkage_result.linkage_state == "FAILED_FINAL"
+    assert persisted.linkage_casefile is not None
+    assert persisted.linkage_object_path == f"cases/{triage.case_id}/linkage.json"
+    assert persisted.linkage_casefile.linkage_status == "not-linked"
+    assert len(servicenow_client.calls) == 0

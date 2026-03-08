@@ -1,6 +1,6 @@
 # Story 8.3: SN Linkage Retry & State Machine
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -268,6 +268,7 @@ GPT-5 Codex
 - Updated linkage orchestration in `src/aiops_triage_pipeline/pipeline/stages/linkage.py` to use retry state machine + terminal-only linkage stage persistence.
 - Extended ServiceNow transport error metadata extraction (`http_status`, `retry_after_seconds`) in `src/aiops_triage_pipeline/integrations/servicenow.py`.
 - Added FAILED_FINAL Slack escalation path in `src/aiops_triage_pipeline/integrations/slack.py`.
+- Review remediation (2026-03-08): fixed FAILED_FINAL escalation coverage for all terminal outcomes, enforced denylist on fallback escalation logs, and added terminal-state linkage.json recovery when restart finds LINKED/FAILED_FINAL without stage artifact.
 - Validation commands executed:
   - `uv run ruff check`
   - `uv run pytest -q -m "not integration"`
@@ -280,6 +281,8 @@ GPT-5 Codex
 - Added durable Postgres/SQLAlchemy Core retry-state storage with restart recovery query support (`FAILED_TEMP` due candidates).
 - Integrated linkage stage with durable retry orchestration, terminal idempotency guards, and final-only linkage.json persistence.
 - Added FAILED_FINAL escalation path with denylist-safe Slack payload handling and structured-log fallback.
+- Hardened terminal recovery: restart path now rehydrates missing terminal linkage.json from durable retry state for both `LINKED` and `FAILED_FINAL`.
+- Expanded AC9 timing coverage with deterministic exponential progression checks, jitter bound assertions, and bounded `Retry-After` scheduling tests.
 - Added/updated tests for contracts, ServiceNow error classification metadata, retry state machine, retry repository, linkage stage retry lifecycle, and Slack escalation behavior.
 - Quality gates passed:
   - `uv run ruff check` -> pass
@@ -309,3 +312,4 @@ GPT-5 Codex
 ## Change Log
 
 - 2026-03-08: Implemented Story 8.3 retry-state machine, durable linkage retry persistence, terminal FAILED_FINAL escalation, and full regression validation with zero skips.
+- 2026-03-08: Completed code-review remediation; fixed terminal escalation/denylist gaps, added restart-stage recovery for terminal states, and strengthened AC9 retry/backoff test coverage.
