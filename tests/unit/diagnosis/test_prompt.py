@@ -78,13 +78,13 @@ def test_build_llm_prompt_instructs_json_output() -> None:
 def test_build_llm_prompt_instructs_unknown_propagation() -> None:
     """Prompt explicitly instructs the LLM to propagate UNKNOWN — not fabricate."""
     result = build_llm_prompt(_make_excerpt(), "summary")
-    assert "UNKNOWN" in result
+    assert "propagate UNKNOWN" in result
 
 
 def test_build_llm_prompt_instructs_evidence_citation() -> None:
-    """Prompt instructs the LLM to cite evidence (contains 'evidence' or 'cite')."""
+    """Prompt instructs the LLM to cite evidence IDs from the evidence_status_map."""
     result = build_llm_prompt(_make_excerpt(), "summary")
-    assert "evidence" in result.lower() or "cite" in result.lower()
+    assert "EVIDENCE CITATION RULES" in result
 
 
 def test_build_llm_prompt_contains_evidence_status_map() -> None:
@@ -93,3 +93,11 @@ def test_build_llm_prompt_contains_evidence_status_map() -> None:
     result = build_llm_prompt(excerpt, "summary")
     # At least one key from evidence_status_map must appear in the prompt
     assert any(key in result for key in excerpt.evidence_status_map)
+
+
+def test_build_llm_prompt_contains_finding_id() -> None:
+    """Prompt renders findings with their finding_id so the LLM can reference them."""
+    excerpt = _make_excerpt()
+    result = build_llm_prompt(excerpt, "summary")
+    # finding_id "F1" from the helper's Finding must appear in the prompt
+    assert excerpt.findings[0].finding_id in result

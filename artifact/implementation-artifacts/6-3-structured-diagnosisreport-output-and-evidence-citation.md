@@ -1,6 +1,6 @@
 # Story 6.3: Structured DiagnosisReport Output & Evidence Citation
 
-Status: review
+Status: done
 
 ## Story
 
@@ -603,6 +603,7 @@ claude-sonnet-4-6
 ### Change Log
 
 - 2026-03-07: Story 6.3 implementation complete — structured DiagnosisReport output, evidence citation prompt, triage_hash hash chain, diagnosis.json write-once persistence, LIVE mode structured parsing
+- 2026-03-07: Code review fixes — M1: moved response.json() inside async with block; M2: LIVE mode now explicitly sets case_id from parameter via model_validate({**response_data, "case_id": case_id}); M3: updated stale LLMClient class docstring; M4: added uv.lock to File List; L1-L3: strengthened weak test assertions and added test_build_llm_prompt_contains_finding_id; 618 passed (617 + 1 new)
 
 ### File List
 
@@ -613,3 +614,4 @@ claude-sonnet-4-6
 - `tests/unit/diagnosis/test_graph.py` (modified)
 - `tests/unit/integrations/test_llm.py` (modified)
 - `artifact/implementation-artifacts/sprint-status.yaml` (modified)
+- `uv.lock` (modified — dependency lock file updated)

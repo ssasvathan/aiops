@@ -35,8 +35,8 @@ class LLMClient:
 
     In MOCK or LOG mode, returns a deterministic fallback DiagnosisReportV1 with no
     external network calls. LIVE mode makes an HTTP POST to LLM_BASE_URL/diagnose
-    and returns a stub DiagnosisReportV1 — Story 6.3 replaces with structured prompt
-    and schema-validated output. OFF mode raises ValueError.
+    with a structured prompt and parses the response as schema-validated
+    DiagnosisReportV1 (Story 6.3). OFF mode raises ValueError.
     """
 
     def __init__(
@@ -108,8 +108,8 @@ class LLMClient:
                     headers=headers,
                 )
                 response.raise_for_status()
-            response_data = response.json()
-            report = DiagnosisReportV1.model_validate(response_data)
+                response_data = response.json()
+            report = DiagnosisReportV1.model_validate({**response_data, "case_id": case_id})
             self._logger.info(
                 "llm_invoke_live",
                 mode=self._mode.value,

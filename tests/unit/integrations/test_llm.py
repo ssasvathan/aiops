@@ -339,6 +339,7 @@ async def test_live_mode_parses_structured_response_as_diagnosis_report() -> Non
     assert report.verdict == "CONSUMER_LAG_FAULT_CONFIRMED"
     assert report.confidence == DiagnosisConfidence.HIGH
     assert "consumer_lag=45000" in report.evidence_pack.facts
+    assert report.case_id == _CASE_ID
 
 
 # ---------------------------------------------------------------------------
