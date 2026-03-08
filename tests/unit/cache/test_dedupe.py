@@ -198,6 +198,51 @@ def test_store_is_healthy_by_default() -> None:
     assert store.last_error is None
 
 
+def test_dedupe_store_emits_redis_metrics_on_lookup(monkeypatch) -> None:
+    from aiops_triage_pipeline.cache import dedupe
+
+    connection_states: list[bool] = []
+    lookup_hits: list[bool] = []
+    monkeypatch.setattr(
+        dedupe,
+        "record_redis_connection_status",
+        lambda *, healthy: connection_states.append(healthy),
+    )
+    monkeypatch.setattr(
+        dedupe,
+        "record_redis_dedupe_lookup",
+        lambda *, hit: lookup_hits.append(hit),
+    )
+
+    redis = _StubRedis()
+    store = RedisActionDedupeStore(redis)
+
+    assert store.is_duplicate("fp-miss") is False
+    store.remember("fp-hit", Action.PAGE)
+    assert store.is_duplicate("fp-hit") is True
+
+    assert connection_states == [True, True, True]
+    assert lookup_hits == [False, True]
+
+
+def test_remember_increments_dedupe_key_count_metric_when_claim_wins(monkeypatch) -> None:
+    from aiops_triage_pipeline.cache import dedupe
+
+    key_count_deltas: list[int] = []
+    monkeypatch.setattr(
+        dedupe,
+        "record_redis_dedupe_key_count_delta",
+        lambda *, delta: key_count_deltas.append(delta),
+    )
+
+    redis = _StubRedis()
+    store = RedisActionDedupeStore(redis)
+    assert store.remember("fp", Action.PAGE) is True
+    assert store.remember("fp", Action.PAGE) is False
+
+    assert key_count_deltas == [1]
+
+
 def test_is_duplicate_raises_and_marks_unhealthy_on_error() -> None:
     store = RedisActionDedupeStore(_ErrorRedis())
 

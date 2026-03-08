@@ -154,6 +154,7 @@ def test_log_active_config_masks_secret() -> None:
         S3_ACCESS_KEY="access_key_id",
         S3_SECRET_KEY="super_secret",
         S3_BUCKET="bucket",
+        OTLP_METRICS_HEADERS="Authorization=Api-Token abc123",
     )
     with structlog.testing.capture_logs() as cap_logs:
         settings.log_active_config(structlog.get_logger())
@@ -162,10 +163,43 @@ def test_log_active_config_masks_secret() -> None:
     event = cap_logs[0]
     assert event.get("S3_SECRET_KEY") == "[REDACTED]"
     assert event.get("S3_ACCESS_KEY") == "[REDACTED]"
+    assert event.get("OTLP_METRICS_HEADERS") == "[CONFIGURED]"
     assert "super_secret" not in str(cap_logs)
     assert "secret_password" not in str(cap_logs)
     assert "redis_password" not in str(cap_logs)
     assert "access_key_id" not in str(cap_logs)
+    assert "abc123" not in str(cap_logs)
+
+
+def test_otlp_protocol_validation_rejects_invalid_value() -> None:
+    with pytest.raises((ValueError, ValidationError), match="OTLP_METRICS_PROTOCOL"):
+        Settings(
+            _env_file=None,
+            KAFKA_BOOTSTRAP_SERVERS="localhost:9092",
+            DATABASE_URL="postgresql+psycopg://u:p@h/db",
+            REDIS_URL="redis://localhost:6379/0",
+            S3_ENDPOINT_URL="http://localhost:9000",
+            S3_ACCESS_KEY="key",
+            S3_SECRET_KEY="secret",
+            S3_BUCKET="bucket",
+            OTLP_METRICS_PROTOCOL="udp",
+        )
+
+
+def test_otlp_deployment_environment_defaults_to_app_env() -> None:
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="uat",
+        KAFKA_BOOTSTRAP_SERVERS="localhost:9092",
+        DATABASE_URL="postgresql+psycopg://u:p@h/db",
+        REDIS_URL="redis://localhost:6379/0",
+        S3_ENDPOINT_URL="http://localhost:9000",
+        S3_ACCESS_KEY="key",
+        S3_SECRET_KEY="secret",
+        S3_BUCKET="bucket",
+        OTLP_DEPLOYMENT_ENVIRONMENT="",
+    )
+    assert settings.OTLP_DEPLOYMENT_ENVIRONMENT == "uat"
 
 
 def test_get_settings_returns_same_instance() -> None:

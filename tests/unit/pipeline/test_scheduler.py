@@ -1,6 +1,7 @@
 import io
 import json
 from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 from urllib.error import URLError
 
 import pytest
@@ -195,6 +196,23 @@ def test_evaluate_scheduler_tick_warns_for_missed_intervals(
     assert warning_events[0]["missed_intervals"] == 2
     assert warning_events[0]["previous_boundary"] == "2026-03-02T12:00:00+00:00"
     assert warning_events[0]["expected_boundary"] == "2026-03-02T12:15:00+00:00"
+
+
+def test_evaluate_scheduler_tick_emits_interval_adherence_metric() -> None:
+    with patch(
+        "aiops_triage_pipeline.pipeline.scheduler.record_evidence_interval_tick"
+    ) as record_tick:
+        _ = evaluate_scheduler_tick(
+            actual_fire_time=datetime(2026, 3, 2, 12, 15, 4, tzinfo=UTC),
+            previous_boundary=datetime(2026, 3, 2, 12, 0, 0, tzinfo=UTC),
+            interval_seconds=300,
+            drift_threshold_seconds=30,
+        )
+    record_tick.assert_called_once_with(
+        drift_seconds=4,
+        missed_intervals=2,
+        interval_seconds=300,
+    )
 
 
 async def test_run_evidence_stage_cycle_wires_collection_to_anomaly_output() -> None:
@@ -449,6 +467,43 @@ async def test_run_evidence_stage_cycle_emits_resolved_event_when_prometheus_rec
     assert len(recovered.telemetry_degraded_events) == 1
     assert recovered.telemetry_degraded_events[0].recovery_status == "resolved"
     assert recovered.rows
+
+
+async def test_run_evidence_stage_cycle_records_prometheus_degraded_metrics() -> None:
+    class _OutageClient:
+        def query_instant(self, metric_name: str, at_time: datetime) -> list[dict]:  # noqa: ARG002
+            raise URLError(f"source unavailable for {metric_name}")
+
+    class _RecoveryClient:
+        def query_instant(self, metric_name: str, at_time: datetime) -> list[dict]:  # noqa: ARG002
+            return []
+
+    registry = HealthRegistry()
+    with (
+        patch(
+            "aiops_triage_pipeline.pipeline.scheduler.record_prometheus_degraded_active"
+        ) as degraded_active,
+        patch(
+            "aiops_triage_pipeline.pipeline.scheduler.record_prometheus_degraded_transition"
+        ) as degraded_transition,
+    ):
+        _ = await run_evidence_stage_cycle(
+            client=_OutageClient(),
+            metric_queries=_metric_queries_for_degraded_tests(),
+            evaluation_time=datetime(2026, 3, 2, 12, 5, tzinfo=UTC),
+            health_registry=registry,
+        )
+        _ = await run_evidence_stage_cycle(
+            client=_RecoveryClient(),
+            metric_queries=_metric_queries_for_degraded_tests(),
+            evaluation_time=datetime(2026, 3, 2, 12, 10, tzinfo=UTC),
+            health_registry=registry,
+        )
+
+    assert degraded_active.call_args_list[0].kwargs == {"active": True}
+    assert degraded_active.call_args_list[1].kwargs == {"active": False}
+    assert degraded_transition.call_args_list[0].kwargs == {"transition": "active"}
+    assert degraded_transition.call_args_list[1].kwargs == {"transition": "cleared"}
 
 
 def test_run_peak_stage_cycle_wires_stage1_rows_to_peak_output() -> None:
@@ -1239,6 +1294,42 @@ def test_run_gate_decision_stage_cycle_wires_dedupe_store() -> None:
 def test_run_gate_decision_stage_cycle_requires_explicit_rulebook_policy() -> None:
     with pytest.raises(ValueError, match="rulebook_policy is required"):
         run_gate_decision_stage_cycle(gate_inputs_by_scope={})
+
+
+def test_run_gate_decision_stage_cycle_records_case_throughput_metric() -> None:
+    scope = ("prod", "cluster-a", "orders")
+    gate_input = GateInputV1(
+        env="prod",
+        cluster_id="cluster-a",
+        stream_id="stream-orders",
+        topic="orders",
+        topic_role="SHARED_TOPIC",
+        anomaly_family="VOLUME_DROP",
+        criticality_tier="TIER_0",
+        proposed_action="PAGE",
+        diagnosis_confidence=0.92,
+        sustained=True,
+        findings=(
+            Finding(
+                finding_id="f-1",
+                name="volume-drop",
+                is_anomalous=True,
+                evidence_required=("topic_messages_in_per_sec",),
+                is_primary=True,
+            ),
+        ),
+        evidence_status_map={"topic_messages_in_per_sec": "PRESENT"},
+        action_fingerprint="prod/cluster-a/stream-orders/SHARED_TOPIC/orders/VOLUME_DROP/TIER_0",
+        peak=True,
+    )
+    with patch(
+        "aiops_triage_pipeline.pipeline.scheduler.record_pipeline_case_throughput"
+    ) as throughput_metric:
+        run_gate_decision_stage_cycle(
+            gate_inputs_by_scope={scope: (gate_input,)},
+            rulebook_policy=load_rulebook_policy(),
+        )
+    throughput_metric.assert_called_once_with(case_count=1)
 
 
 # ── emit_redis_degraded_mode_events tests ─────────────────────────────────────

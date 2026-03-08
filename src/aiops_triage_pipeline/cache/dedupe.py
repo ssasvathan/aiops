@@ -4,6 +4,11 @@ from typing import Protocol, runtime_checkable
 
 from aiops_triage_pipeline.contracts.enums import Action
 from aiops_triage_pipeline.contracts.redis_ttl_policy import AG5DedupeTtlConfig
+from aiops_triage_pipeline.health.metrics import (
+    record_redis_connection_status,
+    record_redis_dedupe_key_count_delta,
+    record_redis_dedupe_lookup,
+)
 
 # FR33-specified TTL defaults — used when no policy config is provided.
 _FR33_DEFAULT_TTL: dict[str, int] = {
@@ -82,10 +87,13 @@ class RedisActionDedupeStore:
             result = self._redis.get(f"dedupe:{fingerprint}")  # type: ignore[attr-defined]
             self._is_healthy = True
             self._last_error = None
+            record_redis_connection_status(healthy=True)
+            record_redis_dedupe_lookup(hit=result is not None)
             return result is not None
         except Exception as exc:
             self._is_healthy = False
             self._last_error = str(exc)
+            record_redis_connection_status(healthy=False)
             raise
 
     def remember(self, fingerprint: str, action: Action) -> bool:
@@ -110,8 +118,13 @@ class RedisActionDedupeStore:
             )
             self._is_healthy = True
             self._last_error = None
-            return bool(result)
+            record_redis_connection_status(healthy=True)
+            added = bool(result)
+            if added:
+                record_redis_dedupe_key_count_delta(delta=1)
+            return added
         except Exception as exc:
             self._is_healthy = False
             self._last_error = str(exc)
+            record_redis_connection_status(healthy=False)
             raise

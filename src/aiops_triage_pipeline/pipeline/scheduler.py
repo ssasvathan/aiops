@@ -1,6 +1,7 @@
 """Wall-clock scheduler utilities for Stage 1-6 evidence, peak, and gate-decision cycles."""
 
 import asyncio
+import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Mapping, Sequence
@@ -13,6 +14,13 @@ from aiops_triage_pipeline.contracts.gate_input import GateInputV1
 from aiops_triage_pipeline.contracts.peak_policy import PeakPolicyV1
 from aiops_triage_pipeline.contracts.redis_ttl_policy import RedisTtlPolicyV1
 from aiops_triage_pipeline.contracts.rulebook import RulebookV1
+from aiops_triage_pipeline.health.metrics import (
+    record_evidence_interval_tick,
+    record_pipeline_case_throughput,
+    record_pipeline_compute_latency,
+    record_prometheus_degraded_active,
+    record_prometheus_degraded_transition,
+)
 from aiops_triage_pipeline.health.registry import HealthRegistry, get_health_registry
 from aiops_triage_pipeline.integrations.prometheus import (
     MetricQueryDefinition,
@@ -108,12 +116,18 @@ def evaluate_scheduler_tick(
             drift_threshold_seconds=drift_threshold_seconds,
         )
 
-    return SchedulerTick(
+    tick = SchedulerTick(
         expected_boundary=expected_boundary,
         actual_fire_time=actual_fire_time,
         drift_seconds=drift_seconds,
         missed_intervals=missed_intervals,
     )
+    record_evidence_interval_tick(
+        drift_seconds=drift_seconds,
+        missed_intervals=missed_intervals,
+        interval_seconds=interval_seconds,
+    )
+    return tick
 
 
 async def run_evidence_stage_cycle(
@@ -126,53 +140,63 @@ async def run_evidence_stage_cycle(
     health_registry: HealthRegistry | None = None,
 ) -> EvidenceStageOutput:
     """Run Stage 1 evidence collection and anomaly derivation for one scheduler cycle."""
-    diagnostics = await collect_prometheus_samples_with_diagnostics(
-        client=client,
-        metric_queries=metric_queries,
-        evaluation_time=evaluation_time,
-    )
-    registry = health_registry or get_health_registry()
-    previous_prometheus_status = registry.get("prometheus")
-    telemetry_degraded_events: tuple[TelemetryDegradedEvent, ...] = ()
+    started_at = time.perf_counter()
+    try:
+        diagnostics = await collect_prometheus_samples_with_diagnostics(
+            client=client,
+            metric_queries=metric_queries,
+            evaluation_time=evaluation_time,
+        )
+        registry = health_registry or get_health_registry()
+        previous_prometheus_status = registry.get("prometheus")
+        telemetry_degraded_events: tuple[TelemetryDegradedEvent, ...] = ()
+        record_prometheus_degraded_active(active=diagnostics.is_total_outage)
 
-    if diagnostics.is_total_outage:
-        if previous_prometheus_status != HealthStatus.UNAVAILABLE:
-            await registry.update(
-                "prometheus",
-                HealthStatus.UNAVAILABLE,
-                reason=diagnostics.outage_reason,
-            )
+        if diagnostics.is_total_outage:
+            if previous_prometheus_status != HealthStatus.UNAVAILABLE:
+                await registry.update(
+                    "prometheus",
+                    HealthStatus.UNAVAILABLE,
+                    reason=diagnostics.outage_reason,
+                )
+                record_prometheus_degraded_transition(transition="active")
+                telemetry_degraded_events = (
+                    TelemetryDegradedEvent(
+                        affected_scope="prometheus",
+                        reason=diagnostics.outage_reason
+                        or "Prometheus source unavailable across the full query set",
+                        recovery_status="pending",
+                        severity="warning",
+                        timestamp=evaluation_time.astimezone(UTC),
+                    ),
+                )
+        elif previous_prometheus_status == HealthStatus.UNAVAILABLE:
+            await registry.update("prometheus", HealthStatus.HEALTHY)
+            record_prometheus_degraded_transition(transition="cleared")
             telemetry_degraded_events = (
                 TelemetryDegradedEvent(
                     affected_scope="prometheus",
-                    reason=diagnostics.outage_reason
-                    or "Prometheus source unavailable across the full query set",
-                    recovery_status="pending",
-                    severity="warning",
+                    reason="Prometheus connectivity restored; resuming normal evaluation",
+                    recovery_status="resolved",
+                    severity="info",
                     timestamp=evaluation_time.astimezone(UTC),
                 ),
             )
-    elif previous_prometheus_status == HealthStatus.UNAVAILABLE:
-        await registry.update("prometheus", HealthStatus.HEALTHY)
-        telemetry_degraded_events = (
-            TelemetryDegradedEvent(
-                affected_scope="prometheus",
-                reason="Prometheus connectivity restored; resuming normal evaluation",
-                recovery_status="resolved",
-                severity="info",
-                timestamp=evaluation_time.astimezone(UTC),
-            ),
-        )
 
-    return collect_evidence_stage_output(
-        diagnostics.samples_by_metric,
-        findings_cache_client=findings_cache_client,
-        redis_ttl_policy=redis_ttl_policy,
-        evaluation_time=evaluation_time,
-        telemetry_degraded_active=diagnostics.is_total_outage,
-        telemetry_degraded_events=telemetry_degraded_events,
-        max_safe_action=Action.NOTIFY if diagnostics.is_total_outage else None,
-    )
+        return collect_evidence_stage_output(
+            diagnostics.samples_by_metric,
+            findings_cache_client=findings_cache_client,
+            redis_ttl_policy=redis_ttl_policy,
+            evaluation_time=evaluation_time,
+            telemetry_degraded_active=diagnostics.is_total_outage,
+            telemetry_degraded_events=telemetry_degraded_events,
+            max_safe_action=Action.NOTIFY if diagnostics.is_total_outage else None,
+        )
+    finally:
+        record_pipeline_compute_latency(
+            stage="stage1_evidence",
+            seconds=time.perf_counter() - started_at,
+        )
 
 
 def run_peak_stage_cycle(
@@ -191,16 +215,23 @@ def run_peak_stage_cycle(
     Pass ``peak_policy`` to avoid disk I/O on every call; omitting it causes
     the policy to be loaded from the default file path each time.
     """
-    return collect_peak_stage_output(
-        rows=evidence_output.rows,
-        historical_windows_by_scope=historical_windows_by_scope,
-        evidence_status_map_by_scope=evidence_output.evidence_status_map_by_scope,
-        anomaly_findings=evidence_output.anomaly_result.findings,
-        prior_sustained_window_state_by_key=prior_sustained_window_state_by_key,
-        evaluation_time=evaluation_time,
-        peak_policy=peak_policy,
-        rulebook_policy=rulebook_policy,
-    )
+    started_at = time.perf_counter()
+    try:
+        return collect_peak_stage_output(
+            rows=evidence_output.rows,
+            historical_windows_by_scope=historical_windows_by_scope,
+            evidence_status_map_by_scope=evidence_output.evidence_status_map_by_scope,
+            anomaly_findings=evidence_output.anomaly_result.findings,
+            prior_sustained_window_state_by_key=prior_sustained_window_state_by_key,
+            evaluation_time=evaluation_time,
+            peak_policy=peak_policy,
+            rulebook_policy=rulebook_policy,
+        )
+    finally:
+        record_pipeline_compute_latency(
+            stage="stage2_peak",
+            seconds=time.perf_counter() - started_at,
+        )
 
 
 def run_topology_stage_cycle(
@@ -209,10 +240,17 @@ def run_topology_stage_cycle(
     snapshot: TopologyRegistrySnapshot,
 ) -> TopologyStageOutput:
     """Run Stage 3 topology resolution from Stage 1 findings."""
-    return collect_topology_stage_output(
-        snapshot=snapshot,
-        evidence_output=evidence_output,
-    )
+    started_at = time.perf_counter()
+    try:
+        return collect_topology_stage_output(
+            snapshot=snapshot,
+            evidence_output=evidence_output,
+        )
+    finally:
+        record_pipeline_compute_latency(
+            stage="stage3_topology",
+            seconds=time.perf_counter() - started_at,
+        )
 
 
 def run_gate_input_stage_cycle(
@@ -222,42 +260,49 @@ def run_gate_input_stage_cycle(
     context_by_scope: Mapping[tuple[str, ...], GateInputContext],
 ) -> dict[tuple[str, ...], tuple[GateInputV1, ...]]:
     """Run Stage 6 gate-input assembly from Stage 1 and Stage 2 outputs."""
-    scopes_without_context = [
-        scope
-        for scope in evidence_output.gate_findings_by_scope
-        if not _has_gate_input_context(scope=scope, context_by_scope=context_by_scope)
-    ]
-    if scopes_without_context:
-        get_logger("pipeline.scheduler").warning(
-            "gate_input_scope_context_missing",
-            event_type="scheduler.gate_input_scope_skipped_unresolved",
-            skipped_scopes=tuple(sorted(scopes_without_context)),
-            skipped_scope_count=len(scopes_without_context),
-        )
+    started_at = time.perf_counter()
+    try:
+        scopes_without_context = [
+            scope
+            for scope in evidence_output.gate_findings_by_scope
+            if not _has_gate_input_context(scope=scope, context_by_scope=context_by_scope)
+        ]
+        if scopes_without_context:
+            get_logger("pipeline.scheduler").warning(
+                "gate_input_scope_context_missing",
+                event_type="scheduler.gate_input_scope_skipped_unresolved",
+                skipped_scopes=tuple(sorted(scopes_without_context)),
+                skipped_scope_count=len(scopes_without_context),
+            )
 
-    gate_findings_by_scope = {
-        scope: findings
-        for scope, findings in evidence_output.gate_findings_by_scope.items()
-        if _has_gate_input_context(scope=scope, context_by_scope=context_by_scope)
-    }
-    filtered_evidence_output = EvidenceStageOutput(
-        rows=evidence_output.rows,
-        anomaly_result=evidence_output.anomaly_result,
-        gate_findings_by_scope=gate_findings_by_scope,
-        evidence_status_map_by_scope={
-            scope: evidence_output.evidence_status_map_by_scope.get(scope, {})
-            for scope in gate_findings_by_scope
-        },
-        telemetry_degraded_active=evidence_output.telemetry_degraded_active,
-        telemetry_degraded_events=evidence_output.telemetry_degraded_events,
-        max_safe_action=evidence_output.max_safe_action,
-    )
-    return collect_gate_inputs_by_scope(
-        evidence_output=filtered_evidence_output,
-        peak_output=peak_output,
-        context_by_scope=context_by_scope,
-        max_safe_action=filtered_evidence_output.max_safe_action,
-    )
+        gate_findings_by_scope = {
+            scope: findings
+            for scope, findings in evidence_output.gate_findings_by_scope.items()
+            if _has_gate_input_context(scope=scope, context_by_scope=context_by_scope)
+        }
+        filtered_evidence_output = EvidenceStageOutput(
+            rows=evidence_output.rows,
+            anomaly_result=evidence_output.anomaly_result,
+            gate_findings_by_scope=gate_findings_by_scope,
+            evidence_status_map_by_scope={
+                scope: evidence_output.evidence_status_map_by_scope.get(scope, {})
+                for scope in gate_findings_by_scope
+            },
+            telemetry_degraded_active=evidence_output.telemetry_degraded_active,
+            telemetry_degraded_events=evidence_output.telemetry_degraded_events,
+            max_safe_action=evidence_output.max_safe_action,
+        )
+        return collect_gate_inputs_by_scope(
+            evidence_output=filtered_evidence_output,
+            peak_output=peak_output,
+            context_by_scope=context_by_scope,
+            max_safe_action=filtered_evidence_output.max_safe_action,
+        )
+    finally:
+        record_pipeline_compute_latency(
+            stage="stage4_gate_input",
+            seconds=time.perf_counter() - started_at,
+        )
 
 
 def run_gate_decision_stage_cycle(
@@ -268,17 +313,28 @@ def run_gate_decision_stage_cycle(
     latency_warning_threshold_ms: int = 500,
 ) -> dict[tuple[str, ...], tuple[ActionDecisionV1, ...]]:
     """Run Stage 6 rulebook decision evaluation for assembled gate inputs."""
+    started_at = time.perf_counter()
     if rulebook_policy is None:
         raise ValueError(
             "rulebook_policy is required for run_gate_decision_stage_cycle "
             "to avoid implicit policy file I/O"
         )
-    return evaluate_rulebook_gate_inputs_by_scope(
-        gate_inputs_by_scope=gate_inputs_by_scope,
-        rulebook=rulebook_policy,
-        dedupe_store=dedupe_store,
-        latency_warning_threshold_ms=latency_warning_threshold_ms,
-    )
+    try:
+        decisions_by_scope = evaluate_rulebook_gate_inputs_by_scope(
+            gate_inputs_by_scope=gate_inputs_by_scope,
+            rulebook=rulebook_policy,
+            dedupe_store=dedupe_store,
+            latency_warning_threshold_ms=latency_warning_threshold_ms,
+        )
+    finally:
+        record_pipeline_compute_latency(
+            stage="stage5_gate_decision",
+            seconds=time.perf_counter() - started_at,
+        )
+
+    produced_cases = sum(len(decisions) for decisions in decisions_by_scope.values())
+    record_pipeline_case_throughput(case_count=produced_cases)
+    return decisions_by_scope
 
 
 async def emit_redis_degraded_mode_events(

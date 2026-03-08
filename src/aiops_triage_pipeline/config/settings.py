@@ -91,6 +91,16 @@ class Settings(BaseSettings):
     CASEFILE_LIFECYCLE_LIST_PAGE_SIZE: int = 500
     CASEFILE_RETENTION_GOVERNANCE_APPROVAL: str | None = None
 
+    # OTLP metrics export (Story 7.2)
+    OTLP_METRICS_ENDPOINT: str | None = None
+    OTLP_METRICS_PROTOCOL: str = "http/protobuf"  # allowed: "http/protobuf", "grpc"
+    OTLP_METRICS_HEADERS: str | None = None
+    OTLP_METRICS_EXPORT_INTERVAL_MILLIS: int = 60000
+    OTLP_METRICS_TIMEOUT_MILLIS: int = 10000
+    OTLP_SERVICE_NAME: str = "aiops-triage-pipeline"
+    OTLP_SERVICE_VERSION: str = "0.1.0"
+    OTLP_DEPLOYMENT_ENVIRONMENT: str | None = None
+
     @property
     def max_action(self) -> str:
         """Maximum allowed action for this environment (architecture decision 5D)."""
@@ -133,6 +143,16 @@ class Settings(BaseSettings):
             raise ValueError("CASEFILE_LIFECYCLE_DELETE_BATCH_SIZE must be between 1 and 1000")
         if not 1 <= self.CASEFILE_LIFECYCLE_LIST_PAGE_SIZE <= 1000:
             raise ValueError("CASEFILE_LIFECYCLE_LIST_PAGE_SIZE must be between 1 and 1000")
+        if self.OTLP_METRICS_PROTOCOL not in {"http/protobuf", "grpc"}:
+            raise ValueError(
+                "OTLP_METRICS_PROTOCOL must be 'http/protobuf' or 'grpc'"
+            )
+        if self.OTLP_METRICS_EXPORT_INTERVAL_MILLIS <= 0:
+            raise ValueError("OTLP_METRICS_EXPORT_INTERVAL_MILLIS must be > 0")
+        if self.OTLP_METRICS_TIMEOUT_MILLIS <= 0:
+            raise ValueError("OTLP_METRICS_TIMEOUT_MILLIS must be > 0")
+        if self.OTLP_DEPLOYMENT_ENVIRONMENT is None or self.OTLP_DEPLOYMENT_ENVIRONMENT == "":
+            self.OTLP_DEPLOYMENT_ENVIRONMENT = self.APP_ENV.value
         return self
 
     def log_active_config(self, logger: structlog.BoundLogger) -> None:
@@ -162,6 +182,16 @@ class Settings(BaseSettings):
             CASEFILE_LIFECYCLE_DELETE_BATCH_SIZE=self.CASEFILE_LIFECYCLE_DELETE_BATCH_SIZE,
             CASEFILE_LIFECYCLE_LIST_PAGE_SIZE=self.CASEFILE_LIFECYCLE_LIST_PAGE_SIZE,
             CASEFILE_RETENTION_GOVERNANCE_APPROVAL=self.CASEFILE_RETENTION_GOVERNANCE_APPROVAL,
+            OTLP_METRICS_ENDPOINT=self.OTLP_METRICS_ENDPOINT or "[NOT SET]",
+            OTLP_METRICS_PROTOCOL=self.OTLP_METRICS_PROTOCOL,
+            OTLP_METRICS_HEADERS=(
+                "[CONFIGURED]" if self.OTLP_METRICS_HEADERS else "[NOT SET]"
+            ),
+            OTLP_METRICS_EXPORT_INTERVAL_MILLIS=self.OTLP_METRICS_EXPORT_INTERVAL_MILLIS,
+            OTLP_METRICS_TIMEOUT_MILLIS=self.OTLP_METRICS_TIMEOUT_MILLIS,
+            OTLP_SERVICE_NAME=self.OTLP_SERVICE_NAME,
+            OTLP_SERVICE_VERSION=self.OTLP_SERVICE_VERSION,
+            OTLP_DEPLOYMENT_ENVIRONMENT=self.OTLP_DEPLOYMENT_ENVIRONMENT,
             max_action=self.max_action,
         )
 

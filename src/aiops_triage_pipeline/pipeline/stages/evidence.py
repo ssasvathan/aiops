@@ -10,6 +10,10 @@ from urllib.error import URLError
 from aiops_triage_pipeline.cache.findings_cache import FindingsCacheClientProtocol
 from aiops_triage_pipeline.contracts.enums import Action, EvidenceStatus
 from aiops_triage_pipeline.contracts.redis_ttl_policy import RedisTtlPolicyV1
+from aiops_triage_pipeline.health.metrics import (
+    record_evidence_unknown_rate,
+    record_prometheus_scrape_result,
+)
 from aiops_triage_pipeline.integrations.prometheus import (
     MetricQueryDefinition,
     PrometheusClientProtocol,
@@ -149,6 +153,18 @@ def collect_evidence_stage_output(
         metric_keys=tuple(samples_by_metric.keys()),
         rows=rows,
     )
+    total_scope_count = len(evidence_status_map_by_scope)
+    for metric_key in samples_by_metric:
+        unknown_count = sum(
+            1
+            for status_by_metric in evidence_status_map_by_scope.values()
+            if status_by_metric.get(metric_key) == EvidenceStatus.UNKNOWN
+        )
+        record_evidence_unknown_rate(
+            metric_key=metric_key,
+            unknown_count=unknown_count,
+            total_count=total_scope_count,
+        )
     return EvidenceStageOutput(
         rows=tuple(rows),
         anomaly_result=anomaly_result,
@@ -197,6 +213,7 @@ async def collect_prometheus_samples_with_diagnostics(
                 client.query_instant, query.metric_name, evaluation_time
             )
             collected[metric_key] = list(samples)
+            record_prometheus_scrape_result(metric_key=metric_key, success=True)
         except _PROMETHEUS_SOURCE_FAILURES as exc:
             reason = f"{type(exc).__name__}: {exc}"
             logger.warning(
@@ -210,6 +227,7 @@ async def collect_prometheus_samples_with_diagnostics(
             failed_metric_keys.append(metric_key)
             failure_reasons_by_metric[metric_key] = reason
             collected[metric_key] = []
+            record_prometheus_scrape_result(metric_key=metric_key, success=False)
         except ValueError as exc:
             reason = f"{type(exc).__name__}: {exc}"
             logger.warning(
@@ -224,6 +242,9 @@ async def collect_prometheus_samples_with_diagnostics(
             if _is_prometheus_non_success_api_error(exc):
                 failed_metric_keys.append(metric_key)
                 failure_reasons_by_metric[metric_key] = reason
+                record_prometheus_scrape_result(metric_key=metric_key, success=False)
+            else:
+                record_prometheus_scrape_result(metric_key=metric_key, success=True)
             collected[metric_key] = []
 
     is_total_outage = bool(metric_queries) and len(failed_metric_keys) == len(metric_queries)

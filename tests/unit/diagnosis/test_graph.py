@@ -371,6 +371,43 @@ async def test_inflight_gauge_balanced_on_failure() -> None:
     assert mock_gauge.call_args_list[1][0][0] == -1
 
 
+async def test_timeout_path_emits_llm_timeout_error_and_fallback_metrics() -> None:
+    registry = HealthRegistry()
+
+    async def slow_coroutine(*_args: object, **_kwargs: object) -> object:
+        await asyncio.sleep(10)
+        return {}
+
+    mock_client = MagicMock(spec=LLMClient)
+    mock_client.invoke = AsyncMock(side_effect=slow_coroutine)
+
+    with (
+        patch("aiops_triage_pipeline.diagnosis.graph.record_llm_invocation") as mock_invocation,
+        patch("aiops_triage_pipeline.diagnosis.graph.record_llm_latency") as mock_latency,
+        patch("aiops_triage_pipeline.diagnosis.graph.record_llm_timeout") as mock_timeout,
+        patch("aiops_triage_pipeline.diagnosis.graph.record_llm_error") as mock_error,
+        patch("aiops_triage_pipeline.diagnosis.graph.record_llm_fallback") as mock_fallback,
+    ):
+        report = await run_cold_path_diagnosis(
+            case_id="test-timeout-metrics",
+            triage_excerpt=_make_eligible_excerpt("test-timeout-metrics"),
+            evidence_summary=_EVIDENCE_SUMMARY,
+            llm_client=mock_client,
+            denylist=_EMPTY_DENYLIST,
+            health_registry=registry,
+            object_store_client=_make_mock_store(),
+            triage_hash=_FAKE_TRIAGE_HASH,
+            timeout_seconds=0.01,
+        )
+
+    assert report.reason_codes == ("LLM_TIMEOUT",)
+    mock_invocation.assert_called_once_with(result="fallback")
+    mock_latency.assert_called_once()
+    mock_timeout.assert_called_once_with()
+    mock_error.assert_called_once_with(error_type="TimeoutError")
+    mock_fallback.assert_called_once_with(reason_code="LLM_TIMEOUT")
+
+
 async def test_health_registry_degraded_on_generic_exception() -> None:
     """HealthRegistry 'llm' → DEGRADED when invocation raises — fallback returned, not raised."""
     registry = HealthRegistry()

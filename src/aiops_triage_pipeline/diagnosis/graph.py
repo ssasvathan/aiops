@@ -10,6 +10,7 @@ diagnosis.json for all failure paths.
 from __future__ import annotations
 
 import asyncio
+import time
 from typing import Any, TypedDict
 
 import httpx
@@ -24,7 +25,14 @@ from aiops_triage_pipeline.denylist.enforcement import apply_denylist
 from aiops_triage_pipeline.denylist.loader import DenylistV1
 from aiops_triage_pipeline.diagnosis.fallback import build_fallback_report
 from aiops_triage_pipeline.diagnosis.prompt import build_llm_prompt
-from aiops_triage_pipeline.health.metrics import llm_inflight_add
+from aiops_triage_pipeline.health.metrics import (
+    llm_inflight_add,
+    record_llm_error,
+    record_llm_fallback,
+    record_llm_invocation,
+    record_llm_latency,
+    record_llm_timeout,
+)
 from aiops_triage_pipeline.health.registry import HealthRegistry
 from aiops_triage_pipeline.integrations.llm import LLMClient
 from aiops_triage_pipeline.logging.setup import get_logger
@@ -151,6 +159,29 @@ async def run_cold_path_diagnosis(
     _logger.info("cold_path_diagnosis_started", case_id=case_id, timeout_seconds=timeout_seconds)
     await health_registry.update("llm", HealthStatus.HEALTHY, reason="cold_path_invocation_started")
     llm_inflight_add(+1)
+    started_at = time.perf_counter()
+    llm_metrics_recorded = False
+
+    def _record_llm_completion(
+        *,
+        result: str,
+        fallback_reason: str | None = None,
+        error_type: str | None = None,
+        timeout: bool = False,
+    ) -> None:
+        nonlocal llm_metrics_recorded
+        if llm_metrics_recorded:
+            return
+        llm_metrics_recorded = True
+        record_llm_invocation(result=result)
+        record_llm_latency(seconds=time.perf_counter() - started_at, result=result)
+        if timeout:
+            record_llm_timeout()
+        if error_type is not None:
+            record_llm_error(error_type=error_type)
+        if fallback_reason is not None:
+            record_llm_fallback(reason_code=fallback_reason)
+
     try:
         graph = build_diagnosis_graph(llm_client)
         try:
@@ -172,6 +203,12 @@ async def run_cold_path_diagnosis(
                 case_id=case_id,
                 error_type="TimeoutError",
             )
+            _record_llm_completion(
+                result="fallback",
+                fallback_reason="LLM_TIMEOUT",
+                error_type="TimeoutError",
+                timeout=True,
+            )
             return _make_and_persist_fallback(
                 reason_codes=("LLM_TIMEOUT",),
                 case_id=case_id,
@@ -187,6 +224,11 @@ async def run_cold_path_diagnosis(
             _logger.warning(
                 "cold_path_diagnosis_failed",
                 case_id=case_id,
+                error_type="ValidationError",
+            )
+            _record_llm_completion(
+                result="fallback",
+                fallback_reason="LLM_SCHEMA_INVALID",
                 error_type="ValidationError",
             )
             return _make_and_persist_fallback(
@@ -207,6 +249,11 @@ async def run_cold_path_diagnosis(
                 case_id=case_id,
                 error_type=type(exc).__name__,
             )
+            _record_llm_completion(
+                result="fallback",
+                fallback_reason="LLM_UNAVAILABLE",
+                error_type=type(exc).__name__,
+            )
             return _make_and_persist_fallback(
                 reason_codes=("LLM_UNAVAILABLE",),
                 case_id=case_id,
@@ -222,6 +269,11 @@ async def run_cold_path_diagnosis(
             _logger.warning(
                 "cold_path_diagnosis_failed",
                 case_id=case_id,
+                error_type=type(exc).__name__,
+            )
+            _record_llm_completion(
+                result="fallback",
+                fallback_reason="LLM_ERROR",
                 error_type=type(exc).__name__,
             )
             return _make_and_persist_fallback(
@@ -251,6 +303,11 @@ async def run_cold_path_diagnosis(
                 case_id=case_id,
                 error_type="ValidationError",
             )
+            _record_llm_completion(
+                result="fallback",
+                fallback_reason="LLM_SCHEMA_INVALID",
+                error_type="ValidationError",
+            )
             return _make_and_persist_fallback(
                 reason_codes=("LLM_SCHEMA_INVALID",),
                 case_id=case_id,
@@ -267,6 +324,11 @@ async def run_cold_path_diagnosis(
             _logger.warning(
                 "cold_path_diagnosis_failed",
                 case_id=case_id,
+                error_type=type(exc).__name__,
+            )
+            _record_llm_completion(
+                result="fallback",
+                fallback_reason="LLM_ERROR",
                 error_type=type(exc).__name__,
             )
             return _make_and_persist_fallback(
@@ -309,18 +371,23 @@ async def run_cold_path_diagnosis(
                 case_id=case_id,
                 triage_hash=triage_hash,
             )
-        except Exception:
+        except Exception as exc:
             # Fail loud for non-LLM failures in success path (e.g., persistence/invariant errors).
             await health_registry.update(
                 "llm",
                 HealthStatus.DEGRADED,
                 reason="cold_path_invocation_failed",
             )
+            _record_llm_completion(result="error", error_type=type(exc).__name__)
             raise
 
         await health_registry.update("llm", HealthStatus.HEALTHY)
+        _record_llm_completion(result="success")
         _logger.info("cold_path_diagnosis_completed", case_id=case_id)
         return report
+    except Exception as exc:
+        _record_llm_completion(result="error", error_type=type(exc).__name__)
+        raise
     finally:
         llm_inflight_add(-1)
 

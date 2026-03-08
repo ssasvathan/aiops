@@ -10,6 +10,7 @@ from aiops_triage_pipeline.config.settings import get_settings, load_policy_yaml
 from aiops_triage_pipeline.contracts.casefile_retention_policy import CasefileRetentionPolicyV1
 from aiops_triage_pipeline.contracts.outbox_policy import OutboxPolicyV1
 from aiops_triage_pipeline.denylist.loader import load_denylist
+from aiops_triage_pipeline.health.otlp import configure_otlp_metrics
 from aiops_triage_pipeline.integrations.kafka import ConfluentKafkaCaseEventPublisher
 from aiops_triage_pipeline.logging.setup import configure_logging, get_logger
 from aiops_triage_pipeline.outbox.repository import OutboxSqlRepository
@@ -55,6 +56,7 @@ def _run_outbox_publisher(*, once: bool) -> None:
     configure_logging()
     logger = get_logger("__main__")
     settings.log_active_config(logger)
+    configure_otlp_metrics(settings)
 
     policy = load_policy_yaml(_OUTBOX_POLICY_PATH, OutboxPolicyV1)
     denylist = load_denylist(_DENYLIST_PATH)
@@ -94,6 +96,7 @@ def _run_casefile_lifecycle(*, once: bool) -> None:
     configure_logging()
     logger = get_logger("__main__")
     settings.log_active_config(logger)
+    configure_otlp_metrics(settings)
 
     policy = load_policy_yaml(_CASEFILE_RETENTION_POLICY_PATH, CasefileRetentionPolicyV1)
     runner = CasefileLifecycleRunner(

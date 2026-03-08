@@ -1,6 +1,6 @@
 # Story 7.2: OpenTelemetry Instrumentation & OTLP Export
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -24,44 +24,44 @@ so that I can monitor the observer itself through Dynatrace and detect degradati
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add OTLP exporter bootstrap and runtime configuration (AC: 1)
-  - [ ] Add a telemetry bootstrap module that configures `MeterProvider`, `PeriodicExportingMetricReader`, and `OTLPMetricExporter`
-  - [ ] Add settings/env support for OTLP endpoint, protocol, headers, export interval, and service resource attributes
-  - [ ] Initialize telemetry bootstrap from process entrypoint before metric emission begins
-  - [ ] Preserve safe defaults for local runs and avoid outbound calls unless OTLP is configured
+- [x] Task 1: Add OTLP exporter bootstrap and runtime configuration (AC: 1)
+  - [x] Add a telemetry bootstrap module that configures `MeterProvider`, `PeriodicExportingMetricReader`, and `OTLPMetricExporter`
+  - [x] Add settings/env support for OTLP endpoint, protocol, headers, export interval, and service resource attributes
+  - [x] Initialize telemetry bootstrap from process entrypoint before metric emission begins
+  - [x] Preserve safe defaults for local runs and avoid outbound calls unless OTLP is configured
 
-- [ ] Task 2: Keep Story 7.1 outbox metrics as canonical and OTLP-exported (AC: 1)
-  - [ ] Reuse existing `aiops.outbox.*` metrics from `outbox/metrics.py` without renaming or duplicate instruments
-  - [ ] Ensure labels stay stable (`state`, `severity`, `quantile`) for dashboard continuity
+- [x] Task 2: Keep Story 7.1 outbox metrics as canonical and OTLP-exported (AC: 1)
+  - [x] Reuse existing `aiops.outbox.*` metrics from `outbox/metrics.py` without renaming or duplicate instruments
+  - [x] Ensure labels stay stable (`state`, `severity`, `quantile`) for dashboard continuity
 
-- [ ] Task 3: Implement Redis health + usage telemetry (AC: 1)
-  - [ ] Emit Redis connection status gauge derived from degraded/healthy transitions
-  - [ ] Emit Redis dedupe cache hit/miss counters at AG5 call sites
-  - [ ] Emit dedupe key count gauge (or equivalent cardinality-safe approximation) for operational visibility
+- [x] Task 3: Implement Redis health + usage telemetry (AC: 1)
+  - [x] Emit Redis connection status gauge derived from degraded/healthy transitions
+  - [x] Emit Redis dedupe cache hit/miss counters at AG5 call sites
+  - [x] Emit dedupe key count gauge (or equivalent cardinality-safe approximation) for operational visibility
 
-- [ ] Task 4: Expand LLM metrics beyond inflight gauge (AC: 1)
-  - [ ] Keep existing in-flight metric and add invocation count, latency histogram, timeout/error counters, and fallback counters
-  - [ ] Ensure metrics are updated on both success and all fallback/error paths in `diagnosis/graph.py`
+- [x] Task 4: Expand LLM metrics beyond inflight gauge (AC: 1)
+  - [x] Keep existing in-flight metric and add invocation count, latency histogram, timeout/error counters, and fallback counters
+  - [x] Ensure metrics are updated on both success and all fallback/error paths in `diagnosis/graph.py`
 
-- [ ] Task 5: Add Evidence Builder + Prometheus connectivity metrics (AC: 1)
-  - [ ] Emit evaluation interval adherence/drift and cases-produced-per-interval metrics
-  - [ ] Emit UNKNOWN evidence rate by metric key
-  - [ ] Emit Prometheus scrape success/failure counters and active/cleared degraded-state signal
+- [x] Task 5: Add Evidence Builder + Prometheus connectivity metrics (AC: 1)
+  - [x] Emit evaluation interval adherence/drift and cases-produced-per-interval metrics
+  - [x] Emit UNKNOWN evidence rate by metric key
+  - [x] Emit Prometheus scrape success/failure counters and active/cleared degraded-state signal
 
-- [ ] Task 6: Add pipeline-level latency and throughput instrumentation (AC: 1)
-  - [ ] Emit compute latency histogram for stages 1-4 (NFR-P1a)
-  - [ ] Reuse outbox delivery latency histogram for NFR-P1b alignment
-  - [ ] Emit case throughput metric per evaluation interval
+- [x] Task 6: Add pipeline-level latency and throughput instrumentation (AC: 1)
+  - [x] Emit compute latency histogram for stages 1-4 (NFR-P1a)
+  - [x] Reuse outbox delivery latency histogram for NFR-P1b alignment
+  - [x] Emit case throughput metric per evaluation interval
 
-- [ ] Task 7: Add OTLP collector integration test harness (AC: 2)
-  - [ ] Add an OpenTelemetry Collector testcontainer fixture (session-scoped) to receive OTLP metrics
-  - [ ] Add integration test asserting expected metric names, required labels, and representative values
-  - [ ] Keep full-suite `0 skipped` posture: fail fast when prerequisites are missing
+- [x] Task 7: Add OTLP collector integration test harness (AC: 2)
+  - [x] Add an OpenTelemetry Collector testcontainer fixture (session-scoped) to receive OTLP metrics
+  - [x] Add integration test asserting expected metric names, required labels, and representative values
+  - [x] Keep full-suite `0 skipped` posture: fail fast when prerequisites are missing
 
-- [ ] Task 8: Add/extend unit tests for each metric family and regression gates (AC: 3)
-  - [ ] Unit test instrument updates for Redis, LLM, Evidence Builder, Prometheus connectivity, and pipeline metrics
-  - [ ] Verify label shape and no metric drift/double-counting across repeated cycles
-  - [ ] Run quality gates: `uv run ruff check`, targeted unit tests, and Docker-enabled full suite with 0 skipped
+- [x] Task 8: Add/extend unit tests for each metric family and regression gates (AC: 3)
+  - [x] Unit test instrument updates for Redis, LLM, Evidence Builder, Prometheus connectivity, and pipeline metrics
+  - [x] Verify label shape and no metric drift/double-counting across repeated cycles
+  - [x] Run quality gates: `uv run ruff check`, targeted unit tests, and Docker-enabled full suite with 0 skipped
 
 ## Dev Notes
 
@@ -253,23 +253,66 @@ GPT-5 (Codex)
 
 ### Debug Log References
 
-- Story selected from `artifact/implementation-artifacts/sprint-status.yaml`: `7-2-opentelemetry-instrumentation-and-otlp-export`
-- Epic and NFR context extracted from planning artifacts
-- Prior story and git history mined for implementation patterns and risk guardrails
-- Latest OTLP/OpenTelemetry specifics verified against official upstream docs
+- Implemented OTLP bootstrap module with idempotent `MeterProvider` initialization and exporter flush/shutdown controls (`health/otlp.py`)
+- Added OTLP settings/runtime defaults and masked OTLP headers in startup config logging (`config/settings.py`, env templates)
+- Wired OTLP bootstrap in process entrypoint before worker metric emission (`__main__.py`)
+- Expanded metric families for Redis, LLM, Evidence Builder, Prometheus connectivity/degraded state, and pipeline compute/throughput (`health/metrics.py`)
+- Instrumented Redis dedupe, LLM cold path, evidence collection, and scheduler stages with new metric emission points
+- Added OTLP collector integration fixture and test; validated metric names/labels from collector debug export logs
+- Quality gates executed:
+  - `uv run ruff check`
+  - `uv run pytest -q -m "not integration"` → `674 passed, 19 deselected`
+  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs` → `693 passed`, `0 skipped`
+
+### Implementation Plan
+
+- Add OTLP bootstrap and settings plumbing first so all downstream metric instrumentation exports through one configured provider.
+- Keep `aiops.outbox.*` metrics unchanged and additive-only for other metric families to preserve dashboard and test continuity.
+- Instrument runtime paths closest to source-of-truth state transitions (Redis dedupe operations, LLM invocation lifecycle, evidence/scheduler stages).
+- Add unit coverage for metric helpers and call-site hooks, then add an integration collector assertion with Docker/testcontainers.
+- Run lint + non-integration + full Docker regression suite and close only with zero skipped tests.
 
 ### Completion Notes List
 
-- Story artifact created with comprehensive developer guardrails for Story 7.2.
-- Prior-story and git intelligence included to prevent regressions and duplicate work.
-- Latest technical references included with explicit pinned-vs-latest guidance.
-- Story status set to `ready-for-dev`.
+- Completed Story 7.2 implementation and moved status to `review`.
+- Added centralized OTLP bootstrap (`MeterProvider`, periodic reader, OTLP exporter) with safe no-endpoint defaults and idempotent setup.
+- Added OTLP runtime settings/env support (endpoint/protocol/headers/export interval/service resource attributes) and masked header logging.
+- Preserved canonical `aiops.outbox.*` metric names and stable labels (`state`, `severity`, `quantile`).
+- Added Redis telemetry: connection status gauge (delta tracked), dedupe hit/miss counters, and approximate dedupe key-count gauge.
+- Expanded LLM telemetry: invocation count, latency histogram, timeout/error counters, fallback counter; instrumented all success/fallback/error paths.
+- Added Evidence Builder and Prometheus telemetry: interval adherence/drift, unknown-rate-by-metric, scrape success/failure, degraded active/cleared transitions.
+- Added pipeline telemetry: per-stage compute latency histogram and case-throughput-per-interval metric.
+- Added OTLP collector integration fixture + test and new unit tests for metric families/call sites.
+- All quality gates passed with full regression `0 skipped`.
 
 ### File List
 
+- src/aiops_triage_pipeline/health/otlp.py
+- src/aiops_triage_pipeline/config/settings.py
+- src/aiops_triage_pipeline/__main__.py
+- src/aiops_triage_pipeline/health/metrics.py
+- src/aiops_triage_pipeline/health/__init__.py
+- src/aiops_triage_pipeline/cache/dedupe.py
+- src/aiops_triage_pipeline/diagnosis/graph.py
+- src/aiops_triage_pipeline/pipeline/stages/evidence.py
+- src/aiops_triage_pipeline/pipeline/scheduler.py
+- config/.env.local
+- config/.env.dev
+- config/.env.uat.template
+- config/.env.prod.template
+- tests/unit/config/test_settings.py
+- tests/unit/health/test_metrics.py
+- tests/unit/health/test_otlp.py
+- tests/unit/cache/test_dedupe.py
+- tests/unit/diagnosis/test_graph.py
+- tests/unit/pipeline/stages/test_evidence_metrics.py
+- tests/unit/pipeline/test_scheduler.py
+- tests/integration/conftest.py
+- tests/integration/test_otlp_export.py
 - artifact/implementation-artifacts/7-2-opentelemetry-instrumentation-and-otlp-export.md
 - artifact/implementation-artifacts/sprint-status.yaml
 
 ## Change Log
 
 - 2026-03-07: Created Story 7.2 implementation-ready context file with architecture, testing, and OTLP export guardrails.
+- 2026-03-08: Implemented Story 7.2 OTLP bootstrap and telemetry expansion across Redis, LLM, evidence/scheduler, and pipeline; added unit/integration coverage and passed full regression with zero skipped tests.
