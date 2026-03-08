@@ -8,6 +8,8 @@ from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
 
+import redis as redis_lib
+
 _DOCKER_DESKTOP_SOCKET = Path.home() / ".docker" / "desktop" / "docker.sock"
 _DOCKER_ENGINE_SOCKET = Path("/var/run/docker.sock")
 
@@ -54,3 +56,21 @@ def _wait_for_minio(endpoint_url: str, timeout_seconds: float = 30.0) -> None:
         except (URLError, TimeoutError, ConnectionError):
             time.sleep(0.25)
     raise TimeoutError(f"Timed out waiting for MinIO health endpoint at {endpoint_url}")
+
+
+def _wait_for_redis(host: str, port: int, timeout_seconds: float = 30.0) -> None:
+    """Poll Redis until ping succeeds or timeout expires."""
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        try:
+            redis_client = redis_lib.Redis(
+                host=host,
+                port=port,
+                decode_responses=True,
+                socket_connect_timeout=1.0,
+            )
+            if redis_client.ping():
+                return
+        except (redis_lib.exceptions.RedisError, OSError):
+            time.sleep(0.25)
+    raise TimeoutError(f"Timed out waiting for Redis at {host}:{port}")

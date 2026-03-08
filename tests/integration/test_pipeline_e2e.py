@@ -25,7 +25,6 @@ from sqlalchemy import create_engine
 from testcontainers.core.container import DockerContainer
 from testcontainers.kafka import KafkaContainer
 from testcontainers.postgres import PostgresContainer
-from testcontainers.redis import RedisContainer
 
 from aiops_triage_pipeline.cache.dedupe import RedisActionDedupeStore
 from aiops_triage_pipeline.config.settings import load_policy_yaml
@@ -63,7 +62,11 @@ from aiops_triage_pipeline.storage.casefile_io import (
     validate_casefile_triage_json,
 )
 from aiops_triage_pipeline.storage.client import S3ObjectStoreClient
-from tests.integration.conftest import _is_environment_prereq_error, _wait_for_minio
+from tests.integration.conftest import (
+    _is_environment_prereq_error,
+    _wait_for_minio,
+    _wait_for_redis,
+)
 
 # ── Constants ──────────────────────────────────────────────────────────────────
 
@@ -269,7 +272,10 @@ def kafka_container():
 @pytest.fixture(scope="module")
 def redis_container():
     try:
-        with RedisContainer("redis:7.2-alpine") as container:
+        with DockerContainer("redis:7.2-alpine").with_exposed_ports(6379) as container:
+            host = container.get_container_host_ip()
+            port = int(container.get_exposed_port(6379))
+            _wait_for_redis(host, port)
             yield container
     except Exception as exc:  # noqa: BLE001
         if _is_environment_prereq_error(exc):

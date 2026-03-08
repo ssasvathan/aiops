@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 
 import pytest
 import redis as redis_lib
-from testcontainers.redis import RedisContainer
+from testcontainers.core.container import DockerContainer
 
 from aiops_triage_pipeline.cache.dedupe import RedisActionDedupeStore
 from aiops_triage_pipeline.contracts.enums import Action
@@ -28,12 +28,21 @@ from aiops_triage_pipeline.pipeline.scheduler import (
     run_gate_decision_stage_cycle,
 )
 from aiops_triage_pipeline.pipeline.stages.peak import load_rulebook_policy
+from tests.integration.conftest import _is_environment_prereq_error, _wait_for_redis
 
 
 @pytest.fixture(scope="module")
 def redis_container():
-    with RedisContainer("redis:7.2-alpine") as container:
-        yield container
+    try:
+        with DockerContainer("redis:7.2-alpine").with_exposed_ports(6379) as container:
+            host = container.get_container_host_ip()
+            port = int(container.get_exposed_port(6379))
+            _wait_for_redis(host, port)
+            yield container
+    except Exception as exc:  # noqa: BLE001
+        if _is_environment_prereq_error(exc):
+            pytest.skip(f"Docker/Redis unavailable: {exc}")
+        raise
 
 
 @pytest.fixture()
