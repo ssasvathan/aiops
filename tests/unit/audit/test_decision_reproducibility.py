@@ -290,6 +290,14 @@ def _build_minimal_casefile(
     )
 
 
+def _assert_replayed_decision_matches_expected(
+    replayed: ActionDecisionV1,
+    expected: ActionDecisionV1,
+) -> None:
+    """Assert full field-for-field ActionDecisionV1 equality."""
+    assert replayed.model_dump() == expected.model_dump()
+
+
 # ---------------------------------------------------------------------------
 # Task 2: reproduce_gate_decision() — regression suite (AC: 2, 3, 6)
 # ---------------------------------------------------------------------------
@@ -313,10 +321,31 @@ def test_reproduce_gate_decision_observe_baseline() -> None:
     casefile = _build_minimal_casefile(gate_input, expected)
     replayed = reproduce_gate_decision(casefile, rulebook)
 
-    assert replayed.final_action == expected.final_action
-    assert replayed.gate_rule_ids == expected.gate_rule_ids
-    assert replayed.env_cap_applied == expected.env_cap_applied
-    assert replayed.postmortem_required == expected.postmortem_required
+    _assert_replayed_decision_matches_expected(replayed, expected)
+
+
+def test_reproduce_gate_decision_notify_low_confidence_evidence_sufficient() -> None:
+    """NOTIFY path: evidence sufficient + confidence-low (non env-capped) (AC: 2, 3)."""
+    rulebook = _build_test_rulebook()
+    gate_input = _build_gate_input(
+        env=Environment.PROD,
+        topic_role="SHARED_TOPIC",
+        criticality_tier=CriticalityTier.TIER_0,
+        proposed_action=Action.NOTIFY,
+        diagnosis_confidence=0.2,
+        sustained=False,
+        peak=False,
+        evidence_status_map={"topic_messages_in_per_sec": EvidenceStatus.PRESENT},
+    )
+    expected = evaluate_rulebook_gates(gate_input=gate_input, rulebook=rulebook, dedupe_store=None)
+    assert expected.final_action == Action.NOTIFY
+    assert expected.env_cap_applied is False
+    assert "AG2_INSUFFICIENT_EVIDENCE" not in expected.gate_reason_codes
+
+    casefile = _build_minimal_casefile(gate_input, expected)
+    replayed = reproduce_gate_decision(casefile, rulebook)
+
+    _assert_replayed_decision_matches_expected(replayed, expected)
 
 
 def test_reproduce_gate_decision_notify_capped_dev() -> None:
@@ -338,10 +367,7 @@ def test_reproduce_gate_decision_notify_capped_dev() -> None:
     casefile = _build_minimal_casefile(gate_input, expected)
     replayed = reproduce_gate_decision(casefile, rulebook)
 
-    assert replayed.final_action == expected.final_action
-    assert replayed.gate_rule_ids == expected.gate_rule_ids
-    assert replayed.env_cap_applied == expected.env_cap_applied
-    assert replayed.postmortem_required == expected.postmortem_required
+    _assert_replayed_decision_matches_expected(replayed, expected)
 
 
 def test_reproduce_gate_decision_ag2_evidence_insufficient() -> None:
@@ -364,10 +390,7 @@ def test_reproduce_gate_decision_ag2_evidence_insufficient() -> None:
     casefile = _build_minimal_casefile(gate_input, expected)
     replayed = reproduce_gate_decision(casefile, rulebook)
 
-    assert replayed.final_action == expected.final_action
-    assert replayed.gate_rule_ids == expected.gate_rule_ids
-    assert replayed.env_cap_applied == expected.env_cap_applied
-    assert replayed.postmortem_required == expected.postmortem_required
+    _assert_replayed_decision_matches_expected(replayed, expected)
 
 
 def test_reproduce_gate_decision_ag4_sustained_fail() -> None:
@@ -389,10 +412,7 @@ def test_reproduce_gate_decision_ag4_sustained_fail() -> None:
     casefile = _build_minimal_casefile(gate_input, expected)
     replayed = reproduce_gate_decision(casefile, rulebook)
 
-    assert replayed.final_action == expected.final_action
-    assert replayed.gate_rule_ids == expected.gate_rule_ids
-    assert replayed.env_cap_applied == expected.env_cap_applied
-    assert replayed.postmortem_required == expected.postmortem_required
+    _assert_replayed_decision_matches_expected(replayed, expected)
 
 
 def test_reproduce_gate_decision_ag6_postmortem_trigger() -> None:
@@ -415,10 +435,7 @@ def test_reproduce_gate_decision_ag6_postmortem_trigger() -> None:
     casefile = _build_minimal_casefile(gate_input, expected)
     replayed = reproduce_gate_decision(casefile, rulebook)
 
-    assert replayed.final_action == expected.final_action
-    assert replayed.gate_rule_ids == expected.gate_rule_ids
-    assert replayed.env_cap_applied == expected.env_cap_applied
-    assert replayed.postmortem_required == expected.postmortem_required
+    _assert_replayed_decision_matches_expected(replayed, expected)
 
 
 def test_reproduce_gate_decision_version_mismatch_raises_value_error() -> None:

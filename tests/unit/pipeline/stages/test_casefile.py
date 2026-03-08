@@ -1116,8 +1116,10 @@ def test_casefile_audit_trail_fields_complete(tmp_path: Path) -> None:
     assert len(assembled.action_decision.gate_rule_ids) > 0
     assert isinstance(assembled.action_decision.gate_reason_codes, tuple)
 
-    # evidence snapshot rows present
-    assert assembled.evidence_snapshot.rows is not None
+    # evidence snapshot rows are non-empty and tied to evaluated evidence set
+    assert len(assembled.evidence_snapshot.rows) > 0
+    row_metric_keys = {row.metric_key for row in assembled.evidence_snapshot.rows}
+    assert row_metric_keys == set(assembled.gate_input.evidence_status_map)
 
     # triage_hash is 64-char hex
     assert re.fullmatch(r"[0-9a-f]{64}", assembled.triage_hash)

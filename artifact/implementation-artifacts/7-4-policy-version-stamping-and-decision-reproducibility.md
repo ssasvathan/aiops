@@ -1,6 +1,6 @@
 # Story 7.4: Policy Version Stamping & Decision Reproducibility
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -63,6 +63,12 @@ so that I can verify any past decision was correct given the evidence and polici
   - [x] `uv run pytest -q -m "not integration"`
   - [x] `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
   - [x] Verify full run reports `0 skipped`
+
+### Review Follow-ups (AI)
+
+- [x] [AI-Review][HIGH] Added a dedicated reproducibility test for the required NOTIFY scenario (`evidence-sufficient` + `confidence-low`) so AC3 coverage is explicit and distinct from env-capped behavior. [`tests/unit/audit/test_decision_reproducibility.py`]
+- [x] [AI-Review][HIGH] Updated reproducibility assertions to verify full `ActionDecisionV1` equality field-for-field, not only selected fields, to satisfy AC6 exactly. [`tests/unit/audit/test_decision_reproducibility.py`]
+- [x] [AI-Review][MEDIUM] Strengthened NFR-T6 completeness checks so evidence rows are asserted as non-empty and tied to the evaluated evidence set (replaced vacuous `rows is not None`). [`tests/unit/pipeline/stages/test_casefile.py`]
 
 ## Dev Notes
 
@@ -281,9 +287,9 @@ claude-sonnet-4-6
 - Created `src/aiops_triage_pipeline/audit/__init__.py` exporting `reproduce_gate_decision` and `build_audit_trail`.
 - Created `src/aiops_triage_pipeline/audit/replay.py` (~70 lines): thin leaf package calling `evaluate_rulebook_gates(dedupe_store=None)` for deterministic replay and extracting NFR-T6 audit trail fields.
 - Created `tests/unit/audit/__init__.py` (empty).
-- Created `tests/unit/audit/test_decision_reproducibility.py` with 15 tests: 6 reproduce_gate_decision regression scenarios (OBSERVE, NOTIFY-capped dev, AG2 fail, AG4 fail, AG6 postmortem, version mismatch) + 9 build_audit_trail completeness assertions.
+- Created `tests/unit/audit/test_decision_reproducibility.py` with 16 tests: 7 reproduce_gate_decision regression scenarios (OBSERVE, NOTIFY low-confidence evidence-sufficient, NOTIFY-capped dev, AG2 fail, AG4 fail, AG6 postmortem, version mismatch) + 9 build_audit_trail completeness assertions.
 - Extended `tests/unit/pipeline/stages/test_casefile.py` with 2 new FR60/NFR-T6 tests.
-- Quality gates: ruff clean, 710 unit tests pass (0 skipped), 729 full regression tests pass (0 skipped).
+- Quality gates: ruff clean, 711 unit tests pass (0 skipped), 730 full regression tests pass (0 skipped).
 - Key design decision: test rulebook uses AG5 with no `on_store_error` effect so `dedupe_store=None` is a no-op for non-OBSERVE actions, enabling PAGE to survive to AG6 in postmortem test.
 
 ### File List
@@ -293,10 +299,34 @@ claude-sonnet-4-6
 - `tests/unit/audit/__init__.py` (new)
 - `tests/unit/audit/test_decision_reproducibility.py` (new)
 - `tests/unit/pipeline/stages/test_casefile.py` (modified — 2 tests added)
-- `artifact/implementation-artifacts/sprint-status.yaml` (modified — status in-progress)
-- `artifact/implementation-artifacts/7-4-policy-version-stamping-and-decision-reproducibility.md` (modified — tasks checked, status updated)
+- `artifact/implementation-artifacts/sprint-status.yaml` (modified — status done)
+- `artifact/implementation-artifacts/7-4-policy-version-stamping-and-decision-reproducibility.md` (modified — review follow-ups resolved, status updated)
+
+## Senior Developer Review (AI)
+
+### Reviewer
+
+- Reviewer: `Sas` (AI)
+- Date: `2026-03-08`
+- Outcome: **Approved**
+
+### Findings (Resolved)
+
+1. **[HIGH][RESOLVED] Missing required AC3 NOTIFY scenario in regression suite**
+   - Added explicit `test_reproduce_gate_decision_notify_low_confidence_evidence_sufficient`.
+   - Evidence: `tests/unit/audit/test_decision_reproducibility.py`.
+
+2. **[HIGH][RESOLVED] AC6 "field-for-field identical ActionDecisionV1" not fully verified**
+   - Added shared helper `_assert_replayed_decision_matches_expected()` and switched replay tests to full `model_dump()` equality.
+   - Evidence: `tests/unit/audit/test_decision_reproducibility.py`.
+
+3. **[MEDIUM][RESOLVED] NFR-T6 evidence completeness assertion was too weak**
+   - Replaced `rows is not None` with non-empty row assertions and metric-key parity against `gate_input.evidence_status_map`.
+   - Evidence: `tests/unit/pipeline/stages/test_casefile.py`.
 
 ## Change Log
 
 - 2026-03-08: Created Story 7.4 implementation-ready context file with audit/replay module design, reproducibility test matrix, architecture compliance, and developer guardrails.
 - 2026-03-08: Implemented Story 7.4 — created `audit/` package with `reproduce_gate_decision()` and `build_audit_trail()`, 6-scenario reproducibility regression suite, 9 audit trail completeness tests, 2 FR60/NFR-T6 casefile assertions. Full regression 729/729 pass, 0 skipped.
+- 2026-03-08: Senior developer adversarial code review completed; outcome **Changes Requested** with 2 HIGH and 1 MEDIUM follow-up items added under `Review Follow-ups (AI)`.
+- 2026-03-08: Resolved all AI review follow-ups, re-ran quality gates (`ruff`, unit suite, full Docker regression), and marked story complete.
