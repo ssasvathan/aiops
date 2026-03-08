@@ -42,7 +42,6 @@ from aiops_triage_pipeline.storage.casefile_io import (
     serialize_casefile_triage,
 )
 from aiops_triage_pipeline.storage.client import ObjectStoreClientProtocol, PutIfAbsentResult
-from tests.integration.conftest import _is_environment_prereq_error
 
 
 def _sample_casefile() -> CaseFileTriageV1:
@@ -230,44 +229,39 @@ def test_outbox_publish_after_crash_recovery_transitions_ready_to_sent() -> None
         casefile=casefile,
         object_store_client=object_store,
     )
-    try:
-        with PostgresContainer("postgres:16") as postgres:
-            connection_url = postgres.get_connection_url().replace(
-                "postgresql+psycopg2://",
-                "postgresql+psycopg://",
-            )
-            if connection_url.startswith("postgresql://"):
-                connection_url = connection_url.replace("postgresql://", "postgresql+psycopg://")
-            engine = create_engine(connection_url)
-            create_outbox_table(engine)
-            repository = OutboxSqlRepository(engine=engine)
+    with PostgresContainer("postgres:16") as postgres:
+        connection_url = postgres.get_connection_url().replace(
+            "postgresql+psycopg2://",
+            "postgresql+psycopg://",
+        )
+        if connection_url.startswith("postgresql://"):
+            connection_url = connection_url.replace("postgresql://", "postgresql+psycopg://")
+        engine = create_engine(connection_url)
+        create_outbox_table(engine)
+        repository = OutboxSqlRepository(engine=engine)
 
-            build_outbox_ready_record(
-                confirmed_casefile=ready_casefile,
-                outbox_repository=repository,
-            )
+        build_outbox_ready_record(
+            confirmed_casefile=ready_casefile,
+            outbox_repository=repository,
+        )
 
-            ready_rows = repository.select_publishable(limit=10)
-            assert len(ready_rows) == 1
-            assert ready_rows[0].status == "READY"
+        ready_rows = repository.select_publishable(limit=10)
+        assert len(ready_rows) == 1
+        assert ready_rows[0].status == "READY"
 
-            publish_case_header_after_confirmed_casefile(
-                confirmed_casefile=ready_casefile,
-                case_header_event=_sample_case_header_event(casefile.case_id),
-                object_store_client=object_store,
-                publisher=publisher,
-                outbox_repository=repository,
-            )
+        publish_case_header_after_confirmed_casefile(
+            confirmed_casefile=ready_casefile,
+            case_header_event=_sample_case_header_event(casefile.case_id),
+            object_store_client=object_store,
+            publisher=publisher,
+            outbox_repository=repository,
+        )
 
-            sent = repository.get_by_case_id(casefile.case_id)
-            assert sent is not None
-            assert sent.status == "SENT"
-            assert sent.delivery_attempts == 1
-            assert len(publisher.published) == 1
-    except Exception as exc:  # noqa: BLE001
-        if _is_environment_prereq_error(exc):
-            pytest.skip(f"Docker/Postgres unavailable for integration test: {exc}")
-        raise
+        sent = repository.get_by_case_id(casefile.case_id)
+        assert sent is not None
+        assert sent.status == "SENT"
+        assert sent.delivery_attempts == 1
+        assert len(publisher.published) == 1
 
 
 @pytest.mark.integration
@@ -304,43 +298,38 @@ def test_outbox_worker_recovers_ready_records_and_publishes_after_restart() -> N
         object_store_client=object_store,
     )
     object_store.store[ready_casefile.object_path] = serialize_casefile_triage(casefile)
-    try:
-        with PostgresContainer("postgres:16") as postgres:
-            connection_url = postgres.get_connection_url().replace(
-                "postgresql+psycopg2://",
-                "postgresql+psycopg://",
-            )
-            if connection_url.startswith("postgresql://"):
-                connection_url = connection_url.replace("postgresql://", "postgresql+psycopg://")
-            engine = create_engine(connection_url)
-            create_outbox_table(engine)
-            repository = OutboxSqlRepository(engine=engine)
+    with PostgresContainer("postgres:16") as postgres:
+        connection_url = postgres.get_connection_url().replace(
+            "postgresql+psycopg2://",
+            "postgresql+psycopg://",
+        )
+        if connection_url.startswith("postgresql://"):
+            connection_url = connection_url.replace("postgresql://", "postgresql+psycopg://")
+        engine = create_engine(connection_url)
+        create_outbox_table(engine)
+        repository = OutboxSqlRepository(engine=engine)
 
-            build_outbox_ready_record(
-                confirmed_casefile=ready_casefile,
-                outbox_repository=repository,
-            )
-            worker = OutboxPublisherWorker(
-                outbox_repository=repository,
-                object_store_client=object_store,
-                publisher=publisher,
-                denylist=_denylist_for_tests(),
-                policy=_policy_with_max_retry(max_retry_attempts=3),
-                app_env="local",
-            )
+        build_outbox_ready_record(
+            confirmed_casefile=ready_casefile,
+            outbox_repository=repository,
+        )
+        worker = OutboxPublisherWorker(
+            outbox_repository=repository,
+            object_store_client=object_store,
+            publisher=publisher,
+            denylist=_denylist_for_tests(),
+            policy=_policy_with_max_retry(max_retry_attempts=3),
+            app_env="local",
+        )
 
-            worker.run_once(now=datetime(2026, 3, 6, 12, 0, tzinfo=UTC))
-            sent = repository.get_by_case_id(casefile.case_id)
-            assert sent is not None
-            assert sent.status == "SENT"
-            assert sent.delivery_attempts == 1
-            assert publisher.calls == 1
-            assert publisher.excerpts
-            assert "password" not in publisher.excerpts[0].evidence_status_map
-    except Exception as exc:  # noqa: BLE001
-        if _is_environment_prereq_error(exc):
-            pytest.skip(f"Docker/Postgres unavailable for integration test: {exc}")
-        raise
+        worker.run_once(now=datetime(2026, 3, 6, 12, 0, tzinfo=UTC))
+        sent = repository.get_by_case_id(casefile.case_id)
+        assert sent is not None
+        assert sent.status == "SENT"
+        assert sent.delivery_attempts == 1
+        assert publisher.calls == 1
+        assert publisher.excerpts
+        assert "password" not in publisher.excerpts[0].evidence_status_map
 
 
 @pytest.mark.integration
@@ -352,47 +341,42 @@ def test_outbox_worker_accumulates_retry_records_when_kafka_unavailable() -> Non
         object_store_client=object_store,
     )
     object_store.store[ready_casefile.object_path] = serialize_casefile_triage(casefile)
-    try:
-        with PostgresContainer("postgres:16") as postgres:
-            connection_url = postgres.get_connection_url().replace(
-                "postgresql+psycopg2://",
-                "postgresql+psycopg://",
-            )
-            if connection_url.startswith("postgresql://"):
-                connection_url = connection_url.replace("postgresql://", "postgresql+psycopg://")
-            engine = create_engine(connection_url)
-            create_outbox_table(engine)
-            repository = OutboxSqlRepository(engine=engine)
+    with PostgresContainer("postgres:16") as postgres:
+        connection_url = postgres.get_connection_url().replace(
+            "postgresql+psycopg2://",
+            "postgresql+psycopg://",
+        )
+        if connection_url.startswith("postgresql://"):
+            connection_url = connection_url.replace("postgresql://", "postgresql+psycopg://")
+        engine = create_engine(connection_url)
+        create_outbox_table(engine)
+        repository = OutboxSqlRepository(engine=engine)
 
-            build_outbox_ready_record(
-                confirmed_casefile=ready_casefile,
-                outbox_repository=repository,
-            )
-            worker = OutboxPublisherWorker(
-                outbox_repository=repository,
-                object_store_client=object_store,
-                publisher=_FailingCaseEventsPublisher(),
-                denylist=_denylist_for_tests(),
-                policy=_policy_with_max_retry(max_retry_attempts=1),
-                app_env="local",
-            )
+        build_outbox_ready_record(
+            confirmed_casefile=ready_casefile,
+            outbox_repository=repository,
+        )
+        worker = OutboxPublisherWorker(
+            outbox_repository=repository,
+            object_store_client=object_store,
+            publisher=_FailingCaseEventsPublisher(),
+            denylist=_denylist_for_tests(),
+            policy=_policy_with_max_retry(max_retry_attempts=1),
+            app_env="local",
+        )
 
-            first_attempt_time = datetime(2026, 3, 6, 12, 0, tzinfo=UTC)
-            worker.run_once(now=first_attempt_time)
-            retried = repository.get_by_case_id(casefile.case_id)
-            assert retried is not None
-            assert retried.status == "RETRY"
-            assert retried.next_attempt_at is not None
+        first_attempt_time = datetime(2026, 3, 6, 12, 0, tzinfo=UTC)
+        worker.run_once(now=first_attempt_time)
+        retried = repository.get_by_case_id(casefile.case_id)
+        assert retried is not None
+        assert retried.status == "RETRY"
+        assert retried.next_attempt_at is not None
 
-            worker.run_once(now=retried.next_attempt_at)
-            dead = repository.get_by_case_id(casefile.case_id)
-            assert dead is not None
-            assert dead.status == "DEAD"
-            assert dead.delivery_attempts == 2
-    except Exception as exc:  # noqa: BLE001
-        if _is_environment_prereq_error(exc):
-            pytest.skip(f"Docker/Postgres unavailable for integration test: {exc}")
-        raise
+        worker.run_once(now=retried.next_attempt_at)
+        dead = repository.get_by_case_id(casefile.case_id)
+        assert dead is not None
+        assert dead.status == "DEAD"
+        assert dead.delivery_attempts == 2
 
 
 @pytest.mark.integration
@@ -496,12 +480,7 @@ def test_outbox_stage_halts_when_postgres_unavailable() -> None:
         triage_hash=casefile.triage_hash,
     )
 
-    try:
-        engine = create_engine("postgresql+psycopg://aiops:aiops@127.0.0.1:1/aiops")
-    except Exception as exc:  # noqa: BLE001
-        if _is_environment_prereq_error(exc):
-            pytest.skip(f"Postgres driver unavailable for integration test: {exc}")
-        raise
+    engine = create_engine("postgresql+psycopg://aiops:aiops@127.0.0.1:1/aiops")
     repository = OutboxSqlRepository(engine=engine)
 
     with pytest.raises(CriticalDependencyError, match="outbox repository operation failed"):

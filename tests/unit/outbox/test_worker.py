@@ -376,6 +376,70 @@ def test_outbox_worker_logs_warning_for_old_ready_backlog() -> None:
     assert fields["ready_count"] == 1
 
 
+def test_outbox_worker_backlog_health_escalates_on_pending_object_critical_age() -> None:
+    snapshot = OutboxHealthSnapshot(
+        pending_object_count=1,
+        ready_count=0,
+        retry_count=0,
+        dead_count=0,
+        sent_count=0,
+        oldest_pending_object_age_seconds=901.0,
+        oldest_ready_age_seconds=0.0,
+        oldest_retry_age_seconds=0.0,
+        oldest_dead_age_seconds=0.0,
+    )
+    worker = OutboxPublisherWorker(
+        outbox_repository=_SnapshotOnlyRepository(snapshot),
+        object_store_client=_InMemoryObjectStoreClient(),
+        publisher=_RecordingPublisher(),
+        denylist=_denylist_for_tests(),
+        policy=_policy_with_max_retry(max_retry_attempts=3),
+        app_env="local",
+    )
+    logger = _RecordingLogger()
+    worker._logger = logger  # noqa: SLF001
+
+    worker.run_once(now=datetime(2026, 3, 6, 12, 3, tzinfo=UTC))
+
+    backlog_events = [event for event in logger.events if event[1] == "outbox_backlog_health"]
+    assert backlog_events
+    level, _, fields = backlog_events[0]
+    assert level == "critical"
+    assert fields["threshold_state"] == "critical"
+
+
+def test_outbox_worker_backlog_health_escalates_on_dead_count_in_prod() -> None:
+    snapshot = OutboxHealthSnapshot(
+        pending_object_count=0,
+        ready_count=0,
+        retry_count=0,
+        dead_count=1,
+        sent_count=0,
+        oldest_pending_object_age_seconds=0.0,
+        oldest_ready_age_seconds=0.0,
+        oldest_retry_age_seconds=0.0,
+        oldest_dead_age_seconds=0.0,
+    )
+    worker = OutboxPublisherWorker(
+        outbox_repository=_SnapshotOnlyRepository(snapshot),
+        object_store_client=_InMemoryObjectStoreClient(),
+        publisher=_RecordingPublisher(),
+        denylist=_denylist_for_tests(),
+        policy=_policy_with_max_retry(max_retry_attempts=3),
+        app_env="prod",
+    )
+    logger = _RecordingLogger()
+    worker._logger = logger  # noqa: SLF001
+
+    worker.run_once(now=datetime(2026, 3, 6, 12, 3, tzinfo=UTC))
+
+    backlog_events = [event for event in logger.events if event[1] == "outbox_backlog_health"]
+    assert backlog_events
+    level, _, fields = backlog_events[0]
+    assert level == "critical"
+    assert fields["threshold_state"] == "critical"
+
+
 def test_outbox_worker_backlog_health_uses_full_backlog_not_batch_slice() -> None:
     ready_casefile = _ready_casefile(_sample_casefile(case_id="case-ready"))
     retry_casefile = _ready_casefile(_sample_casefile(case_id="case-retry"))
@@ -742,3 +806,5 @@ def test_nearest_rank_percentile_supports_p95_and_p99_window_calculations() -> N
     values = list(range(1, 101))
     assert _nearest_rank_percentile(values, 0.95) == 95
     assert _nearest_rank_percentile(values, 0.99) == 99
+    assert _nearest_rank_percentile([1, 100], 0.95) == 100
+    assert _nearest_rank_percentile([1, 100], 0.99) == 100

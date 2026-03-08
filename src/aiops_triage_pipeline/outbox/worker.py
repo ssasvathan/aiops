@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from math import ceil
 from typing import Protocol
 
 from aiops_triage_pipeline.contracts.outbox_policy import OutboxPolicyV1
@@ -190,20 +191,13 @@ class OutboxPublisherWorker:
 
     def _emit_backlog_health_logs(self, *, now: datetime) -> None:
         health = self._outbox_repository.select_backlog_health(now=now)
-        ready_thresholds = self._policy.state_age_thresholds.ready
-
-        if health.oldest_ready_age_seconds > ready_thresholds.critical_seconds:
+        severity = self._resolve_backlog_health_severity(health=health)
+        if severity == "critical":
             log_fn = self._logger.critical
-            severity = "critical"
-        elif (
-            ready_thresholds.warning_seconds is not None
-            and health.oldest_ready_age_seconds > ready_thresholds.warning_seconds
-        ):
+        elif severity == "warning":
             log_fn = self._logger.warning
-            severity = "warning"
         else:
             log_fn = self._logger.info
-            severity = "info"
 
         log_fn(
             "outbox_backlog_health",
@@ -222,6 +216,38 @@ class OutboxPublisherWorker:
         record_outbox_health_snapshot(snapshot=health)
         self._emit_state_age_threshold_breaches(health=health)
         self._emit_dead_count_threshold_breach(health=health)
+
+    def _resolve_backlog_health_severity(self, *, health: OutboxHealthSnapshot) -> str:
+        severity = "info"
+        threshold_by_state = (
+            (
+                health.oldest_pending_object_age_seconds,
+                self._policy.state_age_thresholds.pending_object.warning_seconds,
+                self._policy.state_age_thresholds.pending_object.critical_seconds,
+            ),
+            (
+                health.oldest_ready_age_seconds,
+                self._policy.state_age_thresholds.ready.warning_seconds,
+                self._policy.state_age_thresholds.ready.critical_seconds,
+            ),
+            (
+                health.oldest_retry_age_seconds,
+                self._policy.state_age_thresholds.retry.warning_seconds,
+                self._policy.state_age_thresholds.retry.critical_seconds,
+            ),
+        )
+        for actual_age, warning_threshold, critical_threshold in threshold_by_state:
+            if actual_age > critical_threshold:
+                return "critical"
+            if warning_threshold is not None and actual_age > warning_threshold:
+                severity = "warning"
+
+        dead_threshold = self._policy.dead_count_critical_threshold.get(self._app_env, 0)
+        if health.dead_count > dead_threshold:
+            if self._app_env == "prod":
+                return "critical"
+            return "warning"
+        return severity
 
     def _emit_state_age_threshold_breaches(self, *, health: OutboxHealthSnapshot) -> None:
         threshold_by_state = (
@@ -413,6 +439,6 @@ def _nearest_rank_percentile(values: list[float], percentile: float) -> float:
     if percentile >= 1:
         return max(values)
     ordered = sorted(values)
-    rank = int(percentile * len(ordered))
-    index = max(rank - 1, 0)
+    rank = ceil(percentile * len(ordered))
+    index = min(max(rank - 1, 0), len(ordered) - 1)
     return ordered[index]

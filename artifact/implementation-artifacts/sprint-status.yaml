@@ -93,8 +93,8 @@ development_status:
   6-4-llm-output-schema-validation-and-deterministic-fallback: done
   epic-6-retrospective: done
   epic-7: in-progress
-  7-1-outbox-health-monitoring-and-dead-0-posture: review
-  7-2-opentelemetry-instrumentation-and-otlp-export: backlog
+  7-1-outbox-health-monitoring-and-dead-0-posture: done
+  7-2-opentelemetry-instrumentation-and-otlp-export: in-progress
   7-3-alerting-rules-and-component-health-thresholds: backlog
   7-4-policy-version-stamping-and-decision-reproducibility: backlog
   7-5-exposure-denylist-governance-and-llm-narrative-compliance: backlog

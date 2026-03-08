@@ -1,6 +1,6 @@
 # Story 7.1: Outbox Health Monitoring & DEAD=0 Posture
 
-Status: review
+Status: done
 
 ## Story
 
@@ -277,6 +277,8 @@ GPT-5 (Codex)
 - Updated outbox worker threshold evaluation for `PENDING_OBJECT`/`READY`/`RETRY` ages, `DEAD` count posture in prod, rolling p95/p99 SLO breach logging, and manual DEAD resolution guidance.
 - Added/expanded observability and lifecycle tests: policy, repository snapshot, worker threshold/SLO/dead-terminal coverage, dedicated metrics tests, and integration emission-path validation.
 - Quality gates passed: `uv run ruff check`, `uv run pytest -q -m "not integration"` (654 passed), and full Docker-enabled regression `... uv run pytest -q -rs` (672 passed, 0 skipped).
+- Senior review fixes applied: corrected nearest-rank percentile logic for small sample windows, aligned backlog summary severity to all monitored states (not READY-only), and removed integration-test prerequisite skips so environment issues fail fast.
+- Post-fix regression gates passed: `uv run ruff check` (targeted files), `uv run pytest -q tests/unit/outbox/test_worker.py tests/unit/outbox/test_metrics.py tests/unit/outbox/test_repository.py tests/unit/outbox/test_state_machine.py` (33 passed), `... uv run pytest -q -rs tests/integration/test_outbox_publish.py` (5 passed), and full Docker-enabled regression `... uv run pytest -q -rs` (674 passed, 0 skipped).
 
 ### File List
 
@@ -296,6 +298,19 @@ GPT-5 (Codex)
 - tests/unit/outbox/test_worker.py
 - tests/integration/test_outbox_publish.py
 
+### Senior Developer Review (AI)
+
+- Reviewer: Sas (AI)
+- Date: 2026-03-08
+- Outcome: Approved after fixes
+- Findings addressed:
+  - Fixed percentile computation for p95/p99 nearest-rank behavior in small sample windows.
+  - Updated outbox backlog summary severity to account for all monitored queue states and DEAD posture, not only READY age.
+  - Enforced no-skip integration posture by removing environment prerequisite skip fallbacks in outbox integration tests.
+- Verification:
+  - Full regression completed with 674 passed and 0 skipped.
+
 ## Change Log
 
 - 2026-03-08: Implemented Story 7.1 outbox health monitoring and DEAD=0 posture (policy thresholds, repository snapshot, metrics, worker threshold/SLO logic, terminal DEAD handling, and regression-validated tests).
+- 2026-03-08: Applied code-review fixes for percentile accuracy, backlog severity aggregation, and integration no-skip enforcement; reran full Docker-enabled regression (674 passed, 0 skipped).
