@@ -20,6 +20,7 @@ from aiops_triage_pipeline.diagnosis.graph import (
 from aiops_triage_pipeline.health.registry import HealthRegistry
 from aiops_triage_pipeline.integrations.llm import LLMClient
 from aiops_triage_pipeline.models.health import HealthStatus
+from aiops_triage_pipeline.storage.client import ObjectStoreClientProtocol, PutIfAbsentResult
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -27,6 +28,14 @@ from aiops_triage_pipeline.models.health import HealthStatus
 
 _EVIDENCE_SUMMARY = "Consumer lag elevated: 45000 messages behind."
 _EMPTY_DENYLIST = DenylistV1(denylist_version="test-v1", denied_field_names=())
+_FAKE_TRIAGE_HASH = "a" * 64
+
+
+def _make_mock_store() -> MagicMock:
+    """MagicMock object store that returns CREATED on put_if_absent."""
+    mock_store = MagicMock(spec=ObjectStoreClientProtocol)
+    mock_store.put_if_absent.return_value = PutIfAbsentResult.CREATED
+    return mock_store
 
 
 def _make_eligible_excerpt(case_id: str = "test-001") -> TriageExcerptV1:
@@ -138,6 +147,8 @@ async def test_spawn_ineligible_returns_none() -> None:
         llm_client=_make_mock_client(),
         denylist=_EMPTY_DENYLIST,
         health_registry=registry,
+        object_store_client=_make_mock_store(),
+        triage_hash=_FAKE_TRIAGE_HASH,
         app_env=AppEnv.local,
     )
     assert task is None
@@ -153,6 +164,8 @@ async def test_spawn_eligible_returns_asyncio_task() -> None:
         llm_client=_make_mock_client(),
         denylist=_EMPTY_DENYLIST,
         health_registry=registry,
+        object_store_client=_make_mock_store(),
+        triage_hash=_FAKE_TRIAGE_HASH,
         app_env=AppEnv.prod,
     )
     assert isinstance(task, asyncio.Task)
@@ -171,6 +184,8 @@ async def test_fire_and_forget_independence() -> None:
         llm_client=_make_mock_client(),
         denylist=_EMPTY_DENYLIST,
         health_registry=registry,
+        object_store_client=_make_mock_store(),
+        triage_hash=_FAKE_TRIAGE_HASH,
         app_env=AppEnv.prod,
     )
     assert task is not None
@@ -197,6 +212,8 @@ async def test_health_registry_updated_healthy_on_success() -> None:
         llm_client=_make_mock_client(),
         denylist=_EMPTY_DENYLIST,
         health_registry=registry,
+        object_store_client=_make_mock_store(),
+        triage_hash=_FAKE_TRIAGE_HASH,
     )
     assert report.schema_version == "v1"
     assert registry.get("llm") == HealthStatus.HEALTHY
@@ -224,6 +241,8 @@ async def test_denylist_applied_to_triage_excerpt() -> None:
             llm_client=_make_mock_client(),
             denylist=_EMPTY_DENYLIST,
             health_registry=registry,
+            object_store_client=_make_mock_store(),
+            triage_hash=_FAKE_TRIAGE_HASH,
         )
 
     mock_apply.assert_called_once()
@@ -254,6 +273,8 @@ async def test_timeout_enforced_at_graph_invocation() -> None:
             llm_client=_make_mock_client(),
             denylist=_EMPTY_DENYLIST,
             health_registry=registry,
+            object_store_client=_make_mock_store(),
+            triage_hash=_FAKE_TRIAGE_HASH,
         )
 
     mock_wait_for.assert_called_once()
@@ -280,6 +301,8 @@ async def test_timeout_raises_asyncio_timeout_error() -> None:
             llm_client=mock_client,
             denylist=_EMPTY_DENYLIST,
             health_registry=registry,
+            object_store_client=_make_mock_store(),
+            triage_hash=_FAKE_TRIAGE_HASH,
             timeout_seconds=0.01,
         )
         assert False, "Expected TimeoutError"
@@ -311,6 +334,8 @@ async def test_inflight_gauge_balanced_on_failure() -> None:
                 llm_client=mock_client,
                 denylist=_EMPTY_DENYLIST,
                 health_registry=registry,
+                object_store_client=_make_mock_store(),
+                triage_hash=_FAKE_TRIAGE_HASH,
             )
 
     # +1 on entry, -1 in finally — always balanced regardless of exception
@@ -333,6 +358,102 @@ async def test_health_registry_degraded_on_generic_exception() -> None:
             llm_client=mock_client,
             denylist=_EMPTY_DENYLIST,
             health_registry=registry,
+            object_store_client=_make_mock_store(),
+            triage_hash=_FAKE_TRIAGE_HASH,
         )
 
     assert registry.get("llm") == HealthStatus.DEGRADED
+
+
+# ---------------------------------------------------------------------------
+# run_cold_path_diagnosis — triage_hash and diagnosis.json persistence (Story 6.3)
+# ---------------------------------------------------------------------------
+
+
+async def test_run_cold_path_diagnosis_populates_triage_hash() -> None:
+    """Returned report has triage_hash == _FAKE_TRIAGE_HASH."""
+    registry = HealthRegistry()
+    report = await run_cold_path_diagnosis(
+        case_id="test-triage-hash",
+        triage_excerpt=_make_eligible_excerpt("test-triage-hash"),
+        evidence_summary=_EVIDENCE_SUMMARY,
+        llm_client=_make_mock_client(),
+        denylist=_EMPTY_DENYLIST,
+        health_registry=registry,
+        object_store_client=_make_mock_store(),
+        triage_hash=_FAKE_TRIAGE_HASH,
+    )
+    assert report.triage_hash == _FAKE_TRIAGE_HASH
+
+
+async def test_run_cold_path_diagnosis_writes_diagnosis_json() -> None:
+    """After successful invocation, put_if_absent called with key containing 'diagnosis.json'."""
+    registry = HealthRegistry()
+    mock_store = MagicMock(spec=ObjectStoreClientProtocol)
+    mock_store.put_if_absent.return_value = PutIfAbsentResult.CREATED
+
+    await run_cold_path_diagnosis(
+        case_id="test-write-diag",
+        triage_excerpt=_make_eligible_excerpt("test-write-diag"),
+        evidence_summary=_EVIDENCE_SUMMARY,
+        llm_client=_make_mock_client(),
+        denylist=_EMPTY_DENYLIST,
+        health_registry=registry,
+        object_store_client=mock_store,
+        triage_hash=_FAKE_TRIAGE_HASH,
+    )
+
+    mock_store.put_if_absent.assert_called_once()
+    call_kwargs = mock_store.put_if_absent.call_args.kwargs
+    assert "diagnosis.json" in call_kwargs["key"]
+
+
+async def test_run_cold_path_diagnosis_casefile_triage_hash_matches() -> None:
+    """The persisted casefile's triage_hash field equals _FAKE_TRIAGE_HASH."""
+    from aiops_triage_pipeline.models.case_file import CaseFileDiagnosisV1
+    from aiops_triage_pipeline.storage.casefile_io import validate_casefile_diagnosis_json
+
+    registry = HealthRegistry()
+    mock_store = MagicMock(spec=ObjectStoreClientProtocol)
+    mock_store.put_if_absent.return_value = PutIfAbsentResult.CREATED
+
+    await run_cold_path_diagnosis(
+        case_id="test-casefile-hash",
+        triage_excerpt=_make_eligible_excerpt("test-casefile-hash"),
+        evidence_summary=_EVIDENCE_SUMMARY,
+        llm_client=_make_mock_client(),
+        denylist=_EMPTY_DENYLIST,
+        health_registry=registry,
+        object_store_client=mock_store,
+        triage_hash=_FAKE_TRIAGE_HASH,
+    )
+
+    call_kwargs = mock_store.put_if_absent.call_args.kwargs
+    persisted_body: bytes = call_kwargs["body"]
+    casefile = validate_casefile_diagnosis_json(persisted_body)
+    assert isinstance(casefile, CaseFileDiagnosisV1)
+    assert casefile.triage_hash == _FAKE_TRIAGE_HASH
+
+
+# ---------------------------------------------------------------------------
+# spawn_cold_path_diagnosis_task — triage_hash forwarding (Story 6.3)
+# ---------------------------------------------------------------------------
+
+
+async def test_spawn_cold_path_diagnosis_task_forwards_triage_hash() -> None:
+    """Eligible case: task completes, returned report has triage_hash == _FAKE_TRIAGE_HASH."""
+    registry = HealthRegistry()
+    task = spawn_cold_path_diagnosis_task(
+        case_id="test-spawn-hash",
+        triage_excerpt=_make_eligible_excerpt("test-spawn-hash"),
+        evidence_summary=_EVIDENCE_SUMMARY,
+        llm_client=_make_mock_client(),
+        denylist=_EMPTY_DENYLIST,
+        health_registry=registry,
+        object_store_client=_make_mock_store(),
+        triage_hash=_FAKE_TRIAGE_HASH,
+        app_env=AppEnv.prod,
+    )
+    assert task is not None
+    report = await task
+    assert report.triage_hash == _FAKE_TRIAGE_HASH

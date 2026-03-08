@@ -149,12 +149,21 @@ async def test_live_mode_no_base_url_raises_value_error() -> None:
 
 async def test_live_mode_makes_http_post_to_base_url() -> None:
     """LIVE mode with base_url makes an HTTP POST to base_url/diagnose."""
+    from aiops_triage_pipeline.contracts.enums import DiagnosisConfidence
+
     base_url = "http://llm-endpoint.bank.internal"
     client = LLMClient(mode=IntegrationMode.LIVE, base_url=base_url)
+
+    valid_response_body = {
+        "verdict": "CONSUMER_LAG_CONFIRMED",
+        "confidence": "HIGH",
+        "evidence_pack": {"facts": [], "missing_evidence": [], "matched_rules": []},
+    }
 
     mock_response = MagicMock(spec=httpx.Response)
     mock_response.status_code = 200
     mock_response.raise_for_status.return_value = None
+    mock_response.json.return_value = valid_response_body
 
     mock_http_client = AsyncMock(spec=httpx.AsyncClient)
     mock_http_client.post = AsyncMock(return_value=mock_response)
@@ -163,11 +172,13 @@ async def test_live_mode_makes_http_post_to_base_url() -> None:
 
     with pytest.MonkeyPatch().context() as mp:
         mp.setattr(httpx, "AsyncClient", lambda **_kw: mock_http_client)
-        report = await client.invoke(_CASE_ID, _make_excerpt(), _EVIDENCE_SUMMARY)
+        report = await client.invoke(
+            _CASE_ID, _make_excerpt(), _EVIDENCE_SUMMARY, prompt="test prompt"
+        )
 
     assert isinstance(report, DiagnosisReportV1)
-    assert report.reason_codes == ("LLM_LIVE_STUB",)
-    assert report.case_id == _CASE_ID
+    assert report.verdict == "CONSUMER_LAG_CONFIRMED"
+    assert report.confidence == DiagnosisConfidence.HIGH
     mock_http_client.post.assert_called_once()
     call_args = mock_http_client.post.call_args
     assert call_args[0][0] == f"{base_url}/diagnose"
@@ -238,6 +249,96 @@ async def test_case_id_propagated_in_error_mode() -> None:
         specific_case_id, _make_excerpt(specific_case_id), _EVIDENCE_SUMMARY
     )
     assert report.case_id == specific_case_id
+
+
+# ---------------------------------------------------------------------------
+# No network I/O verification (AC2)
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# LIVE mode — prompt and structured parsing (Story 6.3)
+# ---------------------------------------------------------------------------
+
+
+async def test_live_mode_raises_if_prompt_is_none() -> None:
+    """LIVE mode with prompt=None raises ValueError containing 'prompt'."""
+    client = LLMClient(mode=IntegrationMode.LIVE, base_url="http://llm-endpoint.bank.internal")
+
+    with pytest.raises(ValueError, match="prompt"):
+        await client.invoke(_CASE_ID, _make_excerpt(), _EVIDENCE_SUMMARY, prompt=None)
+
+
+async def test_live_mode_sends_prompt_in_request_body() -> None:
+    """LIVE mode sends {'case_id': ..., 'prompt': ...} in the request body."""
+    base_url = "http://llm-endpoint.bank.internal"
+    client = LLMClient(mode=IntegrationMode.LIVE, base_url=base_url)
+    test_prompt = "structured diagnosis prompt content"
+
+    valid_response_body = {
+        "verdict": "DIAGNOSIS_RESULT",
+        "confidence": "MEDIUM",
+        "evidence_pack": {"facts": [], "missing_evidence": [], "matched_rules": []},
+    }
+
+    mock_response = MagicMock(spec=httpx.Response)
+    mock_response.status_code = 200
+    mock_response.raise_for_status.return_value = None
+    mock_response.json.return_value = valid_response_body
+
+    mock_http_client = AsyncMock(spec=httpx.AsyncClient)
+    mock_http_client.post = AsyncMock(return_value=mock_response)
+    mock_http_client.__aenter__ = AsyncMock(return_value=mock_http_client)
+    mock_http_client.__aexit__ = AsyncMock(return_value=None)
+
+    with pytest.MonkeyPatch().context() as mp:
+        mp.setattr(httpx, "AsyncClient", lambda **_kw: mock_http_client)
+        await client.invoke(_CASE_ID, _make_excerpt(), _EVIDENCE_SUMMARY, prompt=test_prompt)
+
+    mock_http_client.post.assert_called_once()
+    call_kwargs = mock_http_client.post.call_args.kwargs
+    assert call_kwargs["json"] == {"case_id": _CASE_ID, "prompt": test_prompt}
+
+
+async def test_live_mode_parses_structured_response_as_diagnosis_report() -> None:
+    """LIVE mode parses JSON response into DiagnosisReportV1 with correct fields."""
+    from aiops_triage_pipeline.contracts.enums import DiagnosisConfidence
+
+    base_url = "http://llm-endpoint.bank.internal"
+    client = LLMClient(mode=IntegrationMode.LIVE, base_url=base_url)
+
+    valid_response_body = {
+        "verdict": "CONSUMER_LAG_FAULT_CONFIRMED",
+        "confidence": "HIGH",
+        "evidence_pack": {
+            "facts": ["consumer_lag=45000"],
+            "missing_evidence": ["throughput"],
+            "matched_rules": ["F1"],
+        },
+        "next_checks": ["check rebalance"],
+        "gaps": ["throughput metric unavailable"],
+    }
+
+    mock_response = MagicMock(spec=httpx.Response)
+    mock_response.status_code = 200
+    mock_response.raise_for_status.return_value = None
+    mock_response.json.return_value = valid_response_body
+
+    mock_http_client = AsyncMock(spec=httpx.AsyncClient)
+    mock_http_client.post = AsyncMock(return_value=mock_response)
+    mock_http_client.__aenter__ = AsyncMock(return_value=mock_http_client)
+    mock_http_client.__aexit__ = AsyncMock(return_value=None)
+
+    with pytest.MonkeyPatch().context() as mp:
+        mp.setattr(httpx, "AsyncClient", lambda **_kw: mock_http_client)
+        report = await client.invoke(
+            _CASE_ID, _make_excerpt(), _EVIDENCE_SUMMARY, prompt="some prompt"
+        )
+
+    assert isinstance(report, DiagnosisReportV1)
+    assert report.verdict == "CONSUMER_LAG_FAULT_CONFIRMED"
+    assert report.confidence == DiagnosisConfidence.HIGH
+    assert "consumer_lag=45000" in report.evidence_pack.facts
 
 
 # ---------------------------------------------------------------------------

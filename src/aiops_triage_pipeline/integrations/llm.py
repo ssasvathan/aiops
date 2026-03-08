@@ -1,7 +1,7 @@
 """LLMClient — stub, failure-injection, and LIVE mode for cold-path LLM invocation.
 
-LIVE mode response parsing is minimal — Story 6.3 replaces with structured prompt
-and schema-validated output.
+Story 6.3: LIVE mode uses a structured prompt (built by diagnosis/graph.py) and parses
+the response as a schema-validated DiagnosisReportV1 via model_validate().
 """
 
 from enum import Enum
@@ -57,24 +57,28 @@ class LLMClient:
         case_id: str,
         triage_excerpt: TriageExcerptV1,
         evidence_summary: str,
+        *,
+        prompt: str | None = None,
     ) -> DiagnosisReportV1:
         """Invoke the LLM client.
 
         MOCK/LOG: returns deterministic stub report with no network I/O.
-        LIVE: makes HTTP POST to LLM_BASE_URL/diagnose and returns a stub
-              DiagnosisReportV1 — Story 6.3 replaces with structured output parsing.
+        LIVE: makes HTTP POST to LLM_BASE_URL/diagnose with structured prompt and
+              parses response as schema-validated DiagnosisReportV1.
         OFF: raises ValueError.
 
         Args:
             case_id: Case identifier for the report and structured log.
             triage_excerpt: Denylist-sanitized triage excerpt (cold-path LLM input).
             evidence_summary: Structured evidence summary string (cold-path LLM input).
+            prompt: Structured prompt string built by diagnosis/graph.py (LIVE mode required).
 
         Returns:
             DiagnosisReportV1.
 
         Raises:
-            ValueError: If mode is OFF, or LIVE mode without LLM_BASE_URL configured.
+            ValueError: If mode is OFF, LIVE mode without LLM_BASE_URL, or LIVE mode
+                without prompt provided.
         """
         if self._mode == IntegrationMode.OFF:
             raise ValueError("INTEGRATION_MODE_LLM=OFF is not a valid LLM operation mode")
@@ -84,12 +88,15 @@ class LLMClient:
                 raise ValueError(
                     "INTEGRATION_MODE_LLM=LIVE requires LLM_BASE_URL to be configured"
                 )
+            if prompt is None:
+                raise ValueError(
+                    "LIVE mode requires prompt to be provided by the caller (diagnosis/graph.py)"
+                )
             import httpx  # Lazy import — only needed in LIVE mode
 
             body = {
                 "case_id": case_id,
-                "evidence_summary": evidence_summary,
-                # triage_excerpt fields are denylist-sanitized by diagnosis/graph.py before invoke()
+                "prompt": prompt,
             }
             async with httpx.AsyncClient(timeout=60.0) as client:
                 headers = {"Content-Type": "application/json"}
@@ -101,24 +108,16 @@ class LLMClient:
                     headers=headers,
                 )
                 response.raise_for_status()
-            # Story 6.3 replaces this stub with structured response parsing
+            response_data = response.json()
+            report = DiagnosisReportV1.model_validate(response_data)
             self._logger.info(
-                "llm_invoke_live_stub",
+                "llm_invoke_live",
                 mode=self._mode.value,
                 case_id=case_id,
                 status_code=response.status_code,
+                verdict=report.verdict,
             )
-            return DiagnosisReportV1(
-                case_id=case_id,
-                verdict="UNKNOWN",
-                fault_domain=None,
-                confidence=DiagnosisConfidence.LOW,
-                evidence_pack=EvidencePack(facts=(), missing_evidence=(), matched_rules=()),
-                next_checks=(),
-                gaps=(),
-                reason_codes=("LLM_LIVE_STUB",),
-                triage_hash=None,
-            )
+            return report
 
         # MOCK and LOG: return deterministic stub/fallback report — no network I/O
         reason_code = _FAILURE_REASON_CODES[self._failure_mode]

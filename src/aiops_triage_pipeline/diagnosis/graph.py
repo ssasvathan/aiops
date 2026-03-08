@@ -1,4 +1,8 @@
-"""Cold-path LangGraph diagnosis graph and fire-and-forget launcher (Story 6.2)."""
+"""Cold-path LangGraph diagnosis graph and fire-and-forget launcher (Stories 6.2, 6.3).
+
+Story 6.3 additions: structured prompt construction via diagnosis/prompt.py, triage_hash
+hash chain injection, diagnosis.json write-once persistence after successful LLM response.
+"""
 
 from __future__ import annotations
 
@@ -13,11 +17,18 @@ from aiops_triage_pipeline.contracts.enums import CriticalityTier
 from aiops_triage_pipeline.contracts.triage_excerpt import TriageExcerptV1
 from aiops_triage_pipeline.denylist.enforcement import apply_denylist
 from aiops_triage_pipeline.denylist.loader import DenylistV1
+from aiops_triage_pipeline.diagnosis.prompt import build_llm_prompt
 from aiops_triage_pipeline.health.metrics import llm_inflight_add
 from aiops_triage_pipeline.health.registry import HealthRegistry
 from aiops_triage_pipeline.integrations.llm import LLMClient
 from aiops_triage_pipeline.logging.setup import get_logger
+from aiops_triage_pipeline.models.case_file import DIAGNOSIS_HASH_PLACEHOLDER, CaseFileDiagnosisV1
 from aiops_triage_pipeline.models.health import HealthStatus
+from aiops_triage_pipeline.storage.casefile_io import (
+    compute_casefile_diagnosis_hash,
+    persist_casefile_diagnosis_write_once,
+)
+from aiops_triage_pipeline.storage.client import ObjectStoreClientProtocol
 
 _logger = get_logger("diagnosis.graph")
 
@@ -37,10 +48,12 @@ def build_diagnosis_graph(llm_client: LLMClient) -> Any:
     """
 
     async def invoke_llm_node(state: ColdPathDiagnosisState) -> dict:
+        built_prompt = build_llm_prompt(state["triage_excerpt"], state["evidence_summary"])
         report = await llm_client.invoke(
             case_id=state["case_id"],
             triage_excerpt=state["triage_excerpt"],
             evidence_summary=state["evidence_summary"],
+            prompt=built_prompt,
         )
         return {"diagnosis_report": report}
 
@@ -71,6 +84,8 @@ async def run_cold_path_diagnosis(
     llm_client: LLMClient,
     denylist: DenylistV1,
     health_registry: HealthRegistry,
+    object_store_client: ObjectStoreClientProtocol,
+    triage_hash: str,
     timeout_seconds: float = 60.0,
 ) -> DiagnosisReportV1:
     """Invoke LLM diagnosis with denylist enforcement, health tracking, and timeout.
@@ -78,6 +93,7 @@ async def run_cold_path_diagnosis(
     Applies exposure denylist to triage_excerpt before sending to LLM (NFR-S8).
     Enforces 60s timeout via asyncio.wait_for at graph.ainvoke level (NFR-P4).
     Updates HealthRegistry "llm" component and in-flight OTLP gauge throughout.
+    Writes diagnosis.json to object storage after successful LLM response (Story 6.3).
     """
     safe_excerpt_dict = apply_denylist(triage_excerpt.model_dump(mode="json"), denylist)
     safe_excerpt = TriageExcerptV1.model_validate(safe_excerpt_dict)
@@ -98,11 +114,40 @@ async def run_cold_path_diagnosis(
             ),
             timeout=timeout_seconds,
         )
-        report = result["diagnosis_report"]
-        if report is None:
+        raw_report = result["diagnosis_report"]
+        if raw_report is None:
             raise RuntimeError(
                 f"LangGraph node did not populate diagnosis_report for case {case_id}"
             )
+
+        # Reconstruct with triage_hash for hash chain (AC5)
+        report = DiagnosisReportV1.model_validate(
+            {**raw_report.model_dump(mode="json"), "triage_hash": triage_hash, "case_id": case_id}
+        )
+
+        # Write diagnosis.json (AC4)
+        casefile_placeholder = CaseFileDiagnosisV1(
+            case_id=case_id,
+            diagnosis_report=report,
+            triage_hash=triage_hash,
+            diagnosis_hash=DIAGNOSIS_HASH_PLACEHOLDER,
+        )
+        computed_hash = compute_casefile_diagnosis_hash(casefile_placeholder)
+        casefile = CaseFileDiagnosisV1(
+            case_id=case_id,
+            diagnosis_report=report,
+            triage_hash=triage_hash,
+            diagnosis_hash=computed_hash,
+        )
+        persist_casefile_diagnosis_write_once(
+            object_store_client=object_store_client, casefile=casefile
+        )
+        _logger.info(
+            "cold_path_diagnosis_json_written",
+            case_id=case_id,
+            triage_hash=triage_hash,
+        )
+
         await health_registry.update("llm", HealthStatus.HEALTHY)
         _logger.info("cold_path_diagnosis_completed", case_id=case_id)
         return report
@@ -126,6 +171,8 @@ def spawn_cold_path_diagnosis_task(
     llm_client: LLMClient,
     denylist: DenylistV1,
     health_registry: HealthRegistry,
+    object_store_client: ObjectStoreClientProtocol,
+    triage_hash: str,
     app_env: AppEnv,
     timeout_seconds: float = 60.0,
 ) -> "asyncio.Task[DiagnosisReportV1] | None":
@@ -152,6 +199,8 @@ def spawn_cold_path_diagnosis_task(
             llm_client=llm_client,
             denylist=denylist,
             health_registry=health_registry,
+            object_store_client=object_store_client,
+            triage_hash=triage_hash,
             timeout_seconds=timeout_seconds,
         )
     )
