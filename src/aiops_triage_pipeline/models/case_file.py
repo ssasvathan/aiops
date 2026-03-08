@@ -159,12 +159,30 @@ class CaseFileLinkageV1(BaseModel, frozen=True):
         return value
 
 
+# Label data quality thresholds (FR64) - enforcement deferred to Phase 2.
+LABEL_COMPLETION_RATE_THRESHOLD: float = 0.70
+LABEL_ELIGIBLE_FIELDS: tuple[str, ...] = (
+    "owner_confirmed",
+    "resolution_category",
+    "false_positive",
+)
+
+
+class CaseFileLabelDataV1(BaseModel, frozen=True):
+    """Typed label fields for CaseFile labels.json payloads."""
+
+    owner_confirmed: bool | None = None
+    resolution_category: str | None = None
+    false_positive: bool | None = None
+    missing_evidence_reason: str | None = None
+
+
 class CaseFileLabelsV1(BaseModel, frozen=True):
     """CaseFile labels.json payload with hash-chain dependencies."""
 
     schema_version: Literal["v1"] = "v1"
     case_id: str
-    labels: dict[str, str]
+    label_data: CaseFileLabelDataV1
     triage_hash: str
     diagnosis_hash: str | None = None
     labels_hash: str

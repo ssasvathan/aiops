@@ -29,6 +29,7 @@ from aiops_triage_pipeline.models.case_file import (
     TRIAGE_HASH_PLACEHOLDER,
     CaseFileDiagnosisV1,
     CaseFileEvidenceSnapshot,
+    CaseFileLabelDataV1,
     CaseFileLabelsV1,
     CaseFileLinkageV1,
     CaseFilePolicyVersions,
@@ -178,7 +179,10 @@ def _sample_casefile_labels(
 ) -> CaseFileLabelsV1:
     base = CaseFileLabelsV1(
         case_id="case-prod-cluster-a-orders-volume-drop",
-        labels={"owner_confirmed": "true", "resolution_category": "UNKNOWN"},
+        label_data=CaseFileLabelDataV1(
+            owner_confirmed=True,
+            resolution_category="UNKNOWN",
+        ),
         triage_hash=triage_hash,
         diagnosis_hash=diagnosis_hash,
         labels_hash=LABELS_HASH_PLACEHOLDER,

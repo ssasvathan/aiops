@@ -98,7 +98,7 @@ development_status:
   7-3-alerting-rules-and-component-health-thresholds: done
   7-4-policy-version-stamping-and-decision-reproducibility: done
   7-5-exposure-denylist-governance-and-llm-narrative-compliance: done
-  7-6-case-labeling-schema-and-mi-1-posture-enforcement: backlog
+  7-6-case-labeling-schema-and-mi-1-posture-enforcement: review
   epic-7-retrospective: optional
   epic-8: backlog
   8-1-tiered-servicenow-incident-correlation: backlog

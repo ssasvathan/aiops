@@ -30,6 +30,7 @@ from aiops_triage_pipeline.models.case_file import (
     LABELS_HASH_PLACEHOLDER,
     LINKAGE_HASH_PLACEHOLDER,
     CaseFileDiagnosisV1,
+    CaseFileLabelDataV1,
     CaseFileLabelsV1,
     CaseFileLinkageV1,
 )
@@ -324,7 +325,10 @@ def _sample_labels_casefile(
 ) -> CaseFileLabelsV1:
     base = CaseFileLabelsV1(
         case_id=case_id,
-        labels={"owner_confirmed": "true", "resolution_category": "UNKNOWN"},
+        label_data=CaseFileLabelDataV1(
+            owner_confirmed=True,
+            resolution_category="UNKNOWN",
+        ),
         triage_hash=triage_hash,
         diagnosis_hash=diagnosis_hash,
         labels_hash=LABELS_HASH_PLACEHOLDER,
