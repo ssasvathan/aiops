@@ -594,6 +594,30 @@ async def test_http_error_writes_diagnosis_json() -> None:
     mock_store.put_if_absent.assert_called_once()
 
 
+async def test_success_path_persistence_failure_raises_without_llm_fallback() -> None:
+    """Persistence failure after successful LLM output should fail loud (no LLM fallback remap)."""
+    registry = HealthRegistry()
+    mock_store = _make_mock_store()
+    mock_store.put_if_absent.side_effect = RuntimeError("transient object store blip")
+
+    with pytest.raises(RuntimeError, match="transient object store blip"):
+        await run_cold_path_diagnosis(
+            case_id="test-success-path-persist-failure",
+            triage_excerpt=_make_eligible_excerpt("test-success-path-persist-failure"),
+            evidence_summary=_EVIDENCE_SUMMARY,
+            llm_client=_make_mock_client(),
+            denylist=_EMPTY_DENYLIST,
+            health_registry=registry,
+            object_store_client=mock_store,
+            triage_hash=_FAKE_TRIAGE_HASH,
+        )
+
+    health = registry.get_all()["llm"]
+    assert health.status == HealthStatus.DEGRADED
+    assert health.reason == "cold_path_invocation_failed"
+    mock_store.put_if_absent.assert_called_once()
+
+
 async def test_transport_timeout_returns_unavailable_fallback() -> None:
     """Transport timeout maps to LLM_UNAVAILABLE fallback."""
     registry = HealthRegistry()

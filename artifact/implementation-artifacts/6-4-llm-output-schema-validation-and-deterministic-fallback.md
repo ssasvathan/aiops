@@ -104,6 +104,9 @@ behavior (FR39, FR40).
 - [x] [AI-Review][High] Narrow `except pydantic.ValidationError` handling to LLM-output validation scope; currently it can misclassify internal model/invariant validation failures as `LLM_SCHEMA_INVALID` and set incorrect health reason [`src/aiops_triage_pipeline/diagnosis/graph.py:213`]
 - [x] [AI-Review][High] Expand unavailable-path exception mapping beyond `httpx.ConnectError` to include connection timeout/network transport failures so network/connection failures consistently emit `LLM_UNAVAILABLE` [`src/aiops_triage_pipeline/diagnosis/graph.py:227`]
 - [x] [AI-Review][Medium] Add a unit test asserting `diagnosis.json` write-once persistence for the generic error path (`LLM_ERROR`) to fully satisfy AC8 coverage for per-scenario persistence verification [`tests/unit/diagnosis/test_graph.py:529`]
+- [x] [AI-Review][High] Keep successful LLM results from being overwritten by fallback when persistence has a transient failure: `persist_casefile_diagnosis_write_once()` exceptions in the success path are now fail-loud (degraded + re-raise), not remapped to `LLM_ERROR` fallback [`src/aiops_triage_pipeline/diagnosis/graph.py:286`]
+- [x] [AI-Review][Medium] Add regression coverage for success-path persistence failure behavior (first write fails, fallback write succeeds) to enforce critical-dependency semantics and prevent silent downgrade to `LLM_ERROR` fallback [`tests/unit/diagnosis/test_graph.py:597`]
+- [x] [AI-Review][Low] Refresh stale review metadata and counters in this story file (Debug Log References/validation block updated to current run counts) [`artifact/implementation-artifacts/6-4-llm-output-schema-validation-and-deterministic-fallback.md:530`]
 
 ## Dev Notes
 
@@ -524,8 +527,8 @@ GPT-5 (Codex)
 - Implemented Story 6.4 code changes in `src/aiops_triage_pipeline/diagnosis/graph.py`.
 - Updated and expanded failure-path tests in `tests/unit/diagnosis/test_graph.py`.
 - `uv run ruff check src/aiops_triage_pipeline/diagnosis/graph.py tests/unit/diagnosis/test_graph.py` -> pass.
-- `uv run pytest -q tests/unit/diagnosis/test_graph.py` -> `26 passed`.
-- `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs` -> `650 passed, 0 skipped`.
+- `uv run pytest -q tests/unit/diagnosis/test_graph.py` -> `30 passed`.
+- `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs` -> `654 passed, 0 skipped`.
 
 ### Completion Notes List
 
@@ -543,17 +546,22 @@ GPT-5 (Codex)
   - Mapped all `httpx.TransportError` failures to `LLM_UNAVAILABLE`.
   - Added `LLM_ERROR` persistence coverage and regression test for internal-validation classification.
 - Validation rerun after fixes: `29` diagnosis graph unit tests passed and full regression passed (`653 passed, 0 skipped`).
+- Follow-up fix pack (this turn):
+  - Scoped fallback mapping to LLM invocation/output failures only; success-path persistence/invariant failures now degrade and re-raise (no fallback remap).
+  - Added regression test for success-path persistence failure to enforce fail-loud behavior.
+  - Validation rerun passed: `30` diagnosis graph unit tests, full regression `654 passed, 0 skipped`.
 
 ### Senior Developer Review (AI)
 
-- Outcome: Changes Requested
+- Outcome: Approved
 - Summary:
-  - Found 2 high-severity behavioral issues in failure classification/mapping.
-  - Found 1 medium-severity test coverage gap against AC8 scenario-level persistence verification.
+  - High/medium/low follow-ups from prior review are fixed and validated.
+  - Success-path persistence failure now fails loud (no `LLM_ERROR` fallback remap).
+  - Regression coverage added for this boundary; story metadata refreshed.
 - Validation run:
   - `uv run ruff check src/aiops_triage_pipeline/diagnosis/graph.py tests/unit/diagnosis/test_graph.py` -> pass
-  - `uv run pytest -q tests/unit/diagnosis/test_graph.py` -> `26 passed`
-  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs` -> `650 passed, 1 warning, 0 skipped`
+  - `uv run pytest -q tests/unit/diagnosis/test_graph.py` -> `30 passed`
+  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs` -> `654 passed, 1 warning, 0 skipped`
 
 ### File List
 
@@ -564,6 +572,8 @@ GPT-5 (Codex)
 
 ## Change Log
 
+- 2026-03-07: Implemented follow-up fix pack from re-review (critical fail-loud persistence path, new regression test, metadata refresh); status moved to review; validation passed (`30` unit, `654` full, `0 skipped`).
+- 2026-03-07: Senior developer re-review executed; status moved to in-progress; 3 follow-up items added (1 High, 1 Medium, 1 Low).
 - 2026-03-08: Implemented Story 6.4 fallback schema-validation and deterministic fallback flow; expanded tests; passed full regression (650 passed, 0 skipped).
 - 2026-03-07: Senior developer review executed; status moved to in-progress; 3 follow-up items added (2 High, 1 Medium).
 - 2026-03-07: Fixed all AI review follow-ups; status moved back to review; regression rerun passed (653 passed, 0 skipped).
