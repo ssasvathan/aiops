@@ -102,7 +102,7 @@ development_status:
   epic-7-retrospective: done
   epic-8: in-progress
   8-1-tiered-servicenow-incident-correlation: done
-  8-2-idempotent-problem-and-pir-task-upsert: backlog
+  8-2-idempotent-problem-and-pir-task-upsert: done
   8-3-sn-linkage-retry-and-state-machine: backlog
   8-4-sn-correlation-fallback-rate-metrics: backlog
   epic-8-retrospective: optional

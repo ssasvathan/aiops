@@ -1,22 +1,27 @@
-"""ServiceNow incident correlation adapter with tiered search strategy."""
+"""ServiceNow incident correlation adapter with tiered search and linkage upsert support."""
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
-from typing import Any, Literal
+from typing import Any, Literal, Mapping
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
 
 from aiops_triage_pipeline.config.settings import IntegrationMode
 from aiops_triage_pipeline.contracts.sn_linkage import ServiceNowLinkageContractV1
+from aiops_triage_pipeline.denylist.enforcement import apply_denylist
+from aiops_triage_pipeline.denylist.loader import DenylistV1
 from aiops_triage_pipeline.logging.setup import get_logger
 
 _CorrelationTier = Literal["tier1", "tier2", "tier3", "none"]
+_UpsertOutcome = Literal["created", "updated", "skipped", "failed"]
+_LinkageStatus = Literal["linked", "not-linked", "skipped", "failed"]
 
 
 class ServiceNowCorrelationResult(BaseModel, frozen=True):
@@ -29,8 +34,34 @@ class ServiceNowCorrelationResult(BaseModel, frozen=True):
     reason_metadata: dict[str, Any] = Field(default_factory=dict)
 
 
+class ServiceNowUpsertResult(BaseModel, frozen=True):
+    """Structured result for a single ServiceNow upsert operation."""
+
+    table: str
+    external_id: str
+    outcome: _UpsertOutcome
+    reason: str
+    request_id: str
+    sys_id: str | None = None
+    reason_metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class ServiceNowLinkageWriteResult(BaseModel, frozen=True):
+    """Structured linkage outcome for Problem/PIR orchestration."""
+
+    linkage_status: _LinkageStatus
+    linkage_reason: str
+    request_id: str
+    incident_sys_id: str | None = None
+    problem_sys_id: str | None = None
+    problem_external_id: str | None = None
+    pir_task_sys_ids: tuple[str, ...] = ()
+    pir_task_external_ids: tuple[str, ...] = ()
+    reason_metadata: dict[str, Any] = Field(default_factory=dict)
+
+
 class ServiceNowClient:
-    """ServiceNow incident correlation adapter (read-only for Story 8.1)."""
+    """ServiceNow incident correlation adapter plus idempotent Problem/PIR upsert paths."""
 
     def __init__(
         self,
@@ -40,13 +71,19 @@ class ServiceNowClient:
         auth_token: str | None = None,
         linkage_contract: ServiceNowLinkageContractV1 | None = None,
         mock_match_tier: _CorrelationTier = "none",
+        denylist: DenylistV1 | None = None,
     ) -> None:
         self._mode = mode
         self._base_url = base_url.rstrip("/") if base_url else None
         self._auth_token = auth_token
         self._contract = linkage_contract or ServiceNowLinkageContractV1()
         self._mock_match_tier = mock_match_tier
+        self._denylist = denylist or DenylistV1(
+            denylist_version="unset",
+            denied_field_names=(),
+        )
         self._logger = get_logger("integrations.servicenow")
+        self._mock_upsert_sys_ids: dict[tuple[str, str], str] = {}
 
     def correlate_incident(
         self,
@@ -112,6 +149,259 @@ class ServiceNowClient:
             keywords=keywords,
             case_timestamp=effective_timestamp,
         )
+
+    def build_problem_external_id(self, *, case_id: str, pd_incident_id: str) -> str:
+        """Build deterministic external_id key for Problem upsert."""
+        return self._build_external_id(
+            kind="problem",
+            case_id=case_id,
+            pd_incident_id=pd_incident_id,
+        )
+
+    def build_pir_task_external_id(
+        self,
+        *,
+        case_id: str,
+        pd_incident_id: str,
+        task_type: str,
+    ) -> str:
+        """Build deterministic external_id key for PIR task upsert."""
+        return self._build_external_id(
+            kind="pir-task",
+            case_id=case_id,
+            pd_incident_id=pd_incident_id,
+            task_type=task_type,
+        )
+
+    def upsert_problem(
+        self,
+        *,
+        case_id: str,
+        pd_incident_id: str,
+        incident_sys_id: str,
+        summary: str,
+        context: Mapping[str, Any] | None = None,
+        request_id: str | None = None,
+    ) -> ServiceNowUpsertResult:
+        """Idempotently upsert a ServiceNow Problem record keyed by deterministic external_id."""
+        resolved_request_id = request_id or uuid4().hex
+        missing = self._missing_required_values(
+            case_id=case_id,
+            pd_incident_id=pd_incident_id,
+            routing_key=incident_sys_id,
+        )
+        if missing:
+            return ServiceNowUpsertResult(
+                table=self._contract.problem_table,
+                external_id="",
+                outcome="failed",
+                reason="invalid_input",
+                request_id=resolved_request_id,
+                reason_metadata={"missing_fields": missing},
+            )
+
+        external_id = self.build_problem_external_id(
+            case_id=case_id,
+            pd_incident_id=pd_incident_id,
+        )
+        payload = self._build_problem_payload(
+            external_id=external_id,
+            case_id=case_id,
+            pd_incident_id=pd_incident_id,
+            incident_sys_id=incident_sys_id,
+            summary=summary,
+            context=context,
+        )
+        return self._upsert_record(
+            request_id=resolved_request_id,
+            case_id=case_id,
+            action="problem_upsert",
+            table=self._contract.problem_table,
+            external_id=external_id,
+            payload=payload,
+        )
+
+    def upsert_pir_task(
+        self,
+        *,
+        case_id: str,
+        pd_incident_id: str,
+        problem_sys_id: str,
+        task_type: str,
+        summary: str,
+        context: Mapping[str, Any] | None = None,
+        request_id: str | None = None,
+    ) -> ServiceNowUpsertResult:
+        """Idempotently upsert a ServiceNow PIR task record keyed by deterministic external_id."""
+        resolved_request_id = request_id or uuid4().hex
+        if not problem_sys_id.strip():
+            return ServiceNowUpsertResult(
+                table=self._contract.pir_task_table,
+                external_id="",
+                outcome="failed",
+                reason="invalid_input",
+                request_id=resolved_request_id,
+                reason_metadata={"missing_fields": ("problem_sys_id",)},
+            )
+        missing = self._missing_required_values(
+            case_id=case_id,
+            pd_incident_id=pd_incident_id,
+            routing_key=task_type,
+        )
+        if missing:
+            return ServiceNowUpsertResult(
+                table=self._contract.pir_task_table,
+                external_id="",
+                outcome="failed",
+                reason="invalid_input",
+                request_id=resolved_request_id,
+                reason_metadata={"missing_fields": missing},
+            )
+
+        external_id = self.build_pir_task_external_id(
+            case_id=case_id,
+            pd_incident_id=pd_incident_id,
+            task_type=task_type,
+        )
+        payload = self._build_pir_task_payload(
+            external_id=external_id,
+            case_id=case_id,
+            pd_incident_id=pd_incident_id,
+            problem_sys_id=problem_sys_id,
+            task_type=task_type,
+            summary=summary,
+            context=context,
+        )
+        return self._upsert_record(
+            request_id=resolved_request_id,
+            case_id=case_id,
+            action="pir_task_upsert",
+            table=self._contract.pir_task_table,
+            external_id=external_id,
+            payload=payload,
+        )
+
+    def upsert_problem_and_pir_tasks(
+        self,
+        *,
+        case_id: str,
+        pd_incident_id: str,
+        incident_sys_id: str | None,
+        summary: str,
+        pir_task_types: tuple[str, ...] = ("pir",),
+        context: Mapping[str, Any] | None = None,
+    ) -> ServiceNowLinkageWriteResult:
+        """Cold-path linkage orchestration with structured outcomes and no raised errors."""
+        request_id = uuid4().hex
+        if incident_sys_id is None or not incident_sys_id.strip():
+            return ServiceNowLinkageWriteResult(
+                linkage_status="not-linked",
+                linkage_reason="missing_incident_sys_id",
+                request_id=request_id,
+                incident_sys_id=incident_sys_id,
+            )
+
+        task_types = self._dedupe_preserve_order(pir_task_types)
+        if not task_types:
+            return ServiceNowLinkageWriteResult(
+                linkage_status="failed",
+                linkage_reason="invalid_input",
+                request_id=request_id,
+                incident_sys_id=incident_sys_id,
+                reason_metadata={"missing_fields": ("pir_task_types",)},
+            )
+        try:
+            problem = self.upsert_problem(
+                case_id=case_id,
+                pd_incident_id=pd_incident_id,
+                incident_sys_id=incident_sys_id,
+                summary=summary,
+                context=context,
+                request_id=request_id,
+            )
+            if problem.outcome == "failed":
+                return ServiceNowLinkageWriteResult(
+                    linkage_status="failed",
+                    linkage_reason="upsert_error",
+                    request_id=request_id,
+                    incident_sys_id=incident_sys_id,
+                    problem_external_id=problem.external_id,
+                    reason_metadata={"problem_reason": problem.reason},
+                )
+            if problem.outcome == "skipped":
+                return ServiceNowLinkageWriteResult(
+                    linkage_status="skipped",
+                    linkage_reason=problem.reason,
+                    request_id=request_id,
+                    incident_sys_id=incident_sys_id,
+                    problem_external_id=problem.external_id,
+                )
+            if problem.sys_id is None:
+                return ServiceNowLinkageWriteResult(
+                    linkage_status="failed",
+                    linkage_reason="upsert_error",
+                    request_id=request_id,
+                    incident_sys_id=incident_sys_id,
+                    problem_external_id=problem.external_id,
+                    reason_metadata={"problem_reason": "missing_problem_sys_id"},
+                )
+
+            pir_task_sys_ids: list[str] = []
+            pir_task_external_ids: list[str] = []
+            for task_type in task_types:
+                upsert = self.upsert_pir_task(
+                    case_id=case_id,
+                    pd_incident_id=pd_incident_id,
+                    problem_sys_id=problem.sys_id,
+                    task_type=task_type,
+                    summary=summary,
+                    context=context,
+                    request_id=request_id,
+                )
+                pir_task_external_ids.append(upsert.external_id)
+                if upsert.outcome == "failed":
+                    return ServiceNowLinkageWriteResult(
+                        linkage_status="failed",
+                        linkage_reason="upsert_error",
+                        request_id=request_id,
+                        incident_sys_id=incident_sys_id,
+                        problem_sys_id=problem.sys_id,
+                        problem_external_id=problem.external_id,
+                        pir_task_sys_ids=tuple(pir_task_sys_ids),
+                        pir_task_external_ids=tuple(pir_task_external_ids),
+                        reason_metadata={"pir_task_reason": upsert.reason},
+                    )
+                if upsert.outcome == "skipped":
+                    return ServiceNowLinkageWriteResult(
+                        linkage_status="skipped",
+                        linkage_reason=upsert.reason,
+                        request_id=request_id,
+                        incident_sys_id=incident_sys_id,
+                        problem_sys_id=problem.sys_id,
+                        problem_external_id=problem.external_id,
+                        pir_task_external_ids=tuple(pir_task_external_ids),
+                    )
+                if upsert.sys_id is not None:
+                    pir_task_sys_ids.append(upsert.sys_id)
+
+            return ServiceNowLinkageWriteResult(
+                linkage_status="linked",
+                linkage_reason="linked",
+                request_id=request_id,
+                incident_sys_id=incident_sys_id,
+                problem_sys_id=problem.sys_id,
+                problem_external_id=problem.external_id,
+                pir_task_sys_ids=tuple(pir_task_sys_ids),
+                pir_task_external_ids=tuple(pir_task_external_ids),
+            )
+        except Exception as exc:  # noqa: BLE001 - orchestration must never break hot-path completion
+            return ServiceNowLinkageWriteResult(
+                linkage_status="failed",
+                linkage_reason="upsert_error",
+                request_id=request_id,
+                incident_sys_id=incident_sys_id,
+                reason_metadata={"error": str(exc)},
+            )
 
     def _correlate_mock(
         self,
@@ -271,37 +561,507 @@ class ServiceNowClient:
         if not self._base_url:
             return [], "error", 0.0, "missing_base_url"
 
-        params = urllib.parse.urlencode(
-            {
-                "sysparm_query": query,
-                "sysparm_limit": str(self._contract.max_results_per_tier),
-                "sysparm_fields": self._build_sysparm_fields(),
-            }
+        params = {
+            "sysparm_query": query,
+            "sysparm_limit": str(self._contract.max_results_per_tier),
+            "sysparm_fields": self._build_sysparm_fields(),
+        }
+        records, latency_ms, error = self._request_records(
+            method="GET",
+            table=self._contract.incident_table,
+            params=params,
         )
-        url = (
-            f"{self._base_url}/api/now/table/{self._contract.incident_table}"
-            f"?{params}"
-        )
-        headers = {"Accept": "application/json"}
-        if self._auth_token:
-            headers["Authorization"] = f"Bearer {self._auth_token}"
-        request = urllib.request.Request(url, headers=headers, method="GET")
+        if error:
+            return [], "error", latency_ms, error
+        return records, "success" if records else "not_found", latency_ms, None
 
+    def _upsert_record(
+        self,
+        *,
+        request_id: str,
+        case_id: str,
+        action: str,
+        table: str,
+        external_id: str,
+        payload: dict[str, Any],
+    ) -> ServiceNowUpsertResult:
+        self._assert_write_scope(table=table)
+
+        if self._mode == IntegrationMode.OFF:
+            self._log_write_attempt(
+                request_id=request_id,
+                case_id=case_id,
+                action=action,
+                outcome="mode_off",
+                latency_ms=0.0,
+                sys_ids_touched=(),
+            )
+            return ServiceNowUpsertResult(
+                table=table,
+                external_id=external_id,
+                outcome="skipped",
+                reason="mode_off",
+                request_id=request_id,
+            )
+
+        if self._mode == IntegrationMode.LOG:
+            self._log_write_attempt(
+                request_id=request_id,
+                case_id=case_id,
+                action=action,
+                outcome="mode_log_noop",
+                latency_ms=0.0,
+                sys_ids_touched=(),
+            )
+            return ServiceNowUpsertResult(
+                table=table,
+                external_id=external_id,
+                outcome="skipped",
+                reason="mode_log_noop",
+                request_id=request_id,
+            )
+
+        if self._mode == IntegrationMode.MOCK:
+            key = (table, external_id)
+            existing = self._mock_upsert_sys_ids.get(key)
+            if existing is None:
+                generated = hashlib.sha256("|".join(key).encode("utf-8")).hexdigest()[:12]
+                existing = f"mock-{generated}"
+                self._mock_upsert_sys_ids[key] = existing
+                outcome = "created"
+            else:
+                outcome = "updated"
+            self._log_write_attempt(
+                request_id=request_id,
+                case_id=case_id,
+                action=action,
+                outcome=outcome,
+                latency_ms=0.0,
+                sys_ids_touched=(existing,),
+            )
+            return ServiceNowUpsertResult(
+                table=table,
+                external_id=external_id,
+                outcome=outcome,
+                reason="mock_upsert",
+                request_id=request_id,
+                sys_id=existing,
+            )
+
+        if not self._base_url:
+            return ServiceNowUpsertResult(
+                table=table,
+                external_id=external_id,
+                outcome="failed",
+                reason="missing_base_url",
+                request_id=request_id,
+            )
+
+        lookup_params = {
+            "sysparm_query": (
+                f"{self._contract.external_id_field}={self._escape_query_value(external_id)}"
+            ),
+            "sysparm_limit": str(self._contract.max_upsert_lookup_results),
+            "sysparm_fields": f"sys_id,{self._contract.external_id_field}",
+        }
+        records, lookup_latency_ms, lookup_error = self._request_records(
+            method="GET",
+            table=table,
+            params=lookup_params,
+        )
+        if lookup_error:
+            self._log_write_attempt(
+                request_id=request_id,
+                case_id=case_id,
+                action=action,
+                outcome="lookup_error",
+                latency_ms=lookup_latency_ms,
+                sys_ids_touched=(),
+                error=lookup_error,
+            )
+            return ServiceNowUpsertResult(
+                table=table,
+                external_id=external_id,
+                outcome="failed",
+                reason="lookup_error",
+                request_id=request_id,
+                reason_metadata={"error": lookup_error},
+            )
+
+        try:
+            existing_sys_id = self._extract_existing_sys_id(records)
+        except ValueError as exc:
+            self._log_write_attempt(
+                request_id=request_id,
+                case_id=case_id,
+                action=action,
+                outcome="lookup_error",
+                latency_ms=lookup_latency_ms,
+                sys_ids_touched=(),
+                error=str(exc),
+            )
+            return ServiceNowUpsertResult(
+                table=table,
+                external_id=external_id,
+                outcome="failed",
+                reason="lookup_error",
+                request_id=request_id,
+                reason_metadata={"error": str(exc)},
+            )
+
+        if existing_sys_id is None:
+            write_result, write_latency_ms, write_error = self._request_record_mutation(
+                method="POST",
+                table=table,
+                payload=payload,
+            )
+            total_latency_ms = round(lookup_latency_ms + write_latency_ms, 2)
+            if write_error:
+                self._log_write_attempt(
+                    request_id=request_id,
+                    case_id=case_id,
+                    action=action,
+                    outcome="create_error",
+                    latency_ms=total_latency_ms,
+                    sys_ids_touched=(),
+                    error=write_error,
+                )
+                return ServiceNowUpsertResult(
+                    table=table,
+                    external_id=external_id,
+                    outcome="failed",
+                    reason="create_error",
+                    request_id=request_id,
+                    reason_metadata={"error": write_error},
+                )
+            created_sys_id = self._extract_sys_id_from_result(write_result)
+            if created_sys_id is None:
+                self._log_write_attempt(
+                    request_id=request_id,
+                    case_id=case_id,
+                    action=action,
+                    outcome="create_error",
+                    latency_ms=total_latency_ms,
+                    sys_ids_touched=(),
+                    error="missing_sys_id",
+                )
+                return ServiceNowUpsertResult(
+                    table=table,
+                    external_id=external_id,
+                    outcome="failed",
+                    reason="create_error",
+                    request_id=request_id,
+                    reason_metadata={"error": "missing_sys_id"},
+                )
+
+            self._log_write_attempt(
+                request_id=request_id,
+                case_id=case_id,
+                action=action,
+                outcome="created",
+                latency_ms=total_latency_ms,
+                sys_ids_touched=(created_sys_id,),
+            )
+            return ServiceNowUpsertResult(
+                table=table,
+                external_id=external_id,
+                outcome="created",
+                reason="created",
+                request_id=request_id,
+                sys_id=created_sys_id,
+            )
+
+        write_result, write_latency_ms, write_error = self._request_record_mutation(
+            method="PATCH",
+            table=table,
+            payload=payload,
+            record_sys_id=existing_sys_id,
+        )
+        total_latency_ms = round(lookup_latency_ms + write_latency_ms, 2)
+        if write_error:
+            self._log_write_attempt(
+                request_id=request_id,
+                case_id=case_id,
+                action=action,
+                outcome="update_error",
+                latency_ms=total_latency_ms,
+                sys_ids_touched=(existing_sys_id,),
+                error=write_error,
+            )
+            return ServiceNowUpsertResult(
+                table=table,
+                external_id=external_id,
+                outcome="failed",
+                reason="update_error",
+                request_id=request_id,
+                reason_metadata={"error": write_error},
+            )
+
+        resolved_sys_id = self._extract_sys_id_from_result(write_result) or existing_sys_id
+        self._log_write_attempt(
+            request_id=request_id,
+            case_id=case_id,
+            action=action,
+            outcome="updated",
+            latency_ms=total_latency_ms,
+            sys_ids_touched=(resolved_sys_id,),
+        )
+        return ServiceNowUpsertResult(
+            table=table,
+            external_id=external_id,
+            outcome="updated",
+            reason="updated",
+            request_id=request_id,
+            sys_id=resolved_sys_id,
+        )
+
+    def _request_records(
+        self,
+        *,
+        method: Literal["GET"],
+        table: str,
+        params: Mapping[str, str],
+    ) -> tuple[list[dict[str, Any]], float, str | None]:
+        request = urllib.request.Request(
+            self._build_table_url(table=table, params=params),
+            headers=self._build_headers(),
+            method=method,
+        )
         start = time.monotonic()
         try:
             with urllib.request.urlopen(
-                request, timeout=self._contract.live_timeout_seconds
+                request,
+                timeout=self._contract.live_timeout_seconds,
             ) as response:
                 raw = response.read()
             payload = json.loads(raw) if raw else {}
-            records = payload.get("result", [])
-            if not isinstance(records, list):
-                raise ValueError("ServiceNow response 'result' must be a list")
+            result = payload.get("result", [])
+            if isinstance(result, dict):
+                result = [result]
+            if not isinstance(result, list):
+                raise ValueError("ServiceNow response 'result' must be a list or object")
+            records = [entry for entry in result if isinstance(entry, dict)]
             latency_ms = round((time.monotonic() - start) * 1000, 2)
-            return records, "success" if records else "not_found", latency_ms, None
-        except Exception as exc:  # noqa: BLE001 - errors are surfaced as structured outcomes
+            return records, latency_ms, None
+        except Exception as exc:  # noqa: BLE001 - surfaced as structured outcomes
             latency_ms = round((time.monotonic() - start) * 1000, 2)
-            return [], "error", latency_ms, str(exc)
+            return [], latency_ms, str(exc)
+
+    def _request_record_mutation(
+        self,
+        *,
+        method: Literal["POST", "PATCH"],
+        table: str,
+        payload: Mapping[str, Any],
+        record_sys_id: str | None = None,
+    ) -> tuple[dict[str, Any], float, str | None]:
+        body = json.dumps(payload, sort_keys=True).encode("utf-8")
+        headers = self._build_headers()
+        headers["Content-Type"] = "application/json"
+        request = urllib.request.Request(
+            self._build_table_url(table=table, record_sys_id=record_sys_id),
+            headers=headers,
+            method=method,
+            data=body,
+        )
+        start = time.monotonic()
+        try:
+            with urllib.request.urlopen(
+                request,
+                timeout=self._contract.live_timeout_seconds,
+            ) as response:
+                raw = response.read()
+            parsed = json.loads(raw) if raw else {}
+            result = parsed.get("result", {})
+            if isinstance(result, list):
+                result = result[0] if result else {}
+            if not isinstance(result, dict):
+                result = {}
+            latency_ms = round((time.monotonic() - start) * 1000, 2)
+            return result, latency_ms, None
+        except Exception as exc:  # noqa: BLE001 - surfaced as structured outcomes
+            latency_ms = round((time.monotonic() - start) * 1000, 2)
+            return {}, latency_ms, str(exc)
+
+    def _build_problem_payload(
+        self,
+        *,
+        external_id: str,
+        case_id: str,
+        pd_incident_id: str,
+        incident_sys_id: str,
+        summary: str,
+        context: Mapping[str, Any] | None,
+    ) -> dict[str, Any]:
+        payload = {
+            self._contract.external_id_field: external_id,
+            "short_description": summary.strip() or f"AIOps case {case_id}",
+            "description": self._build_description(
+                case_id=case_id,
+                pd_incident_id=pd_incident_id,
+                incident_sys_id=incident_sys_id,
+                context=context,
+            ),
+        }
+        return self._sanitize_payload_for_write(
+            table=self._contract.problem_table,
+            payload=payload,
+            required_fields=(self._contract.external_id_field,),
+        )
+
+    def _build_pir_task_payload(
+        self,
+        *,
+        external_id: str,
+        case_id: str,
+        pd_incident_id: str,
+        problem_sys_id: str,
+        task_type: str,
+        summary: str,
+        context: Mapping[str, Any] | None,
+    ) -> dict[str, Any]:
+        payload = {
+            self._contract.external_id_field: external_id,
+            "problem": problem_sys_id,
+            "short_description": f"{task_type}: {summary.strip()}",
+            "description": self._build_description(
+                case_id=case_id,
+                pd_incident_id=pd_incident_id,
+                problem_sys_id=problem_sys_id,
+                context={"task_type": task_type, **(dict(context or {}))},
+            ),
+        }
+        return self._sanitize_payload_for_write(
+            table=self._contract.pir_task_table,
+            payload=payload,
+            required_fields=(self._contract.external_id_field, "problem"),
+        )
+
+    def _sanitize_payload_for_write(
+        self,
+        *,
+        table: str,
+        payload: dict[str, Any],
+        required_fields: tuple[str, ...],
+    ) -> dict[str, Any]:
+        sanitized = apply_denylist(dict(payload), self._denylist)
+        for field_name in required_fields:
+            if field_name in payload:
+                sanitized[field_name] = payload[field_name]
+        if "short_description" not in sanitized:
+            sanitized["short_description"] = "AIOps linkage update"
+        if "description" not in sanitized:
+            sanitized["description"] = json.dumps({"source": "aiops"}, sort_keys=True)
+        self._assert_write_scope(table=table)
+        self._assert_mi_guardrails(table=table, payload=sanitized)
+        return sanitized
+
+    def _build_description(
+        self,
+        *,
+        case_id: str,
+        pd_incident_id: str,
+        incident_sys_id: str | None = None,
+        problem_sys_id: str | None = None,
+        context: Mapping[str, Any] | None,
+    ) -> str:
+        description_payload = {
+            "case_id": case_id,
+            "pd_incident_id": pd_incident_id,
+            "context": dict(context or {}),
+        }
+        if incident_sys_id is not None and incident_sys_id.strip():
+            description_payload["incident_sys_id"] = incident_sys_id
+        if problem_sys_id is not None and problem_sys_id.strip():
+            description_payload["problem_sys_id"] = problem_sys_id
+        sanitized_description = apply_denylist(description_payload, self._denylist)
+        return json.dumps(sanitized_description, sort_keys=True)
+
+    def _assert_write_scope(self, *, table: str) -> None:
+        allowed = {self._contract.problem_table, self._contract.pir_task_table}
+        if table not in allowed:
+            raise ValueError("write scope violation: only Problem/PIR task tables are allowed")
+        if table == self._contract.incident_table:
+            raise ValueError("write scope violation: incident table is read-only")
+
+    def _assert_mi_guardrails(self, *, table: str, payload: Mapping[str, Any]) -> None:
+        if self._contract.mi_creation_allowed:
+            return
+        if "major_incident" in table.lower():
+            raise ValueError("MI-1 posture violation: major incident table writes are disallowed")
+        lowered_payload = json.dumps(payload, sort_keys=True).lower()
+        if "major incident" in lowered_payload or "major_incident" in lowered_payload:
+            raise ValueError("MI-1 posture violation: major incident fields are disallowed")
+
+    def _build_external_id(
+        self,
+        *,
+        kind: str,
+        case_id: str,
+        pd_incident_id: str,
+        task_type: str | None = None,
+    ) -> str:
+        normalized_case_id = case_id.strip()
+        normalized_pd_incident_id = pd_incident_id.strip()
+        normalized_task_type = task_type.strip() if task_type else None
+        base_parts = [normalized_case_id, normalized_pd_incident_id]
+        if normalized_task_type:
+            base_parts.append(normalized_task_type)
+        digest = hashlib.sha256("|".join(base_parts).encode("utf-8")).hexdigest()[:12]
+        if normalized_task_type:
+            return (
+                f"aiops:{kind}:{normalized_case_id}:{normalized_pd_incident_id}:"
+                f"{digest}:{normalized_task_type}"
+            )
+        return f"aiops:{kind}:{normalized_case_id}:{normalized_pd_incident_id}:{digest}"
+
+    def _extract_existing_sys_id(self, records: list[dict[str, Any]]) -> str | None:
+        if not records:
+            return None
+        distinct_sys_ids = sorted(
+            {
+                sys_id
+                for sys_id in (
+                    self._coerce_to_string(record.get("sys_id")) for record in records
+                )
+                if sys_id
+            }
+        )
+        if not distinct_sys_ids:
+            return None
+        if len(distinct_sys_ids) > 1:
+            raise ValueError(
+                "multiple existing records found for external_id: "
+                + ",".join(distinct_sys_ids)
+            )
+        return distinct_sys_ids[0]
+
+    @staticmethod
+    def _extract_sys_id_from_result(result: Mapping[str, Any]) -> str | None:
+        return ServiceNowClient._coerce_to_string(result.get("sys_id"))
+
+    def _build_table_url(
+        self,
+        *,
+        table: str,
+        params: Mapping[str, str] | None = None,
+        record_sys_id: str | None = None,
+    ) -> str:
+        if not self._base_url:
+            raise ValueError("ServiceNow base_url is required for LIVE mode")
+        encoded_table = urllib.parse.quote(table, safe="")
+        url = f"{self._base_url}/api/now/table/{encoded_table}"
+        if record_sys_id:
+            url = f"{url}/{urllib.parse.quote(record_sys_id, safe='')}"
+        if params:
+            url = f"{url}?{urllib.parse.urlencode(dict(params))}"
+        return url
+
+    def _build_headers(self) -> dict[str, str]:
+        headers = {"Accept": "application/json"}
+        if self._auth_token:
+            headers["Authorization"] = f"Bearer {self._auth_token}"
+        return headers
 
     def _log_tier_attempt(
         self,
@@ -326,6 +1086,31 @@ class ServiceNowClient:
         if error:
             payload["error"] = error
         self._logger.info("sn_correlation_tier_attempt", **payload)
+
+    def _log_write_attempt(
+        self,
+        *,
+        request_id: str,
+        case_id: str,
+        action: str,
+        outcome: str,
+        latency_ms: float,
+        sys_ids_touched: tuple[str, ...],
+        error: str | None = None,
+    ) -> None:
+        payload: dict[str, Any] = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "request_id": request_id,
+            "case_id": case_id,
+            "action": action,
+            "outcome": outcome,
+            "latency_ms": latency_ms,
+            "sys_ids_touched": sys_ids_touched,
+            "mode": self._mode.value,
+        }
+        if error:
+            payload["error"] = error
+        self._logger.info("sn_write_attempt", **payload)
 
     @staticmethod
     def _escape_query_value(value: str) -> str:

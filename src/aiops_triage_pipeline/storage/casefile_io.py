@@ -288,6 +288,16 @@ def persist_casefile_linkage_write_once(
     }
     if casefile.diagnosis_hash is not None:
         metadata["diagnosis_hash"] = casefile.diagnosis_hash
+    if casefile.incident_sys_id is not None:
+        metadata["incident_sys_id"] = casefile.incident_sys_id
+    if casefile.problem_sys_id is not None:
+        metadata["problem_sys_id"] = casefile.problem_sys_id
+    if casefile.problem_external_id is not None:
+        metadata["problem_external_id"] = casefile.problem_external_id
+    if casefile.pir_task_sys_ids:
+        metadata["pir_task_sys_ids"] = ",".join(casefile.pir_task_sys_ids)
+    if casefile.pir_task_external_ids:
+        metadata["pir_task_external_ids"] = ",".join(casefile.pir_task_external_ids)
 
     persisted = _persist_casefile_payload_write_once(
         object_store_client=object_store_client,

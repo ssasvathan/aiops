@@ -16,6 +16,10 @@ from aiops_triage_pipeline.pipeline.stages.gating import (
     collect_gate_inputs_by_scope,
     evaluate_rulebook_gates,
 )
+from aiops_triage_pipeline.pipeline.stages.linkage import (
+    ServiceNowLinkagePersistResult,
+    execute_servicenow_linkage_and_persist,
+)
 from aiops_triage_pipeline.pipeline.stages.outbox import (
     build_outbox_ready_record,
     build_outbox_ready_transition_payload,
@@ -46,6 +50,8 @@ __all__ = [
     "load_casefile_linkage_stage_if_present",
     "load_casefile_labels_stage_if_present",
     "persist_casefile_and_prepare_outbox_ready",
+    "ServiceNowLinkagePersistResult",
+    "execute_servicenow_linkage_and_persist",
     "build_outbox_ready_record",
     "build_outbox_ready_transition_payload",
     "publish_case_header_after_confirmed_casefile",

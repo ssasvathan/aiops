@@ -45,6 +45,7 @@ from aiops_triage_pipeline.storage.casefile_io import (
     compute_casefile_linkage_hash,
     compute_casefile_triage_hash,
     compute_sha256_hex,
+    has_valid_casefile_linkage_hash,
     has_valid_casefile_triage_hash,
     list_present_casefile_stages,
     persist_casefile_diagnosis_write_once,
@@ -160,11 +161,21 @@ def _sample_casefile_linkage(
     *,
     triage_hash: str,
     diagnosis_hash: str | None = None,
+    incident_sys_id: str | None = None,
+    problem_sys_id: str | None = None,
+    problem_external_id: str | None = None,
+    pir_task_sys_ids: tuple[str, ...] = (),
+    pir_task_external_ids: tuple[str, ...] = (),
 ) -> CaseFileLinkageV1:
     base = CaseFileLinkageV1(
         case_id="case-prod-cluster-a-orders-volume-drop",
         linkage_status="linked",
         linkage_reason="linked-to-problem",
+        incident_sys_id=incident_sys_id,
+        problem_sys_id=problem_sys_id,
+        problem_external_id=problem_external_id,
+        pir_task_sys_ids=pir_task_sys_ids,
+        pir_task_external_ids=pir_task_external_ids,
         triage_hash=triage_hash,
         diagnosis_hash=diagnosis_hash,
         linkage_hash=LINKAGE_HASH_PLACEHOLDER,
@@ -215,6 +226,21 @@ def test_compute_casefile_triage_hash_matches_stored_hash() -> None:
 
     assert casefile.triage_hash == compute_casefile_triage_hash(casefile)
     assert has_valid_casefile_triage_hash(casefile)
+
+
+def test_compute_casefile_linkage_hash_matches_stored_hash_with_sn_fields() -> None:
+    triage_casefile = _sample_casefile()
+    linkage_casefile = _sample_casefile_linkage(
+        triage_hash=triage_casefile.triage_hash,
+        incident_sys_id="inc-001",
+        problem_sys_id="prb-001",
+        problem_external_id="aiops:problem:case:pd:hash",
+        pir_task_sys_ids=("ptsk-001", "ptsk-002"),
+        pir_task_external_ids=("aiops:pir-task:a", "aiops:pir-task:b"),
+    )
+
+    assert linkage_casefile.linkage_hash == compute_casefile_linkage_hash(linkage_casefile)
+    assert has_valid_casefile_linkage_hash(linkage_casefile)
 
 
 def test_model_validate_json_round_trip_helper() -> None:
@@ -407,7 +433,14 @@ def test_persist_casefile_diagnosis_write_once_rejects_overwrite_payload_mismatc
 def test_persist_casefile_linkage_write_once_creates_object() -> None:
     client = _FakeObjectStoreClient()
     triage_casefile = _sample_casefile()
-    linkage_casefile = _sample_casefile_linkage(triage_hash=triage_casefile.triage_hash)
+    linkage_casefile = _sample_casefile_linkage(
+        triage_hash=triage_casefile.triage_hash,
+        incident_sys_id="inc-001",
+        problem_sys_id="prb-001",
+        problem_external_id="aiops:problem:case:pd:hash",
+        pir_task_sys_ids=("ptsk-001",),
+        pir_task_external_ids=("aiops:pir-task:case:pd:hash:timeline",),
+    )
 
     persisted = persist_casefile_linkage_write_once(
         object_store_client=client,
@@ -424,6 +457,27 @@ def test_persist_casefile_linkage_write_once_creates_object() -> None:
     assert client.last_metadata is not None
     assert client.last_metadata["triage_hash"] == triage_casefile.triage_hash
     assert client.last_metadata["linkage_hash"] == linkage_casefile.linkage_hash
+    assert client.last_metadata["incident_sys_id"] == "inc-001"
+    assert client.last_metadata["problem_sys_id"] == "prb-001"
+    assert client.last_metadata["problem_external_id"] == "aiops:problem:case:pd:hash"
+    assert client.last_metadata["pir_task_sys_ids"] == "ptsk-001"
+    assert (
+        client.last_metadata["pir_task_external_ids"]
+        == "aiops:pir-task:case:pd:hash:timeline"
+    )
+
+
+def test_validate_casefile_linkage_json_accepts_legacy_payload_without_sn_fields() -> None:
+    triage_casefile = _sample_casefile()
+    legacy_payload = _sample_casefile_linkage(triage_hash=triage_casefile.triage_hash)
+
+    validated = validate_casefile_linkage_json(serialize_casefile_stage(legacy_payload))
+
+    assert validated.incident_sys_id is None
+    assert validated.problem_sys_id is None
+    assert validated.problem_external_id is None
+    assert validated.pir_task_sys_ids == ()
+    assert validated.pir_task_external_ids == ()
 
 
 def test_persist_casefile_labels_write_once_creates_object() -> None:

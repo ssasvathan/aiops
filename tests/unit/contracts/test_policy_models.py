@@ -324,6 +324,9 @@ def test_sn_linkage_policy_artifact_contains_tiered_correlation_defaults() -> No
     policy = load_policy_yaml(policy_path, ServiceNowLinkageContractV1)
 
     assert policy.incident_table == "incident"
+    assert policy.problem_table == "problem"
+    assert policy.pir_task_table == "problem_task"
+    assert policy.external_id_field == "external_id"
     assert policy.tier1_correlation_fields == (
         "u_pagerduty_incident_id",
         "correlation_id",
@@ -335,6 +338,15 @@ def test_sn_linkage_policy_artifact_contains_tiered_correlation_defaults() -> No
     assert policy.tier3_window_minutes == 120
     assert policy.live_timeout_seconds == 5.0
     assert policy.max_results_per_tier == 25
+    assert policy.max_upsert_lookup_results == 5
+
+
+def test_sn_linkage_rejects_incident_table_for_problem_or_task_writes() -> None:
+    with pytest.raises(ValidationError):
+        ServiceNowLinkageContractV1(problem_table="incident")
+
+    with pytest.raises(ValidationError):
+        ServiceNowLinkageContractV1(pir_task_table="incident")
 
 
 def test_sn_linkage_rejects_duplicate_correlation_tiers() -> None:

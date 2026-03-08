@@ -1,6 +1,9 @@
 schema_version: "v1"
 enabled: false
 incident_table: "incident"
+problem_table: "problem"
+pir_task_table: "problem_task"
+external_id_field: "external_id"
 tier1_correlation_fields:
   - "u_pagerduty_incident_id"
   - "correlation_id"
@@ -13,6 +16,7 @@ tier3_window_minutes: 120
 tier3_assignment_groups: []
 live_timeout_seconds: 5.0
 max_results_per_tier: 25
+max_upsert_lookup_results: 5
 max_correlation_window_days: 7
 correlation_strategy:
   - "tier1"

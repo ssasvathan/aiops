@@ -138,6 +138,11 @@ class CaseFileLinkageV1(BaseModel, frozen=True):
     case_id: str
     linkage_status: Literal["linked", "not-linked", "skipped", "failed"]
     linkage_reason: str
+    incident_sys_id: str | None = None
+    problem_sys_id: str | None = None
+    problem_external_id: str | None = None
+    pir_task_sys_ids: tuple[str, ...] = ()
+    pir_task_external_ids: tuple[str, ...] = ()
     triage_hash: str
     diagnosis_hash: str | None = None
     linkage_hash: str
@@ -157,6 +162,24 @@ class CaseFileLinkageV1(BaseModel, frozen=True):
         if not _HEX_64.fullmatch(value):
             raise ValueError("diagnosis_hash must be a 64-char lowercase SHA-256 hex string")
         return value
+
+    @field_validator("incident_sys_id", "problem_sys_id", "problem_external_id")
+    @classmethod
+    def _validate_optional_non_empty(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("optional linkage identifiers must be non-empty when provided")
+        return normalized
+
+    @field_validator("pir_task_sys_ids", "pir_task_external_ids")
+    @classmethod
+    def _validate_identifier_collections(cls, value: tuple[str, ...]) -> tuple[str, ...]:
+        normalized = tuple(item.strip() for item in value if item.strip())
+        if len(normalized) != len(value):
+            raise ValueError("linkage identifier collections cannot contain empty values")
+        return normalized
 
 
 # Label data quality thresholds (FR64) - enforcement deferred to Phase 2.

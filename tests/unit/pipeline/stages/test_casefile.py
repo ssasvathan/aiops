@@ -305,11 +305,21 @@ def _sample_linkage_casefile(
     case_id: str,
     triage_hash: str,
     diagnosis_hash: str | None = None,
+    incident_sys_id: str | None = None,
+    problem_sys_id: str | None = None,
+    problem_external_id: str | None = None,
+    pir_task_sys_ids: tuple[str, ...] = (),
+    pir_task_external_ids: tuple[str, ...] = (),
 ) -> CaseFileLinkageV1:
     base = CaseFileLinkageV1(
         case_id=case_id,
         linkage_status="linked",
         linkage_reason="linked-to-problem",
+        incident_sys_id=incident_sys_id,
+        problem_sys_id=problem_sys_id,
+        problem_external_id=problem_external_id,
+        pir_task_sys_ids=pir_task_sys_ids,
+        pir_task_external_ids=pir_task_external_ids,
         triage_hash=triage_hash,
         diagnosis_hash=diagnosis_hash,
         linkage_hash=LINKAGE_HASH_PLACEHOLDER,
@@ -834,6 +844,11 @@ def test_persist_casefile_linkage_stage_writes_independent_file_without_mutating
     linkage_casefile = _sample_linkage_casefile(
         case_id=triage_casefile.case_id,
         triage_hash=triage_casefile.triage_hash,
+        incident_sys_id="inc-001",
+        problem_sys_id="prb-001",
+        problem_external_id="aiops:problem:case:pd:hash",
+        pir_task_sys_ids=("ptsk-001",),
+        pir_task_external_ids=("aiops:pir-task:case:pd:hash:timeline",),
     )
     linkage_path = persist_casefile_linkage_stage(
         casefile=linkage_casefile,
@@ -844,6 +859,9 @@ def test_persist_casefile_linkage_stage_writes_independent_file_without_mutating
     assert linkage_path == linkage_key
     assert linkage_key in object_store_client.store
     assert object_store_client.store[triage_key] == triage_before
+    stored_linkage = CaseFileLinkageV1.model_validate_json(object_store_client.store[linkage_key])
+    assert stored_linkage.problem_sys_id == "prb-001"
+    assert stored_linkage.pir_task_sys_ids == ("ptsk-001",)
 
 
 def test_persist_casefile_linkage_stage_raises_on_dependency_hash_mismatch(

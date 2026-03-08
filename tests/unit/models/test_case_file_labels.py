@@ -211,15 +211,16 @@ def test_servicenow_integration_has_no_automated_mi_creation_paths() -> None:
     source = module_path.read_text(encoding="utf-8").lower()
     disallowed_tokens = (
         "create_major_incident",
-        "major incident",
-        "/api/now/table/problem",
-        "method=\"post\"",
-        "method=\"patch\"",
+        "/api/now/table/major_incident",
         "method=\"put\"",
         "method=\"delete\"",
     )
     assert all(token not in source for token in disallowed_tokens)
+    assert "problem_table" in source
+    assert "pir_task_table" in source
 
     assert hasattr(servicenow_module, "ServiceNowClient")
     client = servicenow_module.ServiceNowClient(mode=IntegrationMode.OFF)
     assert hasattr(client, "correlate_incident")
+    assert hasattr(client, "upsert_problem")
+    assert hasattr(client, "upsert_pir_task")
