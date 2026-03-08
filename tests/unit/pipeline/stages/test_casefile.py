@@ -1035,3 +1035,89 @@ def test_load_casefile_labels_stage_if_present_returns_none_and_logs_state(
     assert len(logger.infos) == 1
     assert logger.infos[0]["event_type"] == "casefile.stage_absent"
     assert logger.infos[0]["stage"] == "labels"
+
+
+# ---------------------------------------------------------------------------
+# FR60 / NFR-T6 completeness assertions (Story 7.4, AC: 1, 5, 6)
+# ---------------------------------------------------------------------------
+
+
+def test_policy_versions_all_fields_populated(tmp_path: Path) -> None:
+    """FR60: all five policy_versions fields are non-empty strings in assembled CaseFile."""
+    # AC: 1, 5, 6
+    (
+        scope,
+        evidence_output,
+        peak_output,
+        topology_output,
+        gate_input,
+        action_decision,
+    ) = _build_scope_inputs(tmp_path)
+
+    assembled = assemble_casefile_triage_stage(
+        scope=scope,
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        topology_output=topology_output,
+        gate_input=gate_input,
+        action_decision=action_decision,
+        rulebook_policy=_rulebook_policy_for_tests(),
+        peak_policy=_peak_policy_for_tests(),
+        prometheus_metrics_contract=_prometheus_contract_for_tests(),
+        denylist=_denylist_for_tests(),
+        diagnosis_policy_version="v1",
+        triage_timestamp=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
+    )
+
+    pv = assembled.policy_versions
+    assert pv.rulebook_version and isinstance(pv.rulebook_version, str)
+    assert pv.peak_policy_version and isinstance(pv.peak_policy_version, str)
+    assert pv.prometheus_metrics_contract_version and isinstance(
+        pv.prometheus_metrics_contract_version, str
+    )
+    assert pv.exposure_denylist_version and isinstance(pv.exposure_denylist_version, str)
+    assert pv.diagnosis_policy_version and isinstance(pv.diagnosis_policy_version, str)
+
+
+def test_casefile_audit_trail_fields_complete(tmp_path: Path) -> None:
+    """NFR-T6: gate_input, action_decision audit fields, evidence_rows, and triage_hash present."""
+    # AC: 5, 6
+    import re
+
+    (
+        scope,
+        evidence_output,
+        peak_output,
+        topology_output,
+        gate_input,
+        action_decision,
+    ) = _build_scope_inputs(tmp_path)
+
+    assembled = assemble_casefile_triage_stage(
+        scope=scope,
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        topology_output=topology_output,
+        gate_input=gate_input,
+        action_decision=action_decision,
+        rulebook_policy=_rulebook_policy_for_tests(),
+        peak_policy=_peak_policy_for_tests(),
+        prometheus_metrics_contract=_prometheus_contract_for_tests(),
+        denylist=_denylist_for_tests(),
+        diagnosis_policy_version="v1",
+        triage_timestamp=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
+    )
+
+    # gate_input present
+    assert assembled.gate_input is not None
+
+    # action_decision audit fields
+    assert isinstance(assembled.action_decision.gate_rule_ids, tuple)
+    assert len(assembled.action_decision.gate_rule_ids) > 0
+    assert isinstance(assembled.action_decision.gate_reason_codes, tuple)
+
+    # evidence snapshot rows present
+    assert assembled.evidence_snapshot.rows is not None
+
+    # triage_hash is 64-char hex
+    assert re.fullmatch(r"[0-9a-f]{64}", assembled.triage_hash)
