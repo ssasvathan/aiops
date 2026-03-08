@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
 
 from sqlalchemy import create_engine
 
@@ -347,6 +348,92 @@ def test_execute_servicenow_linkage_and_persist_retries_failed_temp_then_links()
     assert final.linkage_object_path == f"cases/{triage.case_id}/linkage.json"
     assert final.linkage_casefile is not None
     assert len(servicenow_client.calls) == 2
+
+
+def test_execute_servicenow_linkage_records_page_slo_metric_on_terminal_state_transition() -> None:
+    object_store_client = _FakeObjectStoreClient()
+    triage = _sample_casefile()
+    persist_casefile_triage_write_once(
+        object_store_client=object_store_client,
+        casefile=triage,
+    )
+    repository = ServiceNowLinkageRetrySqlRepository(
+        engine=create_engine("sqlite+pysqlite:///:memory:")
+    )
+    repository.ensure_schema()
+    contract = ServiceNowLinkageContractV1(
+        retry_window_minutes=120,
+        retry_base_seconds=1,
+        retry_max_seconds=2,
+        retry_jitter_ratio=0.1,
+    )
+    servicenow_client = _SequencedServiceNowClient(
+        linkage_contract=contract,
+        results=(
+            ServiceNowLinkageWriteResult(
+                linkage_status="linked",
+                linkage_reason="linked",
+                request_id="req-linked",
+                incident_sys_id="inc-001",
+            ),
+        ),
+    )
+    now = datetime(2026, 3, 8, 12, 0, tzinfo=UTC)
+
+    with patch(
+        "aiops_triage_pipeline.pipeline.stages.linkage.record_sn_page_linkage_slo"
+    ) as metric_recorder:
+        execute_servicenow_linkage_and_persist(
+            case_id=triage.case_id,
+            pd_incident_id="pd-inc-001",
+            incident_sys_id="inc-001",
+            summary="link case",
+            triage_hash=triage.triage_hash,
+            object_store_client=object_store_client,
+            servicenow_client=servicenow_client,  # type: ignore[arg-type]
+            pir_task_types=("timeline",),
+            linkage_retry_repository=repository,
+            context={"final_action": "PAGE"},
+            now=now,
+        )
+
+    metric_recorder.assert_called_once_with(
+        linkage_state="LINKED",
+        within_retry_window=True,
+    )
+
+
+def test_execute_servicenow_linkage_skipped_status_does_not_record_page_slo_metric() -> None:
+    object_store_client = _FakeObjectStoreClient()
+    triage = _sample_casefile()
+    persist_casefile_triage_write_once(
+        object_store_client=object_store_client,
+        casefile=triage,
+    )
+    servicenow_client = _FakeServiceNowClient(
+        result=ServiceNowLinkageWriteResult(
+            linkage_status="skipped",
+            linkage_reason="mode_off",
+            request_id="req-skip",
+            incident_sys_id="inc-001",
+        )
+    )
+
+    with patch(
+        "aiops_triage_pipeline.pipeline.stages.linkage.record_sn_page_linkage_slo"
+    ) as metric_recorder:
+        execute_servicenow_linkage_and_persist(
+            case_id=triage.case_id,
+            pd_incident_id="pd-inc-001",
+            incident_sys_id="inc-001",
+            summary="link case",
+            triage_hash=triage.triage_hash,
+            object_store_client=object_store_client,
+            servicenow_client=servicenow_client,  # type: ignore[arg-type]
+            context={"final_action": "PAGE"},
+        )
+
+    metric_recorder.assert_not_called()
 
 
 def test_execute_servicenow_linkage_and_persist_terminal_failed_final_skips_retries() -> None:

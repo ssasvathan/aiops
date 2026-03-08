@@ -120,3 +120,33 @@ def test_llm_error_rate_uses_window_thresholds() -> None:
     assert third is not None
     assert third.rule_id == "ALERT_LLM_ERROR_RATE_SPIKE_CRITICAL"
     assert third.severity == "critical"
+
+
+def test_sn_correlation_fallback_rate_uses_env_thresholds_and_metadata() -> None:
+    policy = load_operational_alert_policy()
+    evaluator = OperationalAlertEvaluator(policy=policy, app_env="dev")
+
+    no_alert = evaluator.evaluate_sn_correlation_fallback_rate(
+        fallback_rate=0.10,
+        sample_size=20,
+    )
+    warning = evaluator.evaluate_sn_correlation_fallback_rate(
+        fallback_rate=0.31,
+        sample_size=20,
+    )
+    critical = evaluator.evaluate_sn_correlation_fallback_rate(
+        fallback_rate=0.46,
+        sample_size=20,
+    )
+
+    assert no_alert is None
+
+    assert warning is not None
+    assert warning.rule_id == "ALERT_SN_CORRELATION_FALLBACK_RATE_WARNING"
+    assert warning.severity == "warning"
+    assert warning.metadata["fallback_tiers"] == ("tier2", "tier3")
+    assert warning.metadata["sample_size"] == 20
+
+    assert critical is not None
+    assert critical.rule_id == "ALERT_SN_CORRELATION_FALLBACK_RATE_CRITICAL"
+    assert critical.severity == "critical"

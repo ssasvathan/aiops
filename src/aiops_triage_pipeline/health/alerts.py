@@ -189,6 +189,33 @@ class OperationalAlertEvaluator:
             stage=stage,
         )
 
+    def evaluate_sn_correlation_fallback_rate(
+        self,
+        *,
+        fallback_rate: float,
+        fallback_tiers: tuple[str, ...] = ("tier2", "tier3"),
+        sample_size: int | None = None,
+    ) -> OperationalAlertEvaluation | None:
+        thresholds = getattr(
+            self._policy.sn_correlation_fallback_rate.thresholds_by_env,
+            self._app_env,
+        )
+        bounded_rate = min(max(fallback_rate, 0.0), 1.0)
+        severity = self._resolve_severity(observed_value=bounded_rate, thresholds=thresholds)
+        if severity is None:
+            return None
+        rule = self._rule_for_severity(self._policy.sn_correlation_fallback_rate.rules, severity)
+        if rule is None:
+            return None
+        return self._build_evaluation(
+            rule=rule,
+            severity=severity,
+            observed_value=bounded_rate,
+            threshold_value=thresholds.critical if severity == "critical" else thresholds.warning,
+            fallback_tiers=fallback_tiers,
+            sample_size=sample_size,
+        )
+
     def record_llm_invocation_result(
         self,
         *,

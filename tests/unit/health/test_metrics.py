@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from aiops_triage_pipeline.models.health import HealthStatus
 
 
@@ -138,3 +140,134 @@ def test_record_evidence_unknown_rate_skips_emission_when_total_count_is_zero(mo
     )
 
     assert unknown_rate.calls == []
+
+
+def test_record_sn_correlation_tier_tracks_tier_counts_and_fallback_rate(monkeypatch) -> None:
+    from aiops_triage_pipeline.health import metrics
+
+    tier_total = _RecordingInstrument()
+    fallback_rate = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_sn_correlation_tier_total", tier_total)
+    monkeypatch.setattr(metrics, "_sn_correlation_fallback_rate", fallback_rate)
+    monkeypatch.setattr(
+        metrics,
+        "_sn_correlation_tier_counts",
+        {
+            "tier1": 0,
+            "tier2": 0,
+            "tier3": 0,
+            "none": 0,
+        },
+    )
+    monkeypatch.setattr(metrics, "_sn_correlation_total_count", 0)
+    monkeypatch.setattr(metrics, "_sn_correlation_fallback_rate_value", 0.0)
+    monkeypatch.setattr(metrics, "_sn_correlation_recent_fallback_flags", metrics.deque())
+    monkeypatch.setattr(metrics, "_sn_correlation_recent_fallback_sum", 0)
+    monkeypatch.setattr(metrics, "_SN_CORRELATION_RATE_WINDOW_SIZE", 120)
+
+    metrics.record_sn_correlation_tier(matched_tier="tier2")
+    metrics.record_sn_correlation_tier(matched_tier="tier1")
+    metrics.record_sn_correlation_tier(matched_tier="tier3")
+    metrics.record_sn_correlation_tier(matched_tier="none")
+
+    assert tier_total.calls == [
+        (1, {"component": "servicenow", "tier": "tier2"}),
+        (1, {"component": "servicenow", "tier": "tier1"}),
+        (1, {"component": "servicenow", "tier": "tier3"}),
+        (1, {"component": "servicenow", "tier": "none"}),
+    ]
+    assert fallback_rate.calls[0] == (1.0, {"component": "servicenow"})
+    assert fallback_rate.calls[1] == (-0.5, {"component": "servicenow"})
+    assert fallback_rate.calls[2][1] == {"component": "servicenow"}
+    assert fallback_rate.calls[2][0] == pytest.approx(1 / 6)
+    assert fallback_rate.calls[3][1] == {"component": "servicenow"}
+    assert fallback_rate.calls[3][0] == pytest.approx(-1 / 6)
+
+
+def test_record_sn_page_linkage_slo_tracks_totals_and_rate(monkeypatch) -> None:
+    from aiops_triage_pipeline.health import metrics
+
+    page_total = _RecordingInstrument()
+    within_window_total = _RecordingInstrument()
+    within_window_rate = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_sn_page_linkage_total", page_total)
+    monkeypatch.setattr(metrics, "_sn_page_linkage_within_window_total", within_window_total)
+    monkeypatch.setattr(metrics, "_sn_page_linkage_within_window_rate", within_window_rate)
+    monkeypatch.setattr(metrics, "_sn_page_linkage_terminal_count", 0)
+    monkeypatch.setattr(metrics, "_sn_page_linkage_within_window_count", 0)
+    monkeypatch.setattr(metrics, "_sn_page_linkage_rate_value", 0.0)
+    monkeypatch.setattr(metrics, "_sn_page_linkage_recent_within_window_flags", metrics.deque())
+    monkeypatch.setattr(metrics, "_sn_page_linkage_recent_within_window_sum", 0)
+    monkeypatch.setattr(metrics, "_SN_PAGE_LINKAGE_RATE_WINDOW_SIZE", 120)
+
+    metrics.record_sn_page_linkage_slo(linkage_state="LINKED", within_retry_window=True)
+    metrics.record_sn_page_linkage_slo(linkage_state="FAILED_FINAL", within_retry_window=False)
+    metrics.record_sn_page_linkage_slo(linkage_state="LINKED", within_retry_window=False)
+
+    assert page_total.calls == [
+        (1, {"component": "servicenow"}),
+        (1, {"component": "servicenow"}),
+        (1, {"component": "servicenow"}),
+    ]
+    assert within_window_total.calls == [(1, {"component": "servicenow"})]
+    assert within_window_rate.calls[0] == (1.0, {"component": "servicenow"})
+    assert within_window_rate.calls[1] == (-0.5, {"component": "servicenow"})
+    assert within_window_rate.calls[2][1] == {"component": "servicenow"}
+    assert within_window_rate.calls[2][0] == pytest.approx(-1 / 6)
+
+
+def test_record_sn_correlation_tier_uses_rolling_window_for_rate(monkeypatch) -> None:
+    from aiops_triage_pipeline.health import metrics
+
+    fallback_rate = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_sn_correlation_fallback_rate", fallback_rate)
+    monkeypatch.setattr(metrics, "_sn_correlation_tier_total", _RecordingInstrument())
+    monkeypatch.setattr(
+        metrics,
+        "_sn_correlation_tier_counts",
+        {"tier1": 0, "tier2": 0, "tier3": 0, "none": 0},
+    )
+    monkeypatch.setattr(metrics, "_sn_correlation_total_count", 0)
+    monkeypatch.setattr(metrics, "_sn_correlation_fallback_rate_value", 0.0)
+    monkeypatch.setattr(metrics, "_sn_correlation_recent_fallback_flags", metrics.deque())
+    monkeypatch.setattr(metrics, "_sn_correlation_recent_fallback_sum", 0)
+    monkeypatch.setattr(metrics, "_SN_CORRELATION_RATE_WINDOW_SIZE", 3)
+
+    metrics.record_sn_correlation_tier(matched_tier="tier2")
+    metrics.record_sn_correlation_tier(matched_tier="tier2")
+    metrics.record_sn_correlation_tier(matched_tier="tier1")
+    snapshot = metrics.record_sn_correlation_tier(matched_tier="tier1")
+
+    assert snapshot.sample_size == 3
+    assert snapshot.fallback_rate == pytest.approx(1 / 3)
+    assert len(fallback_rate.calls) == 3
+    assert fallback_rate.calls[0] == (1.0, {"component": "servicenow"})
+    assert fallback_rate.calls[1][1] == {"component": "servicenow"}
+    assert fallback_rate.calls[1][0] == pytest.approx(-1 / 3)
+    assert fallback_rate.calls[2][1] == {"component": "servicenow"}
+    assert fallback_rate.calls[2][0] == pytest.approx(-1 / 3)
+
+
+def test_record_sn_page_linkage_slo_uses_rolling_window_for_rate(monkeypatch) -> None:
+    from aiops_triage_pipeline.health import metrics
+
+    within_window_rate = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_sn_page_linkage_total", _RecordingInstrument())
+    monkeypatch.setattr(metrics, "_sn_page_linkage_within_window_total", _RecordingInstrument())
+    monkeypatch.setattr(metrics, "_sn_page_linkage_within_window_rate", within_window_rate)
+    monkeypatch.setattr(metrics, "_sn_page_linkage_terminal_count", 0)
+    monkeypatch.setattr(metrics, "_sn_page_linkage_within_window_count", 0)
+    monkeypatch.setattr(metrics, "_sn_page_linkage_rate_value", 0.0)
+    monkeypatch.setattr(metrics, "_sn_page_linkage_recent_within_window_flags", metrics.deque())
+    monkeypatch.setattr(metrics, "_sn_page_linkage_recent_within_window_sum", 0)
+    monkeypatch.setattr(metrics, "_SN_PAGE_LINKAGE_RATE_WINDOW_SIZE", 2)
+
+    metrics.record_sn_page_linkage_slo(linkage_state="LINKED", within_retry_window=True)
+    metrics.record_sn_page_linkage_slo(linkage_state="FAILED_FINAL", within_retry_window=False)
+    metrics.record_sn_page_linkage_slo(linkage_state="FAILED_FINAL", within_retry_window=False)
+
+    assert within_window_rate.calls == [
+        (1.0, {"component": "servicenow"}),
+        (-0.5, {"component": "servicenow"}),
+        (-0.5, {"component": "servicenow"}),
+    ]

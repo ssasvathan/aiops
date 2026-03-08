@@ -101,6 +101,7 @@ class OperationalAlertPolicyV1(BaseModel, frozen=True):
     redis_connection_loss: AlertRuleDescriptor
     prometheus_unavailability: PrometheusUnavailabilityAlertRule
     llm_error_rate: LlmErrorRateAlertRule
+    sn_correlation_fallback_rate: ThresholdedAlertRule
     scheduler_interval_drift_seconds: ThresholdedAlertRule
     pipeline_stage_latency_seconds: ThresholdedAlertRule
 
@@ -131,6 +132,10 @@ class OperationalAlertPolicyV1(BaseModel, frozen=True):
                 if self.llm_error_rate.rules.warning is not None
                 else "",
                 self.llm_error_rate.rules.critical.rule_id,
+                self.sn_correlation_fallback_rate.rules.warning.rule_id
+                if self.sn_correlation_fallback_rate.rules.warning is not None
+                else "",
+                self.sn_correlation_fallback_rate.rules.critical.rule_id,
                 self.scheduler_interval_drift_seconds.rules.warning.rule_id
                 if self.scheduler_interval_drift_seconds.rules.warning is not None
                 else "",

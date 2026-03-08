@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import time
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any, Mapping, Protocol
 
 from pydantic import BaseModel
 
 from aiops_triage_pipeline.denylist.enforcement import apply_denylist
 from aiops_triage_pipeline.denylist.loader import DenylistV1
+from aiops_triage_pipeline.health.metrics import record_sn_page_linkage_slo
 from aiops_triage_pipeline.integrations.servicenow import (
     ServiceNowClient,
     ServiceNowLinkageWriteResult,
@@ -86,6 +87,7 @@ def execute_servicenow_linkage_and_persist(
     """Execute ServiceNow linkage with retry-state orchestration and terminal persistence."""
     if linkage_retry_repository is None:
         # Backward-compatible one-shot execution path.
+        started_at = now or datetime.now(tz=UTC)
         linkage_result = servicenow_client.upsert_problem_and_pir_tasks(
             case_id=case_id,
             pd_incident_id=pd_incident_id,
@@ -105,6 +107,13 @@ def execute_servicenow_linkage_and_persist(
                 "retryable": False,
                 "next_attempt_at": None,
             }
+        )
+        _record_page_linkage_slo_if_applicable(
+            context=context,
+            linkage_state=terminal_state,
+            linkage_status=resolved_result.linkage_status,
+            first_attempt_at=started_at,
+            completed_at=now or datetime.now(tz=UTC),
         )
         linkage_casefile, linkage_object_path = _persist_terminal_linkage_stage(
             case_id=case_id,
@@ -224,6 +233,13 @@ def execute_servicenow_linkage_and_persist(
                 "next_attempt_at": None,
             }
         )
+        _record_page_linkage_slo_if_applicable(
+            context=context,
+            linkage_state="LINKED",
+            linkage_status=resolved_result.linkage_status,
+            first_attempt_at=retry_state.first_attempt_at,
+            completed_at=retry_state.updated_at,
+        )
         linkage_casefile, linkage_object_path = _persist_terminal_linkage_stage(
             case_id=case_id,
             incident_sys_id=incident_sys_id,
@@ -288,6 +304,13 @@ def execute_servicenow_linkage_and_persist(
             "next_attempt_at": None,
             "reason_metadata": retry_state.last_reason_metadata,
         }
+    )
+    _record_page_linkage_slo_if_applicable(
+        context=context,
+        linkage_state="FAILED_FINAL",
+        linkage_status=resolved_result.linkage_status,
+        first_attempt_at=retry_state.first_attempt_at,
+        completed_at=retry_state.updated_at,
     )
     _emit_failed_final_escalation(
         case_id=case_id,
@@ -585,3 +608,44 @@ def _as_string_tuple(value: object) -> tuple[str, ...]:
         normalized = value.strip()
         return (normalized,) if normalized else ()
     return ()
+
+
+def _record_page_linkage_slo_if_applicable(
+    *,
+    context: Mapping[str, Any] | None,
+    linkage_state: str,
+    linkage_status: str,
+    first_attempt_at: datetime | None,
+    completed_at: datetime | None,
+) -> None:
+    if not _is_page_case(context=context):
+        return
+    if linkage_state not in {"LINKED", "FAILED_FINAL"}:
+        return
+    if linkage_state == "LINKED" and linkage_status != "linked":
+        return
+    within_retry_window = False
+    if linkage_state == "LINKED":
+        if first_attempt_at is None or completed_at is None:
+            return
+        elapsed = completed_at - first_attempt_at
+        within_retry_window = (
+            elapsed.total_seconds() >= 0
+            and elapsed <= timedelta(hours=2)
+        )
+    record_sn_page_linkage_slo(
+        linkage_state=linkage_state,
+        within_retry_window=within_retry_window,
+    )
+
+
+def _is_page_case(*, context: Mapping[str, Any] | None) -> bool:
+    if not context:
+        return False
+    for key in ("final_action", "action", "proposed_action"):
+        raw_value = context.get(key)
+        if raw_value is None:
+            continue
+        if str(raw_value).strip().upper() == "PAGE":
+            return True
+    return False

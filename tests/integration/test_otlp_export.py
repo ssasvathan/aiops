@@ -15,6 +15,8 @@ from aiops_triage_pipeline.health.metrics import (
     record_prometheus_degraded_transition,
     record_prometheus_scrape_result,
     record_redis_connection_status,
+    record_sn_correlation_tier,
+    record_sn_page_linkage_slo,
 )
 from aiops_triage_pipeline.health.otlp import (
     configure_otlp_metrics,
@@ -103,6 +105,8 @@ def test_otlp_export_collector_receives_metric_names_labels_and_values(
         record_prometheus_degraded_transition(transition="active")
         record_llm_invocation(result="fallback")
         record_llm_fallback(reason_code="LLM_TIMEOUT")
+        record_sn_correlation_tier(matched_tier="tier2")
+        record_sn_page_linkage_slo(linkage_state="LINKED", within_retry_window=True)
         record_outbox_delivery_slo_breach(severity="warning", quantile="p99")
 
         assert force_flush_otlp_metrics(timeout_millis=10000) is True
@@ -116,6 +120,9 @@ def test_otlp_export_collector_receives_metric_names_labels_and_values(
                 "metric_key: Str(topic_messages_in_per_sec)",
                 "Name: aiops.llm.fallbacks_total",
                 "reason_code: Str(LLM_TIMEOUT)",
+                "Name: aiops.servicenow.correlation_tier_total",
+                "tier: Str(tier2)",
+                "Name: aiops.servicenow.linkage_page_within_window_rate",
                 "Name: aiops.outbox.delivery_slo_breaches_total",
                 "quantile: Str(p99)",
             ),
@@ -125,6 +132,12 @@ def test_otlp_export_collector_receives_metric_names_labels_and_values(
         assert "Name: aiops.prometheus.telemetry_degraded_transitions_total" in payload
         _assert_metric_value_at_least(payload, "aiops.prometheus.scrape_total", 1.0)
         _assert_metric_value_at_least(payload, "aiops.llm.fallbacks_total", 1.0)
+        _assert_metric_value_at_least(payload, "aiops.servicenow.correlation_tier_total", 1.0)
+        _assert_metric_value_at_least(
+            payload,
+            "aiops.servicenow.linkage_page_within_window_rate",
+            1.0,
+        )
         _assert_metric_value_at_least(payload, "aiops.outbox.delivery_slo_breaches_total", 1.0)
         _assert_metric_value_at_least(
             payload,

@@ -10,7 +10,7 @@ import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
-from typing import Any, Literal, Mapping
+from typing import Any, Literal, Mapping, Protocol
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -19,12 +19,23 @@ from aiops_triage_pipeline.config.settings import IntegrationMode
 from aiops_triage_pipeline.contracts.sn_linkage import ServiceNowLinkageContractV1
 from aiops_triage_pipeline.denylist.enforcement import apply_denylist
 from aiops_triage_pipeline.denylist.loader import DenylistV1
+from aiops_triage_pipeline.health.metrics import record_sn_correlation_tier
 from aiops_triage_pipeline.logging.setup import get_logger
 
 _CorrelationTier = Literal["tier1", "tier2", "tier3", "none"]
 _UpsertOutcome = Literal["created", "updated", "skipped", "failed"]
 _LinkageStatus = Literal["linked", "not-linked", "skipped", "failed"]
 _LinkageState = Literal["PENDING", "SEARCHING", "FAILED_TEMP", "LINKED", "FAILED_FINAL"]
+
+
+class _FallbackAlertEvaluatorProtocol(Protocol):
+    def evaluate_sn_correlation_fallback_rate(
+        self,
+        *,
+        fallback_rate: float,
+        fallback_tiers: tuple[str, ...] = ("tier2", "tier3"),
+        sample_size: int | None = None,
+    ) -> Any: ...
 
 
 class ServiceNowCorrelationResult(BaseModel, frozen=True):
@@ -78,6 +89,7 @@ class ServiceNowClient:
         linkage_contract: ServiceNowLinkageContractV1 | None = None,
         mock_match_tier: _CorrelationTier = "none",
         denylist: DenylistV1 | None = None,
+        alert_evaluator: _FallbackAlertEvaluatorProtocol | None = None,
     ) -> None:
         self._mode = mode
         self._base_url = base_url.rstrip("/") if base_url else None
@@ -88,6 +100,7 @@ class ServiceNowClient:
             denylist_version="unset",
             denied_field_names=(),
         )
+        self._alert_evaluator = alert_evaluator
         self._logger = get_logger("integrations.servicenow")
         self._mock_upsert_sys_ids: dict[tuple[str, str], str] = {}
 
@@ -114,23 +127,27 @@ class ServiceNowClient:
             routing_key=routing_key,
         )
         if missing_fields:
-            return ServiceNowCorrelationResult(
-                matched=False,
-                matched_tier="none",
-                reason="invalid_input",
-                reason_metadata={
-                    "request_id": request_id,
-                    "missing_fields": missing_fields,
-                },
+            return self._finalize_correlation_result(
+                ServiceNowCorrelationResult(
+                    matched=False,
+                    matched_tier="none",
+                    reason="invalid_input",
+                    reason_metadata={
+                        "request_id": request_id,
+                        "missing_fields": missing_fields,
+                    },
+                )
             )
         tier_order = self._contract.correlation_strategy
 
         if self._mode == IntegrationMode.OFF:
-            return ServiceNowCorrelationResult(
-                matched=False,
-                matched_tier="none",
-                reason="mode_off",
-                reason_metadata={"request_id": request_id},
+            return self._finalize_correlation_result(
+                ServiceNowCorrelationResult(
+                    matched=False,
+                    matched_tier="none",
+                    reason="mode_off",
+                    reason_metadata={"request_id": request_id},
+                )
             )
 
         if self._mode == IntegrationMode.LOG:
@@ -142,23 +159,29 @@ class ServiceNowClient:
                     outcome="planned",
                     latency_ms=0.0,
                 )
-            return ServiceNowCorrelationResult(
-                matched=False,
-                matched_tier="none",
-                reason="mode_log_noop",
-                reason_metadata={"request_id": request_id},
+            return self._finalize_correlation_result(
+                ServiceNowCorrelationResult(
+                    matched=False,
+                    matched_tier="none",
+                    reason="mode_log_noop",
+                    reason_metadata={"request_id": request_id},
+                )
             )
 
         if self._mode == IntegrationMode.MOCK:
-            return self._correlate_mock(request_id=request_id, case_id=case_id)
+            return self._finalize_correlation_result(
+                self._correlate_mock(request_id=request_id, case_id=case_id)
+            )
 
-        return self._correlate_live(
-            request_id=request_id,
-            case_id=case_id,
-            pd_incident_id=pd_incident_id,
-            routing_key=routing_key,
-            keywords=keywords,
-            case_timestamp=effective_timestamp,
+        return self._finalize_correlation_result(
+            self._correlate_live(
+                request_id=request_id,
+                case_id=case_id,
+                pd_incident_id=pd_incident_id,
+                routing_key=routing_key,
+                keywords=keywords,
+                case_timestamp=effective_timestamp,
+            )
         )
 
     def build_problem_external_id(self, *, case_id: str, pd_incident_id: str) -> str:
@@ -512,6 +535,37 @@ class ServiceNowClient:
             reason="not_found" if not errors else "search_error",
             reason_metadata={"request_id": request_id, "errors": tuple(errors)},
         )
+
+    def _finalize_correlation_result(
+        self,
+        result: ServiceNowCorrelationResult,
+    ) -> ServiceNowCorrelationResult:
+        snapshot = record_sn_correlation_tier(matched_tier=result.matched_tier)
+        if self._alert_evaluator is not None:
+            alert = self._alert_evaluator.evaluate_sn_correlation_fallback_rate(
+                fallback_rate=snapshot.fallback_rate,
+                fallback_tiers=snapshot.fallback_tiers,
+                sample_size=snapshot.sample_size,
+            )
+            if alert is not None:
+                log_fn = (
+                    self._logger.critical
+                    if alert.severity == "critical"
+                    else self._logger.warning
+                )
+                log_fn(
+                    "operational_alert_rule_triggered",
+                    event_type="operational_alert_rule_triggered",
+                    rule_id=alert.rule_id,
+                    component=alert.component,
+                    severity=alert.severity,
+                    condition=alert.condition,
+                    recommended_action=alert.recommended_action,
+                    observed_value=alert.observed_value,
+                    threshold_value=alert.threshold_value,
+                    **alert.metadata,
+                )
+        return result
 
     def _build_tier1_query(self, pd_incident_id: str) -> str:
         escaped_pd_incident_id = self._escape_query_value(pd_incident_id)

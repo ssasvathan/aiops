@@ -284,6 +284,66 @@ def test_live_mode_respects_correlation_strategy_order_and_scope() -> None:
     assert mock_urlopen.call_count == 1
 
 
+def test_correlation_records_metric_once_for_live_tier2_match() -> None:
+    client = _make_client(mode=IntegrationMode.LIVE)
+    with (
+        patch(
+            _URLOPEN_PATH,
+            side_effect=[
+                _make_sn_response([]),
+                _make_sn_response([{"sys_id": "inc-sys-2", "number": "INC002"}]),
+            ],
+        ),
+        patch(
+            "aiops_triage_pipeline.integrations.servicenow.record_sn_correlation_tier"
+        ) as metric_recorder,
+    ):
+        _correlate(client)
+
+    metric_recorder.assert_called_once_with(matched_tier="tier2")
+
+
+def test_correlation_records_metric_once_for_non_live_modes() -> None:
+    scenarios = (
+        (IntegrationMode.OFF, "none"),
+        (IntegrationMode.LOG, "none"),
+        (IntegrationMode.MOCK, "tier2"),
+    )
+    for mode, expected_tier in scenarios:
+        client = _make_client(mode=mode, mock_match_tier="tier2")
+        with patch(
+            "aiops_triage_pipeline.integrations.servicenow.record_sn_correlation_tier"
+        ) as metric_recorder:
+            _correlate(client)
+        metric_recorder.assert_called_once_with(matched_tier=expected_tier)
+
+
+def test_correlation_evaluates_fallback_alert_with_runtime_snapshot() -> None:
+    evaluator = MagicMock()
+    evaluator.evaluate_sn_correlation_fallback_rate.return_value = None
+    client = ServiceNowClient(
+        mode=IntegrationMode.OFF,
+        base_url=_SN_BASE_URL,
+        auth_token="test-token",
+        alert_evaluator=evaluator,
+    )
+    with patch(
+        "aiops_triage_pipeline.integrations.servicenow.record_sn_correlation_tier",
+        return_value=MagicMock(
+            fallback_rate=0.42,
+            sample_size=12,
+            fallback_tiers=("tier2", "tier3"),
+        ),
+    ):
+        _correlate(client)
+
+    evaluator.evaluate_sn_correlation_fallback_rate.assert_called_once_with(
+        fallback_rate=0.42,
+        fallback_tiers=("tier2", "tier3"),
+        sample_size=12,
+    )
+
+
 def _decode_request_body(request: object) -> dict[str, object]:
     payload = getattr(request, "data", None)
     if payload is None:

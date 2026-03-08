@@ -26,6 +26,7 @@ def test_operational_alert_policy_artifact_loads_and_has_required_env_coverage()
 
     for thresholds_by_env in (
         policy.llm_error_rate.thresholds_by_env,
+        policy.sn_correlation_fallback_rate.thresholds_by_env,
         policy.scheduler_interval_drift_seconds.thresholds_by_env,
         policy.pipeline_stage_latency_seconds.thresholds_by_env,
     ):
@@ -152,6 +153,30 @@ def test_operational_alert_policy_requires_non_empty_rule_metadata() -> None:
                             "severity": "critical",
                             "condition": "llm_error_rate > critical_threshold",
                             "recommended_action": "engage incident response",
+                        },
+                    },
+                },
+                "sn_correlation_fallback_rate": {
+                    "thresholds_by_env": {
+                        "local": {"warning": 0.15, "critical": 0.35},
+                        "dev": {"warning": 0.30, "critical": 0.45},
+                        "uat": {"warning": 0.25, "critical": 0.40},
+                        "prod": {"warning": 0.10, "critical": 0.20},
+                    },
+                    "rules": {
+                        "warning": {
+                            "rule_id": "ALERT_SN_CORRELATION_FALLBACK_RATE_WARNING",
+                            "component": "servicenow",
+                            "severity": "warning",
+                            "condition": "sn_correlation_fallback_rate > warning_threshold",
+                            "recommended_action": "investigate correlation field population",
+                        },
+                        "critical": {
+                            "rule_id": "ALERT_SN_CORRELATION_FALLBACK_RATE_CRITICAL",
+                            "component": "servicenow",
+                            "severity": "critical",
+                            "condition": "sn_correlation_fallback_rate > critical_threshold",
+                            "recommended_action": "escalate PD/SN integration remediation",
                         },
                     },
                 },

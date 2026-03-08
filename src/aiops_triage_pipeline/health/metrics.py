@@ -1,6 +1,8 @@
 """OTLP metric definitions for component health and pipeline telemetry."""
 
+from collections import deque
 from threading import Lock
+from typing import Literal, NamedTuple
 
 from opentelemetry import metrics
 
@@ -114,11 +116,59 @@ _pipeline_cases_per_interval = _meter.create_histogram(
     description="Cases produced per evaluation interval",
     unit="1",
 )
+_sn_correlation_tier_total = _meter.create_up_down_counter(
+    name="aiops.servicenow.correlation_tier_total",
+    description="Correlation outcomes by tier label",
+    unit="1",
+)
+_sn_correlation_fallback_rate = _meter.create_up_down_counter(
+    name="aiops.servicenow.correlation_fallback_rate",
+    description="Rolling fallback rate for tier2/tier3 ServiceNow correlations",
+    unit="1",
+)
+_sn_page_linkage_total = _meter.create_up_down_counter(
+    name="aiops.servicenow.linkage_page_total",
+    description="Terminal PAGE linkage outcomes counted for SLO tracking",
+    unit="1",
+)
+_sn_page_linkage_within_window_total = _meter.create_up_down_counter(
+    name="aiops.servicenow.linkage_page_within_window_total",
+    description="PAGE linkage outcomes that reached LINKED within retry window",
+    unit="1",
+)
+_sn_page_linkage_within_window_rate = _meter.create_up_down_counter(
+    name="aiops.servicenow.linkage_page_within_window_rate",
+    description="Rolling rate of PAGE linkage outcomes LINKED within retry window",
+    unit="1",
+)
 
 _prev_status_values: dict[str, int] = {}
 _prev_connection_values: dict[str, int] = {"redis": 1}
 _redis_dedupe_key_count_value = 0
 _prometheus_degraded_active_value = 0
+_sn_correlation_tier_counts: dict[str, int] = {
+    "tier1": 0,
+    "tier2": 0,
+    "tier3": 0,
+    "none": 0,
+}
+_sn_correlation_total_count = 0
+_sn_correlation_fallback_rate_value = 0.0
+_SN_CORRELATION_RATE_WINDOW_SIZE = 120
+_sn_correlation_recent_fallback_flags: deque[int] = deque()
+_sn_correlation_recent_fallback_sum = 0
+_sn_page_linkage_terminal_count = 0
+_sn_page_linkage_within_window_count = 0
+_sn_page_linkage_rate_value = 0.0
+_SN_PAGE_LINKAGE_RATE_WINDOW_SIZE = 120
+_sn_page_linkage_recent_within_window_flags: deque[int] = deque()
+_sn_page_linkage_recent_within_window_sum = 0
+
+
+class ServiceNowCorrelationFallbackSnapshot(NamedTuple):
+    fallback_rate: float
+    sample_size: int
+    fallback_tiers: tuple[str, str]
 
 
 def llm_inflight_add(delta: int) -> None:
@@ -273,3 +323,93 @@ def record_pipeline_case_throughput(*, case_count: int) -> None:
         max(float(case_count), 0.0),
         attributes={"component": "pipeline"},
     )
+
+
+def record_sn_correlation_tier(
+    *,
+    matched_tier: Literal["tier1", "tier2", "tier3", "none"],
+) -> ServiceNowCorrelationFallbackSnapshot:
+    with _state_lock:
+        global _sn_correlation_total_count
+        global _sn_correlation_fallback_rate_value
+        global _sn_correlation_recent_fallback_sum
+        if matched_tier not in _sn_correlation_tier_counts:
+            raise ValueError(f"unsupported matched_tier: {matched_tier!r}")
+        _sn_correlation_tier_counts[matched_tier] += 1
+        _sn_correlation_total_count += 1
+        fallback_flag = 1 if matched_tier in {"tier2", "tier3"} else 0
+        if len(_sn_correlation_recent_fallback_flags) >= _SN_CORRELATION_RATE_WINDOW_SIZE:
+            _sn_correlation_recent_fallback_sum -= _sn_correlation_recent_fallback_flags.popleft()
+        _sn_correlation_recent_fallback_flags.append(fallback_flag)
+        _sn_correlation_recent_fallback_sum += fallback_flag
+        sample_size = len(_sn_correlation_recent_fallback_flags)
+        new_rate = (
+            _sn_correlation_recent_fallback_sum / sample_size
+            if sample_size > 0
+            else 0.0
+        )
+        rate_delta = new_rate - _sn_correlation_fallback_rate_value
+        _sn_correlation_fallback_rate_value = new_rate
+
+    _sn_correlation_tier_total.add(
+        1,
+        attributes={"component": "servicenow", "tier": matched_tier},
+    )
+    if rate_delta != 0:
+        _sn_correlation_fallback_rate.add(
+            rate_delta,
+            attributes={"component": "servicenow"},
+        )
+    return ServiceNowCorrelationFallbackSnapshot(
+        fallback_rate=new_rate,
+        sample_size=sample_size,
+        fallback_tiers=("tier2", "tier3"),
+    )
+
+
+def record_sn_page_linkage_slo(
+    *,
+    linkage_state: Literal["LINKED", "FAILED_FINAL"],
+    within_retry_window: bool,
+) -> None:
+    # SLO semantics:
+    # denominator = terminal PAGE linkage outcomes (LINKED/FAILED_FINAL)
+    # numerator = LINKED outcomes that completed within the 2-hour retry window
+    with _state_lock:
+        global _sn_page_linkage_terminal_count
+        global _sn_page_linkage_within_window_count
+        global _sn_page_linkage_rate_value
+        global _sn_page_linkage_recent_within_window_sum
+        if linkage_state not in {"LINKED", "FAILED_FINAL"}:
+            raise ValueError(f"unsupported linkage_state: {linkage_state!r}")
+        _sn_page_linkage_terminal_count += 1
+        increment_within_window = linkage_state == "LINKED" and within_retry_window
+        if increment_within_window:
+            _sn_page_linkage_within_window_count += 1
+        within_window_flag = 1 if increment_within_window else 0
+        if (
+            len(_sn_page_linkage_recent_within_window_flags)
+            >= _SN_PAGE_LINKAGE_RATE_WINDOW_SIZE
+        ):
+            _sn_page_linkage_recent_within_window_sum -= (
+                _sn_page_linkage_recent_within_window_flags.popleft()
+            )
+        _sn_page_linkage_recent_within_window_flags.append(within_window_flag)
+        _sn_page_linkage_recent_within_window_sum += within_window_flag
+        sample_size = len(_sn_page_linkage_recent_within_window_flags)
+        new_rate = (
+            _sn_page_linkage_recent_within_window_sum / sample_size
+            if sample_size > 0
+            else 0.0
+        )
+        rate_delta = new_rate - _sn_page_linkage_rate_value
+        _sn_page_linkage_rate_value = new_rate
+
+    _sn_page_linkage_total.add(1, attributes={"component": "servicenow"})
+    if increment_within_window:
+        _sn_page_linkage_within_window_total.add(1, attributes={"component": "servicenow"})
+    if rate_delta != 0:
+        _sn_page_linkage_within_window_rate.add(
+            rate_delta,
+            attributes={"component": "servicenow"},
+        )

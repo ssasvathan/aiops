@@ -99,6 +99,34 @@ llm_error_rate:
       condition: "llm_error_rate > critical_threshold"
       recommended_action: "Engage incident response and failover diagnostics path if needed."
 
+sn_correlation_fallback_rate:
+  thresholds_by_env:
+    local:
+      warning: 0.15
+      critical: 0.35
+    dev:
+      warning: 0.30
+      critical: 0.45
+    uat:
+      warning: 0.25
+      critical: 0.40
+    prod:
+      warning: 0.10
+      critical: 0.20
+  rules:
+    warning:
+      rule_id: "ALERT_SN_CORRELATION_FALLBACK_RATE_WARNING"
+      component: "servicenow"
+      severity: "warning"
+      condition: "sn_correlation_fallback_rate > warning_threshold"
+      recommended_action: "Investigate Tier2/Tier3 fallback growth and PD->SN field population."
+    critical:
+      rule_id: "ALERT_SN_CORRELATION_FALLBACK_RATE_CRITICAL"
+      component: "servicenow"
+      severity: "critical"
+      condition: "sn_correlation_fallback_rate > critical_threshold"
+      recommended_action: "Escalate to PD/SN integration team and restore primary correlation fidelity."
+
 scheduler_interval_drift_seconds:
   thresholds_by_env:
     local:
