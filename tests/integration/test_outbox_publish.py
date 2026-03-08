@@ -184,6 +184,20 @@ class _FailingCaseEventsPublisher:
         raise CriticalDependencyError("kafka unavailable")
 
 
+class _RecordingLogger:
+    def __init__(self) -> None:
+        self.events: list[tuple[str, str, dict[str, object]]] = []
+
+    def info(self, event: str, **kwargs: object) -> None:
+        self.events.append(("info", event, kwargs))
+
+    def warning(self, event: str, **kwargs: object) -> None:
+        self.events.append(("warning", event, kwargs))
+
+    def critical(self, event: str, **kwargs: object) -> None:
+        self.events.append(("critical", event, kwargs))
+
+
 def _policy_with_max_retry(max_retry_attempts: int) -> OutboxPolicyV1:
     return OutboxPolicyV1(
         retention_by_env={
@@ -379,6 +393,98 @@ def test_outbox_worker_accumulates_retry_records_when_kafka_unavailable() -> Non
         if _is_environment_prereq_error(exc):
             pytest.skip(f"Docker/Postgres unavailable for integration test: {exc}")
         raise
+
+
+@pytest.mark.integration
+def test_outbox_worker_emits_health_metrics_and_threshold_logs(monkeypatch) -> None:
+    casefile = _sample_casefile()
+    updated_gate_input = casefile.gate_input.model_copy(
+        update={
+            "evidence_status_map": {
+                "topic_messages_in_per_sec": EvidenceStatus.PRESENT,
+                "password": EvidenceStatus.UNKNOWN,
+            }
+        }
+    )
+    updated_snapshot = casefile.evidence_snapshot.model_copy(
+        update={
+            "evidence_status_map": {
+                "topic_messages_in_per_sec": EvidenceStatus.PRESENT,
+                "password": EvidenceStatus.UNKNOWN,
+            }
+        }
+    )
+    casefile = casefile.model_copy(
+        update={
+            "gate_input": updated_gate_input,
+            "evidence_snapshot": updated_snapshot,
+            "triage_hash": TRIAGE_HASH_PLACEHOLDER,
+        }
+    )
+    casefile = casefile.model_copy(update={"triage_hash": compute_casefile_triage_hash(casefile)})
+    object_store = _InMemoryObjectStoreClient()
+    ready_casefile = persist_casefile_and_prepare_outbox_ready(
+        casefile=casefile,
+        object_store_client=object_store,
+    )
+    object_store.store[ready_casefile.object_path] = serialize_casefile_triage(casefile)
+
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    create_outbox_table(engine)
+    repository = OutboxSqlRepository(engine=engine)
+
+    old_time = datetime(2026, 3, 6, 11, 57, tzinfo=UTC)
+    run_time = datetime(2026, 3, 6, 12, 0, tzinfo=UTC)
+    repository.insert_pending_object(confirmed_casefile=ready_casefile, now=old_time)
+    repository.transition_to_ready(case_id=casefile.case_id, now=old_time)
+
+    metrics_calls: dict[str, object] = {"health_calls": 0, "latency_values": []}
+
+    def _record_health(*, snapshot):  # noqa: ANN001
+        del snapshot
+        metrics_calls["health_calls"] = int(metrics_calls["health_calls"]) + 1
+
+    def _record_latency(*, seconds):  # noqa: ANN001
+        metrics_calls["latency_values"].append(seconds)
+
+    monkeypatch.setattr(
+        "aiops_triage_pipeline.outbox.worker.record_outbox_health_snapshot",
+        _record_health,
+    )
+    monkeypatch.setattr(
+        "aiops_triage_pipeline.outbox.worker.record_outbox_publish_latency",
+        _record_latency,
+    )
+
+    logger = _RecordingLogger()
+    worker = OutboxPublisherWorker(
+        outbox_repository=repository,
+        object_store_client=object_store,
+        publisher=_RecordingCaseEventsPublisher(),
+        denylist=_denylist_for_tests(),
+        policy=_policy_with_max_retry(max_retry_attempts=3),
+        app_env="local",
+    )
+    worker._logger = logger  # noqa: SLF001
+
+    worker.run_once(now=run_time)
+
+    assert metrics_calls["health_calls"] == 1
+    assert metrics_calls["latency_values"]
+    assert metrics_calls["latency_values"][0] >= 0
+
+    threshold_events = [
+        event
+        for event in logger.events
+        if event[2].get("event_type") == "outbox.health.threshold_breach"
+        and event[2].get("state") == "READY"
+    ]
+    assert threshold_events
+
+    publish_success_events = [
+        event for event in logger.events if event[2].get("event_type") == "outbox.publish_succeeded"
+    ]
+    assert publish_success_events
 
 
 @pytest.mark.integration

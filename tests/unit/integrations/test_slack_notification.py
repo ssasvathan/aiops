@@ -311,7 +311,7 @@ def test_notification_event_model_fields_match_log_output() -> None:
 
 
 def test_live_mode_denylist_field_denied_absent_from_webhook_payload() -> None:
-    """LIVE mode: denied field is redacted in webhook body text (AC2 enforcement on Slack payload)."""
+    """LIVE mode: denied field is redacted in webhook body text (AC2 on Slack payload)."""
     denylist = DenylistV1(
         denylist_version="test-deny-field-live",
         denied_field_names=("case_id",),

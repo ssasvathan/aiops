@@ -1,6 +1,6 @@
 # Story 7.1: Outbox Health Monitoring & DEAD=0 Posture
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -26,67 +26,67 @@ FR53, FR54).
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Extend outbox policy contract to include monitoring and SLO thresholds (AC: 1, 2, 3)
-  - [ ] Add threshold models under `src/aiops_triage_pipeline/contracts/outbox_policy.py` for:
+- [x] Task 1: Extend outbox policy contract to include monitoring and SLO thresholds (AC: 1, 2, 3)
+  - [x] Add threshold models under `src/aiops_triage_pipeline/contracts/outbox_policy.py` for:
     - per-state age thresholds (`pending_object`, `ready`, `retry`)
     - `dead_count_critical_threshold` by environment
     - delivery SLO thresholds (`p95_target_seconds`, `p99_target_seconds`, `p99_critical_seconds`)
-  - [ ] Update `config/policies/outbox-policy-v1.yaml` with explicit threshold values matching FR52/FR53
-  - [ ] Keep existing retention and max-retry fields backward-compatible
-  - [ ] Add/adjust contract-policy tests in `tests/unit/contracts/test_policy_models.py`
+  - [x] Update `config/policies/outbox-policy-v1.yaml` with explicit threshold values matching FR52/FR53
+  - [x] Keep existing retention and max-retry fields backward-compatible
+  - [x] Add/adjust contract-policy tests in `tests/unit/contracts/test_policy_models.py`
 
-- [ ] Task 2: Expand repository outbox health snapshot to include all monitored states (AC: 1, 5)
-  - [ ] Replace tuple-based backlog health return with a typed snapshot model/dataclass in
+- [x] Task 2: Expand repository outbox health snapshot to include all monitored states (AC: 1, 5)
+  - [x] Replace tuple-based backlog health return with a typed snapshot model/dataclass in
     `src/aiops_triage_pipeline/outbox/repository.py`
-  - [ ] Ensure snapshot includes:
+  - [x] Ensure snapshot includes:
     - queue depth for `PENDING_OBJECT`, `READY`, `RETRY`, `DEAD`, `SENT`
     - oldest age seconds for `PENDING_OBJECT`, `READY`, `RETRY`, `DEAD`
-  - [ ] Keep timezone-aware age calculations and non-negative age values
-  - [ ] Add repository unit coverage for multi-state snapshots
+  - [x] Keep timezone-aware age calculations and non-negative age values
+  - [x] Add repository unit coverage for multi-state snapshots
 
-- [ ] Task 3: Add full outbox health and latency metrics instrumentation (AC: 2, 5)
-  - [ ] Expand `src/aiops_triage_pipeline/outbox/metrics.py` to expose:
+- [x] Task 3: Add full outbox health and latency metrics instrumentation (AC: 2, 5)
+  - [x] Expand `src/aiops_triage_pipeline/outbox/metrics.py` to expose:
     - queue depth by state metric (with `state` label)
     - oldest age by state metric/histogram (with `state` label)
     - publish latency histogram (`casefile_write_to_publish_seconds`)
     - delivery SLO breach counters (warn/critical)
-  - [ ] Keep existing `record_outbox_publish_outcome` semantics
-  - [ ] Ensure metric update helpers avoid counter drift in repeated polling cycles
+  - [x] Keep existing `record_outbox_publish_outcome` semantics
+  - [x] Ensure metric update helpers avoid counter drift in repeated polling cycles
 
-- [ ] Task 4: Implement threshold evaluation and DEAD=0 alerting in outbox worker (AC: 1, 2, 3, 4)
-  - [ ] Update `src/aiops_triage_pipeline/outbox/worker.py` to consume expanded health snapshot and
+- [x] Task 4: Implement threshold evaluation and DEAD=0 alerting in outbox worker (AC: 1, 2, 3, 4)
+  - [x] Update `src/aiops_triage_pipeline/outbox/worker.py` to consume expanded health snapshot and
     evaluate thresholds by state
-  - [ ] Emit structured alert logs with stable fields:
+  - [x] Emit structured alert logs with stable fields:
     - `event_type="outbox.health.threshold_breach"`
     - `state`, `severity`, `actual_value`, `threshold_value`, `app_env`
-  - [ ] Enforce `DEAD>0` as critical in `prod`; non-prod behavior may be warning/info but must not auto-retry
-  - [ ] Compute publish latency per successful send from `created_at` to publish timestamp and feed
+  - [x] Enforce `DEAD>0` as critical in `prod`; non-prod behavior may be warning/info but must not auto-retry
+  - [x] Compute publish latency per successful send from `created_at` to publish timestamp and feed
     histogram/SLO tracker
-  - [ ] Evaluate rolling p95/p99 delivery SLO and emit warning/critical alerts on breach
+  - [x] Evaluate rolling p95/p99 delivery SLO and emit warning/critical alerts on breach
 
-- [ ] Task 5: Keep DEAD lifecycle strictly manual after DEAD transition (AC: 4)
-  - [ ] Verify no code path transitions `DEAD -> RETRY/READY/SENT` automatically
-  - [ ] Add explicit unit guard test in `tests/unit/outbox/test_state_machine.py` and/or
+- [x] Task 5: Keep DEAD lifecycle strictly manual after DEAD transition (AC: 4)
+  - [x] Verify no code path transitions `DEAD -> RETRY/READY/SENT` automatically
+  - [x] Add explicit unit guard test in `tests/unit/outbox/test_state_machine.py` and/or
     `tests/unit/outbox/test_worker.py` that DEAD records are terminal without manual replay action
-  - [ ] Ensure logs/messages explicitly state human investigation and explicit replay are required
+  - [x] Ensure logs/messages explicitly state human investigation and explicit replay are required
 
-- [ ] Task 6: Add/expand unit and integration tests for outbox observability behavior (AC: 6)
-  - [ ] Update/add tests in `tests/unit/outbox/test_worker.py` for threshold checks:
+- [x] Task 6: Add/expand unit and integration tests for outbox observability behavior (AC: 6)
+  - [x] Update/add tests in `tests/unit/outbox/test_worker.py` for threshold checks:
     - PENDING_OBJECT warn/critical
     - READY warn/critical
     - RETRY critical
     - DEAD>0 critical in prod
-  - [ ] Add dedicated metrics tests (new `tests/unit/outbox/test_metrics.py`) for queue depth, oldest age,
+  - [x] Add dedicated metrics tests (new `tests/unit/outbox/test_metrics.py`) for queue depth, oldest age,
     and publish latency recording behavior
-  - [ ] Add SLO measurement tests for p95/p99 window calculations and critical breach (`p99 > 10m`)
-  - [ ] Add/extend integration test in `tests/integration/test_outbox_publish.py` validating metric/log
+  - [x] Add SLO measurement tests for p95/p99 window calculations and critical breach (`p99 > 10m`)
+  - [x] Add/extend integration test in `tests/integration/test_outbox_publish.py` validating metric/log
     emission path during worker execution
 
-- [ ] Task 7: Quality gates and regression checks
-  - [ ] `uv run ruff check`
-  - [ ] `uv run pytest -q -m "not integration"`
-  - [ ] `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
-  - [ ] Full suite must complete with `0 skipped`
+- [x] Task 7: Quality gates and regression checks
+  - [x] `uv run ruff check`
+  - [x] `uv run pytest -q -m "not integration"`
+  - [x] `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
+  - [x] Full suite must complete with `0 skipped`
 
 ## Dev Notes
 
@@ -271,10 +271,31 @@ GPT-5 (Codex)
 
 ### Completion Notes List
 
-- Ultimate context engine analysis completed - comprehensive developer guide created.
-- Story status set to `ready-for-dev` for implementation handoff.
+- Implemented `OutboxPolicyV1` monitoring/SLO schema extensions with backward-compatible retention/retry behavior and updated outbox policy artifact values for FR52/FR53.
+- Replaced tuple backlog health return with typed `OutboxHealthSnapshot` covering full queue-depth and per-state oldest ages with non-negative clamping.
+- Expanded outbox metrics instrumentation to state-labeled queue depth and age metrics, publish latency histogram, and delivery SLO breach counters while preserving publish outcome counters.
+- Updated outbox worker threshold evaluation for `PENDING_OBJECT`/`READY`/`RETRY` ages, `DEAD` count posture in prod, rolling p95/p99 SLO breach logging, and manual DEAD resolution guidance.
+- Added/expanded observability and lifecycle tests: policy, repository snapshot, worker threshold/SLO/dead-terminal coverage, dedicated metrics tests, and integration emission-path validation.
+- Quality gates passed: `uv run ruff check`, `uv run pytest -q -m "not integration"` (654 passed), and full Docker-enabled regression `... uv run pytest -q -rs` (672 passed, 0 skipped).
 
 ### File List
 
 - artifact/implementation-artifacts/7-1-outbox-health-monitoring-and-dead-0-posture.md
 - artifact/implementation-artifacts/sprint-status.yaml
+- config/policies/outbox-policy-v1.yaml
+- src/aiops_triage_pipeline/contracts/outbox_policy.py
+- src/aiops_triage_pipeline/contracts/rulebook.py
+- src/aiops_triage_pipeline/outbox/repository.py
+- src/aiops_triage_pipeline/outbox/metrics.py
+- src/aiops_triage_pipeline/outbox/worker.py
+- tests/unit/contracts/test_policy_models.py
+- tests/unit/integrations/test_slack_notification.py
+- tests/unit/outbox/test_repository.py
+- tests/unit/outbox/test_metrics.py
+- tests/unit/outbox/test_state_machine.py
+- tests/unit/outbox/test_worker.py
+- tests/integration/test_outbox_publish.py
+
+## Change Log
+
+- 2026-03-08: Implemented Story 7.1 outbox health monitoring and DEAD=0 posture (policy thresholds, repository snapshot, metrics, worker threshold/SLO logic, terminal DEAD handling, and regression-validated tests).

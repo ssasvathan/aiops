@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+import pytest
 from sqlalchemy import create_engine
 
 from aiops_triage_pipeline.contracts.action_decision import ActionDecisionV1
@@ -23,9 +24,13 @@ from aiops_triage_pipeline.models.case_file import (
     CaseFileTopologyContext,
     CaseFileTriageV1,
 )
-from aiops_triage_pipeline.outbox.repository import OutboxSqlRepository
-from aiops_triage_pipeline.outbox.schema import OutboxReadyCasefileV1, create_outbox_table
-from aiops_triage_pipeline.outbox.worker import OutboxPublisherWorker
+from aiops_triage_pipeline.outbox.repository import OutboxHealthSnapshot, OutboxSqlRepository
+from aiops_triage_pipeline.outbox.schema import (
+    OutboxReadyCasefileV1,
+    OutboxRecordV1,
+    create_outbox_table,
+)
+from aiops_triage_pipeline.outbox.worker import OutboxPublisherWorker, _nearest_rank_percentile
 from aiops_triage_pipeline.storage.casefile_io import (
     compute_casefile_triage_hash,
     serialize_casefile_triage,
@@ -171,6 +176,54 @@ class _RecordingLogger:
 
     def critical(self, event: str, **kwargs: object) -> None:
         self.events.append(("critical", event, kwargs))
+
+
+class _SnapshotOnlyRepository:
+    def __init__(self, snapshot: OutboxHealthSnapshot) -> None:
+        self._snapshot = snapshot
+
+    def select_publishable(
+        self,
+        *,
+        now: datetime | None = None,
+        limit: int = 100,
+    ) -> list[OutboxRecordV1]:
+        del now, limit
+        return []
+
+    def transition_to_sent(
+        self,
+        *,
+        case_id: str,
+        now: datetime | None = None,
+    ) -> OutboxRecordV1:
+        del case_id, now
+        raise AssertionError(
+            "transition_to_sent should not be called for empty publishable snapshot"
+        )
+
+    def transition_publish_failure(
+        self,
+        *,
+        case_id: str,
+        policy: OutboxPolicyV1,
+        app_env: str,
+        error_message: str,
+        error_code: str | None = None,
+        now: datetime | None = None,
+    ) -> OutboxRecordV1:
+        del case_id, policy, app_env, error_message, error_code, now
+        raise AssertionError(
+            "transition_publish_failure should not be called for empty publishable snapshot"
+        )
+
+    def select_backlog_health(
+        self,
+        *,
+        now: datetime | None = None,
+    ) -> OutboxHealthSnapshot:
+        del now
+        return self._snapshot
 
 
 def _policy_with_max_retry(max_retry_attempts: int) -> OutboxPolicyV1:
@@ -488,3 +541,204 @@ def test_outbox_worker_logs_denylist_outcome_when_publish_fails_after_sanitizati
     assert fields["outcome"] == "applied_publish_failed"
     assert fields["removed_field_count"] >= 1
     assert fields["error_code"] == "CriticalDependencyError"
+
+
+def test_outbox_worker_dead_failures_log_manual_replay_requirement() -> None:
+    casefile = _sample_casefile(case_id="case-dead-log")
+    ready_casefile = _ready_casefile(casefile)
+    object_store = _InMemoryObjectStoreClient()
+    object_store.store[ready_casefile.object_path] = serialize_casefile_triage(casefile)
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    create_outbox_table(engine)
+    repository = OutboxSqlRepository(engine=engine)
+    repository.insert_pending_object(confirmed_casefile=ready_casefile)
+    repository.transition_to_ready(case_id=casefile.case_id)
+    logger = _RecordingLogger()
+
+    worker = OutboxPublisherWorker(
+        outbox_repository=repository,
+        object_store_client=object_store,
+        publisher=_FailingPublisher(),
+        denylist=_denylist_for_tests(),
+        policy=_policy_with_max_retry(max_retry_attempts=1),
+        app_env="local",
+    )
+    worker._logger = logger  # noqa: SLF001
+
+    first_attempt = datetime(2026, 3, 6, 12, 0, tzinfo=UTC)
+    worker.run_once(now=first_attempt)
+    retried = repository.get_by_case_id(casefile.case_id)
+    assert retried is not None
+    assert retried.next_attempt_at is not None
+
+    worker.run_once(now=retried.next_attempt_at)
+
+    dead_failure_events = [
+        event
+        for event in logger.events
+        if event[2].get("event_type") == "outbox.publish_failed"
+        and event[2].get("status") == "DEAD"
+    ]
+    assert dead_failure_events
+    _, _, fields = dead_failure_events[0]
+    assert fields["human_investigation_required"] is True
+    assert fields["manual_replay_required"] is True
+    assert "human investigation" in fields["resolution_guidance"]
+
+
+@pytest.mark.parametrize(
+    ("state", "age_field", "age_value", "expected_severity", "expected_level"),
+    [
+        ("PENDING_OBJECT", "oldest_pending_object_age_seconds", 301.0, "warning", "warning"),
+        ("PENDING_OBJECT", "oldest_pending_object_age_seconds", 901.0, "critical", "critical"),
+        ("READY", "oldest_ready_age_seconds", 121.0, "warning", "warning"),
+        ("READY", "oldest_ready_age_seconds", 601.0, "critical", "critical"),
+        ("RETRY", "oldest_retry_age_seconds", 1801.0, "critical", "critical"),
+    ],
+)
+def test_outbox_worker_emits_threshold_breach_by_state_age(
+    state: str,
+    age_field: str,
+    age_value: float,
+    expected_severity: str,
+    expected_level: str,
+) -> None:
+    base_snapshot = {
+        "pending_object_count": 0,
+        "ready_count": 0,
+        "retry_count": 0,
+        "dead_count": 0,
+        "sent_count": 0,
+        "oldest_pending_object_age_seconds": 0.0,
+        "oldest_ready_age_seconds": 0.0,
+        "oldest_retry_age_seconds": 0.0,
+        "oldest_dead_age_seconds": 0.0,
+    }
+    base_snapshot[age_field] = age_value
+    snapshot = OutboxHealthSnapshot(**base_snapshot)
+
+    worker = OutboxPublisherWorker(
+        outbox_repository=_SnapshotOnlyRepository(snapshot),
+        object_store_client=_InMemoryObjectStoreClient(),
+        publisher=_RecordingPublisher(),
+        denylist=_denylist_for_tests(),
+        policy=_policy_with_max_retry(max_retry_attempts=3),
+        app_env="local",
+    )
+    logger = _RecordingLogger()
+    worker._logger = logger  # noqa: SLF001
+
+    worker.run_once(now=datetime(2026, 3, 6, 12, 3, tzinfo=UTC))
+
+    threshold_events = [
+        event
+        for event in logger.events
+        if event[2].get("event_type") == "outbox.health.threshold_breach"
+        and event[2].get("state") == state
+    ]
+    assert threshold_events
+    level, _, fields = threshold_events[0]
+    assert level == expected_level
+    assert fields["severity"] == expected_severity
+    assert fields["actual_value"] == age_value
+    assert fields["app_env"] == "local"
+
+
+def test_outbox_worker_emits_dead_count_critical_in_prod_with_manual_resolution_message() -> None:
+    snapshot = OutboxHealthSnapshot(
+        pending_object_count=0,
+        ready_count=0,
+        retry_count=0,
+        dead_count=1,
+        sent_count=0,
+        oldest_pending_object_age_seconds=0.0,
+        oldest_ready_age_seconds=0.0,
+        oldest_retry_age_seconds=0.0,
+        oldest_dead_age_seconds=0.0,
+    )
+    worker = OutboxPublisherWorker(
+        outbox_repository=_SnapshotOnlyRepository(snapshot),
+        object_store_client=_InMemoryObjectStoreClient(),
+        publisher=_RecordingPublisher(),
+        denylist=_denylist_for_tests(),
+        policy=_policy_with_max_retry(max_retry_attempts=3),
+        app_env="prod",
+    )
+    logger = _RecordingLogger()
+    worker._logger = logger  # noqa: SLF001
+
+    worker.run_once(now=datetime(2026, 3, 6, 12, 3, tzinfo=UTC))
+
+    dead_threshold_events = [
+        event
+        for event in logger.events
+        if event[2].get("event_type") == "outbox.health.threshold_breach"
+        and event[2].get("state") == "DEAD"
+    ]
+    assert dead_threshold_events
+    level, _, fields = dead_threshold_events[0]
+    assert level == "critical"
+    assert fields["severity"] == "critical"
+    assert fields["actual_value"] == 1.0
+    assert fields["threshold_value"] == 0.0
+
+    dead_manual_events = [
+        event
+        for event in logger.events
+        if event[2].get("event_type") == "outbox.dead.manual_resolution_required"
+    ]
+    assert dead_manual_events
+    assert "human investigation" in dead_manual_events[0][2]["message"]
+
+
+def test_outbox_worker_p99_critical_breach_when_latency_exceeds_ten_minutes(monkeypatch) -> None:
+    snapshot = OutboxHealthSnapshot(
+        pending_object_count=0,
+        ready_count=0,
+        retry_count=0,
+        dead_count=0,
+        sent_count=0,
+        oldest_pending_object_age_seconds=0.0,
+        oldest_ready_age_seconds=0.0,
+        oldest_retry_age_seconds=0.0,
+        oldest_dead_age_seconds=0.0,
+    )
+    worker = OutboxPublisherWorker(
+        outbox_repository=_SnapshotOnlyRepository(snapshot),
+        object_store_client=_InMemoryObjectStoreClient(),
+        publisher=_RecordingPublisher(),
+        denylist=_denylist_for_tests(),
+        policy=_policy_with_max_retry(max_retry_attempts=3),
+        app_env="local",
+    )
+    logger = _RecordingLogger()
+    worker._logger = logger  # noqa: SLF001
+    worker._delivery_latency_samples_seconds = [601.0]  # noqa: SLF001
+
+    breach_calls: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        "aiops_triage_pipeline.outbox.worker.record_outbox_delivery_slo_breach",
+        lambda *, severity, quantile: breach_calls.append((severity, quantile)),
+    )
+
+    worker._evaluate_delivery_slo(now=datetime(2026, 3, 6, 12, 3, tzinfo=UTC))  # noqa: SLF001
+
+    p99_events = [
+        event
+        for event in logger.events
+        if event[2].get("event_type") == "outbox.health.threshold_breach"
+        and event[2].get("state") == "DELIVERY_SLO_P99"
+    ]
+    assert p99_events
+    level, _, fields = p99_events[0]
+    assert level == "critical"
+    assert fields["severity"] == "critical"
+    assert fields["actual_value"] == 601.0
+    assert fields["threshold_value"] == 600.0
+    assert ("critical", "p99") in breach_calls
+
+
+def test_nearest_rank_percentile_supports_p95_and_p99_window_calculations() -> None:
+    values = list(range(1, 101))
+    assert _nearest_rank_percentile(values, 0.95) == 95
+    assert _nearest_rank_percentile(values, 0.99) == 99

@@ -250,6 +250,43 @@ def test_outbox_prod_retention(minimal_outbox_policy: OutboxPolicyV1) -> None:
     assert minimal_outbox_policy.retention_by_env["prod"].dead_retention_days == 90
 
 
+def test_outbox_policy_default_monitoring_thresholds(minimal_outbox_policy: OutboxPolicyV1) -> None:
+    pending_object = minimal_outbox_policy.state_age_thresholds.pending_object
+    ready = minimal_outbox_policy.state_age_thresholds.ready
+    retry = minimal_outbox_policy.state_age_thresholds.retry
+
+    assert pending_object.warning_seconds == 300
+    assert pending_object.critical_seconds == 900
+    assert ready.warning_seconds == 120
+    assert ready.critical_seconds == 600
+    assert retry.warning_seconds is None
+    assert retry.critical_seconds == 1800
+
+    assert minimal_outbox_policy.dead_count_critical_threshold["prod"] == 0
+    assert minimal_outbox_policy.delivery_slo.p95_target_seconds == 60
+    assert minimal_outbox_policy.delivery_slo.p99_target_seconds == 300
+    assert minimal_outbox_policy.delivery_slo.p99_critical_seconds == 600
+
+
+def test_outbox_policy_artifact_enforces_fr52_fr53_thresholds() -> None:
+    policy_path = Path(__file__).resolve().parents[3] / "config/policies/outbox-policy-v1.yaml"
+    policy = load_policy_yaml(policy_path, OutboxPolicyV1)
+
+    assert policy.state_age_thresholds.pending_object.warning_seconds == 300
+    assert policy.state_age_thresholds.pending_object.critical_seconds == 900
+    assert policy.state_age_thresholds.ready.warning_seconds == 120
+    assert policy.state_age_thresholds.ready.critical_seconds == 600
+    assert policy.state_age_thresholds.retry.warning_seconds is None
+    assert policy.state_age_thresholds.retry.critical_seconds == 1800
+
+    assert set(policy.dead_count_critical_threshold.keys()) == {"local", "dev", "uat", "prod"}
+    assert policy.dead_count_critical_threshold["prod"] == 0
+
+    assert policy.delivery_slo.p95_target_seconds == 60
+    assert policy.delivery_slo.p99_target_seconds == 300
+    assert policy.delivery_slo.p99_critical_seconds == 600
+
+
 def test_casefile_retention_prod_months(
     minimal_casefile_retention_policy: CasefileRetentionPolicyV1,
 ) -> None:

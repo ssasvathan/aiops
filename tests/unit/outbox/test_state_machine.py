@@ -210,6 +210,34 @@ def test_mark_outbox_record_publish_failure_transitions_to_dead_after_max_retrie
     assert dead.last_error_message == "exceeded retries"
 
 
+def test_mark_outbox_record_publish_failure_rejects_dead_source_state() -> None:
+    policy = OutboxPolicyV1(
+        retention_by_env={
+            "local": OutboxRetentionPolicy(sent_retention_days=1, dead_retention_days=7),
+            "dev": OutboxRetentionPolicy(sent_retention_days=3, dead_retention_days=14),
+            "uat": OutboxRetentionPolicy(sent_retention_days=7, dead_retention_days=30),
+            "prod": OutboxRetentionPolicy(
+                sent_retention_days=14,
+                dead_retention_days=90,
+                max_retry_attempts=5,
+            ),
+        }
+    )
+    dead_record = create_ready_outbox_record(
+        confirmed_casefile=_ready_casefile(),
+        now=datetime(2026, 3, 5, 12, 0, tzinfo=UTC),
+    ).model_copy(update={"status": "DEAD"})
+
+    with pytest.raises(InvariantViolation, match="cannot mark publish failure from status=DEAD"):
+        mark_outbox_record_publish_failure(
+            record=dead_record,
+            policy=policy,
+            app_env="prod",
+            error_message="must replay manually",
+            now=datetime(2026, 3, 5, 12, 1, tzinfo=UTC),
+        )
+
+
 def test_retention_cutoff_for_state_uses_policy_days() -> None:
     policy = OutboxPolicyV1(
         retention_by_env={

@@ -15,18 +15,20 @@ from aiops_triage_pipeline.errors.exceptions import (
 )
 from aiops_triage_pipeline.logging.setup import get_logger
 from aiops_triage_pipeline.outbox.metrics import (
-    record_outbox_backlog_health,
+    record_outbox_delivery_slo_breach,
+    record_outbox_health_snapshot,
+    record_outbox_publish_latency,
     record_outbox_publish_outcome,
 )
 from aiops_triage_pipeline.outbox.publisher import (
     CaseEventPublisherProtocol,
     publish_case_events_after_invariant_a,
 )
+from aiops_triage_pipeline.outbox.repository import OutboxHealthSnapshot
 from aiops_triage_pipeline.outbox.schema import OutboxRecordV1
 from aiops_triage_pipeline.storage.client import ObjectStoreClientProtocol
 
-_READY_WARN_AGE_SECONDS = 120.0
-_READY_CRITICAL_AGE_SECONDS = 600.0
+_DELIVERY_LATENCY_SAMPLE_WINDOW = 1000
 
 
 class OutboxRepositoryPublishProtocol(Protocol):
@@ -61,7 +63,7 @@ class OutboxRepositoryPublishProtocol(Protocol):
         self,
         *,
         now: datetime | None = None,
-    ) -> tuple[int, int, float]: ...
+    ) -> OutboxHealthSnapshot: ...
 
 
 @dataclass(frozen=True)
@@ -102,6 +104,7 @@ class OutboxPublisherWorker:
         self._batch_size = batch_size
         self._poll_interval_seconds = poll_interval_seconds
         self._logger = get_logger("outbox.worker")
+        self._delivery_latency_samples_seconds: list[float] = []
 
     def run_once(self, *, now: datetime | None = None) -> OutboxWorkerIterationResult:
         """Run a single publish attempt loop for currently publishable records."""
@@ -147,6 +150,13 @@ class OutboxPublisherWorker:
                     event_count=evidence.event_count,
                     published_at=evidence.published_at.isoformat(),
                 )
+                latency_seconds = max(
+                    (evidence.published_at - record.created_at).total_seconds(),
+                    0.0,
+                )
+                record_outbox_publish_latency(seconds=latency_seconds)
+                self._record_delivery_latency_sample(seconds=latency_seconds)
+                self._evaluate_delivery_slo(now=evidence.published_at)
                 record_outbox_publish_outcome(status=sent_record.status, outcome="success")
                 sent_count += 1
             except Exception as exc:  # noqa: BLE001
@@ -179,14 +189,16 @@ class OutboxPublisherWorker:
             time.sleep(self._poll_interval_seconds)
 
     def _emit_backlog_health_logs(self, *, now: datetime) -> None:
-        ready_count, retry_count, oldest_ready_age_seconds = (
-            self._outbox_repository.select_backlog_health(now=now)
-        )
+        health = self._outbox_repository.select_backlog_health(now=now)
+        ready_thresholds = self._policy.state_age_thresholds.ready
 
-        if oldest_ready_age_seconds >= _READY_CRITICAL_AGE_SECONDS:
+        if health.oldest_ready_age_seconds > ready_thresholds.critical_seconds:
             log_fn = self._logger.critical
             severity = "critical"
-        elif oldest_ready_age_seconds >= _READY_WARN_AGE_SECONDS:
+        elif (
+            ready_thresholds.warning_seconds is not None
+            and health.oldest_ready_age_seconds > ready_thresholds.warning_seconds
+        ):
             log_fn = self._logger.warning
             severity = "warning"
         else:
@@ -196,20 +208,152 @@ class OutboxPublisherWorker:
         log_fn(
             "outbox_backlog_health",
             event_type="outbox.backlog_health",
-            ready_count=ready_count,
-            retry_count=retry_count,
-            oldest_ready_age_seconds=oldest_ready_age_seconds,
+            pending_object_count=health.pending_object_count,
+            ready_count=health.ready_count,
+            retry_count=health.retry_count,
+            dead_count=health.dead_count,
+            sent_count=health.sent_count,
+            oldest_pending_object_age_seconds=health.oldest_pending_object_age_seconds,
+            oldest_ready_age_seconds=health.oldest_ready_age_seconds,
+            oldest_retry_age_seconds=health.oldest_retry_age_seconds,
+            oldest_dead_age_seconds=health.oldest_dead_age_seconds,
             threshold_state=severity,
         )
-        record_outbox_backlog_health(
-            ready_count=ready_count,
-            retry_count=retry_count,
-            oldest_ready_age_seconds=oldest_ready_age_seconds,
+        record_outbox_health_snapshot(snapshot=health)
+        self._emit_state_age_threshold_breaches(health=health)
+        self._emit_dead_count_threshold_breach(health=health)
+
+    def _emit_state_age_threshold_breaches(self, *, health: OutboxHealthSnapshot) -> None:
+        threshold_by_state = (
+            (
+                "PENDING_OBJECT",
+                health.oldest_pending_object_age_seconds,
+                self._policy.state_age_thresholds.pending_object.warning_seconds,
+                self._policy.state_age_thresholds.pending_object.critical_seconds,
+            ),
+            (
+                "READY",
+                health.oldest_ready_age_seconds,
+                self._policy.state_age_thresholds.ready.warning_seconds,
+                self._policy.state_age_thresholds.ready.critical_seconds,
+            ),
+            (
+                "RETRY",
+                health.oldest_retry_age_seconds,
+                self._policy.state_age_thresholds.retry.warning_seconds,
+                self._policy.state_age_thresholds.retry.critical_seconds,
+            ),
+        )
+        for state, actual_age, warning_threshold, critical_threshold in threshold_by_state:
+            severity: str | None = None
+            threshold_value = critical_threshold
+            if actual_age > critical_threshold:
+                severity = "critical"
+            elif warning_threshold is not None and actual_age > warning_threshold:
+                severity = "warning"
+                threshold_value = warning_threshold
+            if severity is None:
+                continue
+            log_fn = self._logger.critical if severity == "critical" else self._logger.warning
+            log_fn(
+                "outbox_health_threshold_breach",
+                event_type="outbox.health.threshold_breach",
+                state=state,
+                severity=severity,
+                actual_value=actual_age,
+                threshold_value=threshold_value,
+                app_env=self._app_env,
+            )
+
+    def _emit_dead_count_threshold_breach(self, *, health: OutboxHealthSnapshot) -> None:
+        critical_threshold = self._policy.dead_count_critical_threshold.get(self._app_env, 0)
+        if health.dead_count <= critical_threshold:
+            return
+
+        if self._app_env == "prod":
+            log_fn = self._logger.critical
+            severity = "critical"
+        else:
+            log_fn = self._logger.warning
+            severity = "warning"
+        log_fn(
+            "outbox_health_threshold_breach",
+            event_type="outbox.health.threshold_breach",
+            state="DEAD",
+            severity=severity,
+            actual_value=float(health.dead_count),
+            threshold_value=float(critical_threshold),
+            app_env=self._app_env,
+        )
+        log_fn(
+            "outbox_dead_manual_resolution_required",
+            event_type="outbox.dead.manual_resolution_required",
+            dead_count=health.dead_count,
+            app_env=self._app_env,
+            message="DEAD records require human investigation and explicit replay/resolution.",
         )
 
+    def _record_delivery_latency_sample(self, *, seconds: float) -> None:
+        self._delivery_latency_samples_seconds.append(max(seconds, 0.0))
+        if len(self._delivery_latency_samples_seconds) > _DELIVERY_LATENCY_SAMPLE_WINDOW:
+            self._delivery_latency_samples_seconds = self._delivery_latency_samples_seconds[
+                -_DELIVERY_LATENCY_SAMPLE_WINDOW:
+            ]
+
+    def _evaluate_delivery_slo(self, *, now: datetime) -> None:
+        if not self._delivery_latency_samples_seconds:
+            return
+        slo = self._policy.delivery_slo
+        p95_seconds = _nearest_rank_percentile(self._delivery_latency_samples_seconds, 0.95)
+        p99_seconds = _nearest_rank_percentile(self._delivery_latency_samples_seconds, 0.99)
+
+        if p95_seconds > slo.p95_target_seconds:
+            self._logger.warning(
+                "outbox_health_threshold_breach",
+                event_type="outbox.health.threshold_breach",
+                state="DELIVERY_SLO_P95",
+                severity="warning",
+                actual_value=p95_seconds,
+                threshold_value=slo.p95_target_seconds,
+                app_env=self._app_env,
+                measured_at=now.isoformat(),
+            )
+            record_outbox_delivery_slo_breach(severity="warning", quantile="p95")
+
+        if p99_seconds > slo.p99_critical_seconds:
+            severity = "critical"
+            threshold_value = slo.p99_critical_seconds
+        elif p99_seconds > slo.p99_target_seconds:
+            severity = "warning"
+            threshold_value = slo.p99_target_seconds
+        else:
+            return
+
+        log_fn = self._logger.critical if severity == "critical" else self._logger.warning
+        log_fn(
+            "outbox_health_threshold_breach",
+            event_type="outbox.health.threshold_breach",
+            state="DELIVERY_SLO_P99",
+            severity=severity,
+            actual_value=p99_seconds,
+            threshold_value=threshold_value,
+            app_env=self._app_env,
+            measured_at=now.isoformat(),
+        )
+        record_outbox_delivery_slo_breach(severity=severity, quantile="p99")
+
     def _log_publish_failure(self, *, record: OutboxRecordV1, exc: Exception) -> None:
+        extra_fields: dict[str, object] = {}
         if record.status == "DEAD":
             log_fn = self._logger.critical
+            extra_fields = {
+                "human_investigation_required": True,
+                "manual_replay_required": True,
+                "resolution_guidance": (
+                    "DEAD is terminal in automated flow; "
+                    "human investigation and explicit replay are required."
+                ),
+            }
         else:
             log_fn = self._logger.warning
         log_fn(
@@ -223,6 +367,7 @@ class OutboxPublisherWorker:
             ),
             error_code=record.last_error_code or type(exc).__name__,
             error_message=record.last_error_message or str(exc),
+            **extra_fields,
         )
 
     def _log_denylist_outcome_on_failure(self, *, record: OutboxRecordV1, exc: Exception) -> None:
@@ -258,3 +403,16 @@ def _resolve_now(now: datetime | None) -> datetime:
     if resolved_now.tzinfo is None:
         raise ValueError("now must be timezone-aware")
     return resolved_now
+
+
+def _nearest_rank_percentile(values: list[float], percentile: float) -> float:
+    if not values:
+        return 0.0
+    if percentile <= 0:
+        return min(values)
+    if percentile >= 1:
+        return max(values)
+    ordered = sorted(values)
+    rank = int(percentile * len(ordered))
+    index = max(rank - 1, 0)
+    return ordered[index]

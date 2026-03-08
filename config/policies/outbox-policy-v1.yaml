@@ -16,3 +16,24 @@ retention_by_env:
     sent_retention_days: 14     # FR26: SENT 14d prod
     dead_retention_days: 90     # FR26: DEAD 90d prod
     max_retry_attempts: 5
+
+state_age_thresholds:
+  pending_object:
+    warning_seconds: 300
+    critical_seconds: 900
+  ready:
+    warning_seconds: 120
+    critical_seconds: 600
+  retry:
+    critical_seconds: 1800
+
+dead_count_critical_threshold:
+  local: 1
+  dev: 1
+  uat: 1
+  prod: 0
+
+delivery_slo:
+  p95_target_seconds: 60
+  p99_target_seconds: 300
+  p99_critical_seconds: 600

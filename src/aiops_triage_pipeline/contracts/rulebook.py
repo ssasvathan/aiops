@@ -69,7 +69,8 @@ class GateEffect(BaseModel, frozen=True):
     cap_action_to: str | None = None
     set_reason_codes: tuple[str, ...] = ()
     set_reason_text: tuple[str, ...] = ()
-    confidence_floor: float | None = None  # reserved; no-op at runtime — NOT the LLM confidence input
+    # Reserved; no-op at runtime; this is not the LLM confidence input.
+    confidence_floor: float | None = None
     force_postmortem_mode: str | None = None
     set_postmortem_required: bool | None = None
     set_postmortem_reason_codes: tuple[str, ...] = ()

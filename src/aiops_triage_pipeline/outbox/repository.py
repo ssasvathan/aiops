@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Iterator
 
@@ -13,6 +14,7 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from aiops_triage_pipeline.contracts.outbox_policy import OutboxPolicyV1
 from aiops_triage_pipeline.errors.exceptions import CriticalDependencyError, InvariantViolation
 from aiops_triage_pipeline.outbox.schema import (
+    OUTBOX_STATES,
     OutboxReadyCasefileV1,
     OutboxRecordV1,
     create_outbox_table,
@@ -209,7 +211,7 @@ class OutboxSqlRepository:
         self,
         *,
         now: datetime | None = None,
-    ) -> tuple[int, int, float]:
+    ) -> OutboxHealthSnapshot:
         resolved_now = _resolve_now(now)
         try:
             with self._tx() as conn:
@@ -218,26 +220,41 @@ class OutboxSqlRepository:
                         select(
                             outbox_table.c.status,
                             outbox_table.c.updated_at,
-                        ).where(outbox_table.c.status.in_(("READY", "RETRY")))
+                        ).where(outbox_table.c.status.in_(OUTBOX_STATES))
                     )
                     .mappings()
                     .all()
                 )
 
-                ready_count = 0
-                retry_count = 0
-                oldest_ready_age_seconds = 0.0
+                counts_by_state = {state: 0 for state in OUTBOX_STATES}
+                oldest_age_seconds_by_state = {
+                    "PENDING_OBJECT": 0.0,
+                    "READY": 0.0,
+                    "RETRY": 0.0,
+                    "DEAD": 0.0,
+                }
                 for row in rows:
                     status = str(row["status"])
-                    if status == "READY":
-                        ready_count += 1
+                    if status in counts_by_state:
+                        counts_by_state[status] += 1
+                    if status in oldest_age_seconds_by_state:
                         updated_at = _as_aware_datetime(row["updated_at"])
-                        ready_age_seconds = (resolved_now - updated_at).total_seconds()
-                        oldest_ready_age_seconds = max(oldest_ready_age_seconds, ready_age_seconds)
-                    elif status == "RETRY":
-                        retry_count += 1
+                        age_seconds = max((resolved_now - updated_at).total_seconds(), 0.0)
+                        oldest_age_seconds_by_state[status] = max(
+                            oldest_age_seconds_by_state[status], age_seconds
+                        )
 
-                return ready_count, retry_count, oldest_ready_age_seconds
+                return OutboxHealthSnapshot(
+                    pending_object_count=counts_by_state["PENDING_OBJECT"],
+                    ready_count=counts_by_state["READY"],
+                    retry_count=counts_by_state["RETRY"],
+                    dead_count=counts_by_state["DEAD"],
+                    sent_count=counts_by_state["SENT"],
+                    oldest_pending_object_age_seconds=oldest_age_seconds_by_state["PENDING_OBJECT"],
+                    oldest_ready_age_seconds=oldest_age_seconds_by_state["READY"],
+                    oldest_retry_age_seconds=oldest_age_seconds_by_state["RETRY"],
+                    oldest_dead_age_seconds=oldest_age_seconds_by_state["DEAD"],
+                )
         except CriticalDependencyError:
             raise
         except Exception as exc:  # noqa: BLE001
@@ -432,3 +449,18 @@ def _as_aware_datetime_or_none(value: object) -> datetime | None:
     if value is None:
         return None
     return _as_aware_datetime(value)
+
+
+@dataclass(frozen=True)
+class OutboxHealthSnapshot:
+    """Queue depth and oldest-age snapshot for outbox health monitoring."""
+
+    pending_object_count: int
+    ready_count: int
+    retry_count: int
+    dead_count: int
+    sent_count: int
+    oldest_pending_object_age_seconds: float
+    oldest_ready_age_seconds: float
+    oldest_retry_age_seconds: float
+    oldest_dead_age_seconds: float
