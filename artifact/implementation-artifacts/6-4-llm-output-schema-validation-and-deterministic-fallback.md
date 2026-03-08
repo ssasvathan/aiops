@@ -99,6 +99,12 @@ behavior (FR39, FR40).
   - [x] `uv run pytest -q -m "not integration"` — baseline 624 + 9 new = ~633 passed, 0 failures,
     0 skipped
 
+### Review Follow-ups (AI)
+
+- [x] [AI-Review][High] Narrow `except pydantic.ValidationError` handling to LLM-output validation scope; currently it can misclassify internal model/invariant validation failures as `LLM_SCHEMA_INVALID` and set incorrect health reason [`src/aiops_triage_pipeline/diagnosis/graph.py:213`]
+- [x] [AI-Review][High] Expand unavailable-path exception mapping beyond `httpx.ConnectError` to include connection timeout/network transport failures so network/connection failures consistently emit `LLM_UNAVAILABLE` [`src/aiops_triage_pipeline/diagnosis/graph.py:227`]
+- [x] [AI-Review][Medium] Add a unit test asserting `diagnosis.json` write-once persistence for the generic error path (`LLM_ERROR`) to fully satisfy AC8 coverage for per-scenario persistence verification [`tests/unit/diagnosis/test_graph.py:529`]
+
 ## Dev Notes
 
 ### Developer Context Section
@@ -532,6 +538,22 @@ GPT-5 (Codex)
 - Ensured all failure paths update HealthRegistry to `DEGRADED`, persist fallback diagnosis, and keep inflight gauge balanced.
 - Rewrote 3 existing tests for return-based fallback behavior and added 9 new tests for all required failure scenarios and persistence/no-retry/schema validity checks.
 - Full regression completed with zero skipped tests after running Docker-enabled suite outside sandbox constraints.
+- Applied AI review follow-up fixes:
+  - Scoped `LLM_SCHEMA_INVALID` mapping to invoke/output-validation errors only.
+  - Mapped all `httpx.TransportError` failures to `LLM_UNAVAILABLE`.
+  - Added `LLM_ERROR` persistence coverage and regression test for internal-validation classification.
+- Validation rerun after fixes: `29` diagnosis graph unit tests passed and full regression passed (`653 passed, 0 skipped`).
+
+### Senior Developer Review (AI)
+
+- Outcome: Changes Requested
+- Summary:
+  - Found 2 high-severity behavioral issues in failure classification/mapping.
+  - Found 1 medium-severity test coverage gap against AC8 scenario-level persistence verification.
+- Validation run:
+  - `uv run ruff check src/aiops_triage_pipeline/diagnosis/graph.py tests/unit/diagnosis/test_graph.py` -> pass
+  - `uv run pytest -q tests/unit/diagnosis/test_graph.py` -> `26 passed`
+  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs` -> `650 passed, 1 warning, 0 skipped`
 
 ### File List
 
@@ -543,3 +565,5 @@ GPT-5 (Codex)
 ## Change Log
 
 - 2026-03-08: Implemented Story 6.4 fallback schema-validation and deterministic fallback flow; expanded tests; passed full regression (650 passed, 0 skipped).
+- 2026-03-07: Senior developer review executed; status moved to in-progress; 3 follow-up items added (2 High, 1 Medium).
+- 2026-03-07: Fixed all AI review follow-ups; status moved back to review; regression rerun passed (653 passed, 0 skipped).

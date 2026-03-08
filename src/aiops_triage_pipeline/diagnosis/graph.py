@@ -153,26 +153,52 @@ async def run_cold_path_diagnosis(
     llm_inflight_add(+1)
     try:
         graph = build_diagnosis_graph(llm_client)
-        result = await asyncio.wait_for(
-            graph.ainvoke(
-                {
-                    "case_id": case_id,
-                    "triage_excerpt": safe_excerpt,
-                    "evidence_summary": evidence_summary,
-                    "diagnosis_report": None,
-                }
-            ),
-            timeout=timeout_seconds,
-        )
-        raw_report = result["diagnosis_report"]
-        if raw_report is None:
-            raise RuntimeError(
-                f"LangGraph node did not populate diagnosis_report for case {case_id}"
+        try:
+            result = await asyncio.wait_for(
+                graph.ainvoke(
+                    {
+                        "case_id": case_id,
+                        "triage_excerpt": safe_excerpt,
+                        "evidence_summary": evidence_summary,
+                        "diagnosis_report": None,
+                    }
+                ),
+                timeout=timeout_seconds,
+            )
+            raw_report = result["diagnosis_report"]
+            if raw_report is None:
+                raise RuntimeError(
+                    f"LangGraph node did not populate diagnosis_report for case {case_id}"
+                )
+
+            # Validate LLM output shape first; only this branch maps to LLM_SCHEMA_INVALID.
+            validated_llm_report = DiagnosisReportV1.model_validate(raw_report)
+        except pydantic.ValidationError:
+            await health_registry.update(
+                "llm",
+                HealthStatus.DEGRADED,
+                reason="cold_path_schema_invalid",
+            )
+            _logger.warning(
+                "cold_path_diagnosis_failed",
+                case_id=case_id,
+                error_type="ValidationError",
+            )
+            return _make_and_persist_fallback(
+                reason_codes=("LLM_SCHEMA_INVALID",),
+                case_id=case_id,
+                triage_hash=triage_hash,
+                object_store_client=object_store_client,
+                gaps=("LLM output failed schema validation",),
             )
 
         # Reconstruct with triage_hash for hash chain (AC5)
         report = DiagnosisReportV1.model_validate(
-            {**raw_report.model_dump(mode="json"), "triage_hash": triage_hash, "case_id": case_id}
+            {
+                **validated_llm_report.model_dump(mode="json"),
+                "triage_hash": triage_hash,
+                "case_id": case_id,
+            }
         )
 
         # Write diagnosis.json (AC4)
@@ -210,23 +236,11 @@ async def run_cold_path_diagnosis(
             triage_hash=triage_hash,
             object_store_client=object_store_client,
         )
-    except pydantic.ValidationError:
-        await health_registry.update(
-            "llm",
-            HealthStatus.DEGRADED,
-            reason="cold_path_schema_invalid",
-        )
-        _logger.warning("cold_path_diagnosis_failed", case_id=case_id, error_type="ValidationError")
-        return _make_and_persist_fallback(
-            reason_codes=("LLM_SCHEMA_INVALID",),
-            case_id=case_id,
-            triage_hash=triage_hash,
-            object_store_client=object_store_client,
-            gaps=("LLM output failed schema validation",),
-        )
-    except httpx.ConnectError:
+    except httpx.TransportError as exc:
         await health_registry.update("llm", HealthStatus.DEGRADED, reason="cold_path_unavailable")
-        _logger.warning("cold_path_diagnosis_failed", case_id=case_id, error_type="ConnectError")
+        _logger.warning(
+            "cold_path_diagnosis_failed", case_id=case_id, error_type=type(exc).__name__
+        )
         return _make_and_persist_fallback(
             reason_codes=("LLM_UNAVAILABLE",),
             case_id=case_id,
