@@ -4,9 +4,10 @@ from aiops_triage_pipeline.denylist.enforcement import (
     apply_denylist,
     apply_denylist_with_removed_count,
 )
-from aiops_triage_pipeline.denylist.loader import DenylistV1, load_denylist
+from aiops_triage_pipeline.denylist.loader import DenylistChangelogEntry, DenylistV1, load_denylist
 
 __all__ = [
+    "DenylistChangelogEntry",
     "DenylistV1",
     "apply_denylist",
     "apply_denylist_with_removed_count",

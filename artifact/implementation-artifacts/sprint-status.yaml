@@ -97,7 +97,7 @@ development_status:
   7-2-opentelemetry-instrumentation-and-otlp-export: done
   7-3-alerting-rules-and-component-health-thresholds: done
   7-4-policy-version-stamping-and-decision-reproducibility: done
-  7-5-exposure-denylist-governance-and-llm-narrative-compliance: backlog
+  7-5-exposure-denylist-governance-and-llm-narrative-compliance: review
   7-6-case-labeling-schema-and-mi-1-posture-enforcement: backlog
   epic-7-retrospective: optional
   epic-8: backlog

@@ -61,6 +61,15 @@ denied_field_names:
   - redis_url
   - s3_secret_key
 
+# Changelog — structured audit log for change management (FR62).
+# Each entry documents a denylist change reviewed via pull request.
+changelog:
+  - version: "v1.0.0"
+    date: "2026-03-05"
+    author: "@sas"
+    reviewer: "@security-team"
+    summary: "Initial denylist v1.0.0 — credential field names, value patterns for Bearer tokens, credential URLs, and Ranger groups"
+
 # Regex patterns for field VALUES.
 # Any field whose string value matches one of these patterns (re.search) is removed,
 # regardless of its field name. Useful for catching credentials in unexpected fields.

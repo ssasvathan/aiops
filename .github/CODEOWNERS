@@ -1,0 +1,6 @@
+# CODEOWNERS — aiOps Triage Pipeline
+# Defines required reviewers for security-sensitive files.
+# Changes to the exposure denylist require review by the security team.
+# See: Story 7.5 (FR62) — denylist change management enforcement.
+
+config/denylist.yaml  @security-team

@@ -11,8 +11,8 @@ import pydantic
 import pytest
 
 from aiops_triage_pipeline.config.settings import AppEnv, IntegrationMode
-from aiops_triage_pipeline.contracts.diagnosis_report import DiagnosisReportV1
-from aiops_triage_pipeline.contracts.enums import CriticalityTier, Environment
+from aiops_triage_pipeline.contracts.diagnosis_report import DiagnosisReportV1, EvidencePack
+from aiops_triage_pipeline.contracts.enums import CriticalityTier, DiagnosisConfidence, Environment
 from aiops_triage_pipeline.contracts.triage_excerpt import TriageExcerptV1
 from aiops_triage_pipeline.denylist.loader import DenylistV1
 from aiops_triage_pipeline.diagnosis.graph import (
@@ -255,32 +255,50 @@ async def test_health_registry_updated_healthy_on_success() -> None:
 
 
 async def test_denylist_applied_to_triage_excerpt() -> None:
-    """apply_denylist is called on triage_excerpt before passing to LLMClient.invoke()."""
+    """apply_denylist is called on triage_excerpt before passing to LLMClient.invoke().
+
+    Since Story 7.5, apply_denylist is called twice: once for INPUT (triage_excerpt)
+    and once for OUTPUT (LLM DiagnosisReportV1 narrative). This test verifies the first
+    call receives the triage_excerpt dict.
+    """
     registry = HealthRegistry()
     excerpt = _make_eligible_excerpt()
+    mock_llm_client = _make_mock_client()
+
+    # Build a minimal valid DiagnosisReportV1 dict to return for the second call
+    _stub_report = mock_llm_client  # will use real MOCK client's output below
 
     with patch(
         "aiops_triage_pipeline.diagnosis.graph.apply_denylist",
     ) as mock_apply:
-        # Return the full dict so reconstruction succeeds
-        mock_apply.return_value = excerpt.model_dump(mode="json")
+        # First call: excerpt INPUT sanitization → return excerpt dict
+        # Second call: LLM OUTPUT sanitization → return valid DiagnosisReportV1 dict
+        excerpt_dict = excerpt.model_dump(mode="json")
+        report_dict = {
+            "schema_version": "v1",
+            "verdict": "UNKNOWN",
+            "confidence": "LOW",
+            "evidence_pack": {"facts": [], "missing_evidence": [], "matched_rules": []},
+            "reason_codes": ["LLM_STUB"],
+        }
+        mock_apply.side_effect = [excerpt_dict, report_dict]
         await run_cold_path_diagnosis(
             case_id="test-denylist",
             triage_excerpt=excerpt,
             evidence_summary=_EVIDENCE_SUMMARY,
-            llm_client=_make_mock_client(),
+            llm_client=mock_llm_client,
             denylist=_EMPTY_DENYLIST,
             health_registry=registry,
             object_store_client=_make_mock_store(),
             triage_hash=_FAKE_TRIAGE_HASH,
         )
 
-    mock_apply.assert_called_once()
-    call_args = mock_apply.call_args
-    # First positional arg is the dict from model_dump(mode="json")
-    assert isinstance(call_args[0][0], dict)
+    assert mock_apply.call_count == 2
+    first_call_args = mock_apply.call_args_list[0]
+    # First positional arg of first call is the excerpt dict
+    assert isinstance(first_call_args[0][0], dict)
     # Second positional arg is the denylist
-    assert call_args[0][1] is _EMPTY_DENYLIST
+    assert first_call_args[0][1] is _EMPTY_DENYLIST
 
 
 # ---------------------------------------------------------------------------
@@ -883,3 +901,166 @@ async def test_spawn_cold_path_diagnosis_task_forwards_triage_hash() -> None:
     assert task is not None
     report = await task
     assert report.triage_hash == _FAKE_TRIAGE_HASH
+
+
+# ---------------------------------------------------------------------------
+# run_cold_path_diagnosis — LLM narrative OUTPUT denylist enforcement (Story 7.5)
+# ---------------------------------------------------------------------------
+
+_BEARER_TOKEN_DENYLIST = DenylistV1(
+    denylist_version="v1.0.0",
+    denied_field_names=(),
+    denied_value_patterns=("(?i)bearer\\s+[A-Za-z0-9._+/=\\-]{10,}",),
+)
+
+_CREDENTIAL_URL_DENYLIST = DenylistV1(
+    denylist_version="v1.0.0",
+    denied_field_names=(),
+    denied_value_patterns=("(?i)://[^:@/]+:[^@/]{3,}@",),
+)
+
+
+def _make_llm_report_with_verdict(verdict: str) -> DiagnosisReportV1:
+    """Build a minimal DiagnosisReportV1 with the given verdict."""
+    return DiagnosisReportV1(
+        verdict=verdict,
+        confidence=DiagnosisConfidence.LOW,
+        evidence_pack=EvidencePack(facts=(), missing_evidence=(), matched_rules=()),
+    )
+
+
+def _make_llm_report_with_facts(*facts: str) -> DiagnosisReportV1:
+    """Build a minimal DiagnosisReportV1 with the given facts."""
+    return DiagnosisReportV1(
+        verdict="Consumer lag root cause: upstream producer stall.",
+        confidence=DiagnosisConfidence.MEDIUM,
+        evidence_pack=EvidencePack(facts=facts, missing_evidence=(), matched_rules=()),
+    )
+
+
+def _make_mock_llm_client(report: DiagnosisReportV1) -> MagicMock:
+    """Return a MagicMock(spec=LLMClient) whose invoke() returns the given report."""
+    mock_client = MagicMock(spec=LLMClient)
+    mock_client.invoke = AsyncMock(return_value=report)
+    return mock_client
+
+
+async def test_llm_narrative_output_sanitized_before_persist() -> None:
+    """LLM verdict containing Bearer token is denied: returned report does not contain the token."""
+    registry = HealthRegistry()
+    dirty_verdict = "Bearer AbCdEfGhIjKlMnOpQrSt12345"
+    mock_client = _make_mock_llm_client(_make_llm_report_with_verdict(dirty_verdict))
+
+    report = await run_cold_path_diagnosis(
+        case_id="test-output-sanitize-verdict",
+        triage_excerpt=_make_eligible_excerpt("test-output-sanitize-verdict"),
+        evidence_summary=_EVIDENCE_SUMMARY,
+        llm_client=mock_client,
+        denylist=_BEARER_TOKEN_DENYLIST,
+        health_registry=registry,
+        object_store_client=_make_mock_store(),
+        triage_hash=_FAKE_TRIAGE_HASH,
+    )
+
+    # verdict containing Bearer token was denied → report reconstructed as LLM_SCHEMA_INVALID
+    # fallback, so verdict is "UNKNOWN" (does not contain the token)
+    assert dirty_verdict not in report.verdict
+
+
+async def test_llm_narrative_denied_field_in_facts_sanitized() -> None:
+    """LLM facts containing credential URL are removed; clean facts are preserved."""
+    registry = HealthRegistry()
+    credential_url = "postgresql://user:secret@db-host/prod"
+    clean_fact = "Consumer lag elevated: 45000 messages behind."
+    mock_client = _make_mock_llm_client(
+        _make_llm_report_with_facts(clean_fact, credential_url)
+    )
+
+    report = await run_cold_path_diagnosis(
+        case_id="test-output-sanitize-facts",
+        triage_excerpt=_make_eligible_excerpt("test-output-sanitize-facts"),
+        evidence_summary=_EVIDENCE_SUMMARY,
+        llm_client=mock_client,
+        denylist=_CREDENTIAL_URL_DENYLIST,
+        health_registry=registry,
+        object_store_client=_make_mock_store(),
+        triage_hash=_FAKE_TRIAGE_HASH,
+    )
+
+    # Credential URL fact removed; clean fact preserved
+    assert credential_url not in report.evidence_pack.facts
+    assert clean_fact in report.evidence_pack.facts
+
+
+async def test_llm_narrative_clean_output_passes_through_unchanged() -> None:
+    """Clean LLM output with no denied patterns passes through apply_denylist unchanged."""
+    registry = HealthRegistry()
+    clean_verdict = "Consumer lag caused by upstream producer stall in payments stream."
+    clean_fact = "Consumer group payments-consumer lag: 45000 messages."
+    mock_client = _make_mock_llm_client(
+        _make_llm_report_with_facts(clean_fact)
+    )
+
+    # Monkeypatch the verdict too by using a report with a clean verdict
+    clean_report = _make_llm_report_with_verdict(clean_verdict)
+    mock_client.invoke = AsyncMock(
+        return_value=DiagnosisReportV1(
+            verdict=clean_verdict,
+            confidence=clean_report.confidence,
+            evidence_pack=EvidencePack(
+                facts=(clean_fact,), missing_evidence=(), matched_rules=()
+            ),
+        )
+    )
+
+    report = await run_cold_path_diagnosis(
+        case_id="test-output-clean",
+        triage_excerpt=_make_eligible_excerpt("test-output-clean"),
+        evidence_summary=_EVIDENCE_SUMMARY,
+        llm_client=mock_client,
+        denylist=_BEARER_TOKEN_DENYLIST,
+        health_registry=registry,
+        object_store_client=_make_mock_store(),
+        triage_hash=_FAKE_TRIAGE_HASH,
+    )
+
+    assert report.verdict == clean_verdict
+    assert clean_fact in report.evidence_pack.facts
+
+
+async def test_llm_narrative_sanitization_uses_active_denylist() -> None:
+    """A non-empty denylist with Bearer pattern correctly removes matching content."""
+    registry = HealthRegistry()
+    # Use a denylist with a specific Bearer pattern — verify it's NOT the empty stub
+    active_denylist = DenylistV1(
+        denylist_version="v1.0.0",
+        denied_field_names=(),
+        denied_value_patterns=("(?i)bearer\\s+[A-Za-z0-9._+/=\\-]{10,}",),
+    )
+    assert active_denylist.denied_value_patterns, "Active denylist must have patterns"
+
+    dirty_fact = "Authorization: Bearer SecretToken12345abc"
+    clean_fact = "Consumer lag elevated: 45000 messages behind."
+    mock_client = _make_mock_llm_client(
+        DiagnosisReportV1(
+            verdict="CONSUMER_LAG_UPSTREAM_STALL",
+            confidence=DiagnosisConfidence.HIGH,
+            evidence_pack=EvidencePack(
+                facts=(dirty_fact, clean_fact), missing_evidence=(), matched_rules=()
+            ),
+        )
+    )
+
+    report = await run_cold_path_diagnosis(
+        case_id="test-active-denylist",
+        triage_excerpt=_make_eligible_excerpt("test-active-denylist"),
+        evidence_summary=_EVIDENCE_SUMMARY,
+        llm_client=mock_client,
+        denylist=active_denylist,
+        health_registry=registry,
+        object_store_client=_make_mock_store(),
+        triage_hash=_FAKE_TRIAGE_HASH,
+    )
+
+    assert dirty_fact not in report.evidence_pack.facts
+    assert clean_fact in report.evidence_pack.facts

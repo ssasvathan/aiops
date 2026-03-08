@@ -331,6 +331,21 @@ async def run_cold_path_diagnosis(
 
             # Validate LLM output shape first; only this branch maps to LLM_SCHEMA_INVALID.
             validated_llm_report = DiagnosisReportV1.model_validate(raw_report)
+
+            # Sanitize LLM narrative output through denylist before persisting (FR65, Story 7.5).
+            # Wrapped here so ValidationError from sanitization (e.g., required field denied)
+            # is also treated as LLM_SCHEMA_INVALID via the existing except below.
+            sanitized_report_dict = apply_denylist(
+                validated_llm_report.model_dump(mode="json"), denylist
+            )
+            # Reconstruct with triage_hash for hash chain (AC5)
+            report = DiagnosisReportV1.model_validate(
+                {
+                    **sanitized_report_dict,
+                    "triage_hash": triage_hash,
+                    "case_id": case_id,
+                }
+            )
         except pydantic.ValidationError:
             await health_registry.update(
                 "llm",
@@ -377,17 +392,8 @@ async def run_cold_path_diagnosis(
                 object_store_client=object_store_client,
             )
 
-        # Reconstruct with triage_hash for hash chain (AC5)
+        # Write diagnosis.json (AC4)
         try:
-            report = DiagnosisReportV1.model_validate(
-                {
-                    **validated_llm_report.model_dump(mode="json"),
-                    "triage_hash": triage_hash,
-                    "case_id": case_id,
-                }
-            )
-
-            # Write diagnosis.json (AC4)
             casefile_placeholder = CaseFileDiagnosisV1(
                 case_id=case_id,
                 diagnosis_report=report,

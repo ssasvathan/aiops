@@ -7,6 +7,24 @@ from typing import Literal
 from pydantic import BaseModel, Field, field_validator
 
 
+class DenylistChangelogEntry(BaseModel, frozen=True):
+    """A single audit entry in the denylist changelog.
+
+    Attributes:
+        version: The denylist_version this entry was created for
+        date: ISO date of the change (YYYY-MM-DD)
+        author: Git author or PR creator
+        reviewer: PR approver handle
+        summary: One-line summary of the change
+    """
+
+    version: str = Field(min_length=1)
+    date: str = Field(min_length=1)
+    author: str = Field(min_length=1)
+    reviewer: str = Field(min_length=1)
+    summary: str = Field(min_length=1)
+
+
 class DenylistV1(BaseModel, frozen=True):
     """Versioned exposure denylist loaded from config/denylist.yaml at startup.
 
@@ -23,6 +41,7 @@ class DenylistV1(BaseModel, frozen=True):
     denied_field_names: tuple[str, ...]
     denied_value_patterns: tuple[str, ...] = ()
     description: str = ""
+    changelog: tuple[DenylistChangelogEntry, ...] = ()
 
     @field_validator("denied_value_patterns")
     @classmethod
