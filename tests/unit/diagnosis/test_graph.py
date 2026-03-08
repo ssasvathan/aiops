@@ -6,9 +6,11 @@ import asyncio
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
+import httpx
+import pydantic
 
 from aiops_triage_pipeline.config.settings import AppEnv, IntegrationMode
+from aiops_triage_pipeline.contracts.diagnosis_report import DiagnosisReportV1
 from aiops_triage_pipeline.contracts.enums import CriticalityTier, Environment
 from aiops_triage_pipeline.contracts.triage_excerpt import TriageExcerptV1
 from aiops_triage_pipeline.denylist.loader import DenylistV1
@@ -59,6 +61,24 @@ def _make_eligible_excerpt(case_id: str = "test-001") -> TriageExcerptV1:
 
 def _make_mock_client() -> LLMClient:
     return LLMClient(mode=IntegrationMode.MOCK)
+
+
+def _make_validation_error() -> pydantic.ValidationError:
+    try:
+        DiagnosisReportV1.model_validate({})
+    except pydantic.ValidationError as error:
+        return error
+    raise AssertionError("Expected DiagnosisReportV1.model_validate({}) to raise ValidationError")
+
+
+def _make_http_status_error() -> httpx.HTTPStatusError:
+    request = httpx.Request("POST", "http://llm-base-url/diagnose")
+    response = httpx.Response(500, request=request)
+    return httpx.HTTPStatusError(
+        "500 Internal Server Error",
+        request=request,
+        response=response,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -283,7 +303,121 @@ async def test_timeout_enforced_at_graph_invocation() -> None:
 
 
 async def test_timeout_raises_asyncio_timeout_error() -> None:
-    """asyncio.wait_for raises TimeoutError when timeout elapses."""
+    """asyncio.wait_for timeout → fallback LLM_TIMEOUT returned, registry DEGRADED."""
+    registry = HealthRegistry()
+
+    async def slow_coroutine(*_args: object, **_kwargs: object) -> object:
+        await asyncio.sleep(10)
+        return {}
+
+    mock_client = MagicMock(spec=LLMClient)
+    mock_client.invoke = AsyncMock(side_effect=slow_coroutine)
+    mock_store = _make_mock_store()
+
+    report = await run_cold_path_diagnosis(
+        case_id="test-timeout-real",
+        triage_excerpt=_make_eligible_excerpt("test-timeout-real"),
+        evidence_summary=_EVIDENCE_SUMMARY,
+        llm_client=mock_client,
+        denylist=_EMPTY_DENYLIST,
+        health_registry=registry,
+        object_store_client=mock_store,
+        triage_hash=_FAKE_TRIAGE_HASH,
+        timeout_seconds=0.01,
+    )
+
+    assert report.reason_codes == ("LLM_TIMEOUT",)
+    assert report.triage_hash == _FAKE_TRIAGE_HASH
+    assert registry.get("llm") == HealthStatus.DEGRADED
+    mock_store.put_if_absent.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# run_cold_path_diagnosis — inflight gauge balance
+# ---------------------------------------------------------------------------
+
+
+async def test_inflight_gauge_balanced_on_failure() -> None:
+    """llm_inflight_add(-1) called in finally even when invocation fails (fallback returned)."""
+    registry = HealthRegistry()
+    mock_client = MagicMock(spec=LLMClient)
+    mock_client.invoke = AsyncMock(side_effect=RuntimeError("llm exploded"))
+
+    with patch(
+        "aiops_triage_pipeline.diagnosis.graph.llm_inflight_add",
+    ) as mock_gauge:
+        report = await run_cold_path_diagnosis(
+            case_id="test-gauge-balance",
+            triage_excerpt=_make_eligible_excerpt("test-gauge-balance"),
+            evidence_summary=_EVIDENCE_SUMMARY,
+            llm_client=mock_client,
+            denylist=_EMPTY_DENYLIST,
+            health_registry=registry,
+            object_store_client=_make_mock_store(),
+            triage_hash=_FAKE_TRIAGE_HASH,
+        )
+
+    # RuntimeError caught by except Exception → LLM_ERROR fallback returned
+    assert report.reason_codes == ("LLM_ERROR",)
+    # +1 on entry, -1 in finally — always balanced
+    assert mock_gauge.call_count == 2
+    assert mock_gauge.call_args_list[0][0][0] == 1
+    assert mock_gauge.call_args_list[1][0][0] == -1
+
+
+async def test_health_registry_degraded_on_generic_exception() -> None:
+    """HealthRegistry 'llm' → DEGRADED when invocation raises — fallback returned, not raised."""
+    registry = HealthRegistry()
+    mock_client = MagicMock(spec=LLMClient)
+    mock_client.invoke = AsyncMock(side_effect=RuntimeError("unexpected llm error"))
+
+    report = await run_cold_path_diagnosis(
+        case_id="test-degraded-generic",
+        triage_excerpt=_make_eligible_excerpt("test-degraded-generic"),
+        evidence_summary=_EVIDENCE_SUMMARY,
+        llm_client=mock_client,
+        denylist=_EMPTY_DENYLIST,
+        health_registry=registry,
+        object_store_client=_make_mock_store(),
+        triage_hash=_FAKE_TRIAGE_HASH,
+    )
+
+    assert report.reason_codes == ("LLM_ERROR",)
+    assert registry.get("llm") == HealthStatus.DEGRADED
+
+
+async def test_timeout_fallback_writes_diagnosis_json() -> None:
+    """Timeout fallback writes diagnosis.json and returns LLM_TIMEOUT reason code."""
+    registry = HealthRegistry()
+    mock_store = _make_mock_store()
+
+    async def slow_coroutine(*_args: object, **_kwargs: object) -> object:
+        await asyncio.sleep(10)
+        return {}
+
+    mock_client = MagicMock(spec=LLMClient)
+    mock_client.invoke = AsyncMock(side_effect=slow_coroutine)
+
+    report = await run_cold_path_diagnosis(
+        case_id="test-timeout-fallback-write",
+        triage_excerpt=_make_eligible_excerpt("test-timeout-fallback-write"),
+        evidence_summary=_EVIDENCE_SUMMARY,
+        llm_client=mock_client,
+        denylist=_EMPTY_DENYLIST,
+        health_registry=registry,
+        object_store_client=mock_store,
+        triage_hash=_FAKE_TRIAGE_HASH,
+        timeout_seconds=0.01,
+    )
+
+    assert report.reason_codes == ("LLM_TIMEOUT",)
+    mock_store.put_if_absent.assert_called_once()
+    call_kwargs = mock_store.put_if_absent.call_args.kwargs
+    assert "diagnosis.json" in call_kwargs["key"]
+
+
+async def test_timeout_fallback_has_triage_hash() -> None:
+    """Timeout fallback populates triage_hash."""
     registry = HealthRegistry()
 
     async def slow_coroutine(*_args: object, **_kwargs: object) -> object:
@@ -293,76 +427,172 @@ async def test_timeout_raises_asyncio_timeout_error() -> None:
     mock_client = MagicMock(spec=LLMClient)
     mock_client.invoke = AsyncMock(side_effect=slow_coroutine)
 
-    try:
-        await run_cold_path_diagnosis(
-            case_id="test-timeout-real",
-            triage_excerpt=_make_eligible_excerpt("test-timeout-real"),
-            evidence_summary=_EVIDENCE_SUMMARY,
-            llm_client=mock_client,
-            denylist=_EMPTY_DENYLIST,
-            health_registry=registry,
-            object_store_client=_make_mock_store(),
-            triage_hash=_FAKE_TRIAGE_HASH,
-            timeout_seconds=0.01,
-        )
-        assert False, "Expected TimeoutError"
-    except asyncio.TimeoutError:
-        pass
+    report = await run_cold_path_diagnosis(
+        case_id="test-timeout-fallback-hash",
+        triage_excerpt=_make_eligible_excerpt("test-timeout-fallback-hash"),
+        evidence_summary=_EVIDENCE_SUMMARY,
+        llm_client=mock_client,
+        denylist=_EMPTY_DENYLIST,
+        health_registry=registry,
+        object_store_client=_make_mock_store(),
+        triage_hash=_FAKE_TRIAGE_HASH,
+        timeout_seconds=0.01,
+    )
 
-    assert registry.get("llm") == HealthStatus.DEGRADED
+    assert report.reason_codes == ("LLM_TIMEOUT",)
+    assert report.triage_hash == _FAKE_TRIAGE_HASH
 
 
-# ---------------------------------------------------------------------------
-# run_cold_path_diagnosis — inflight gauge balance
-# ---------------------------------------------------------------------------
-
-
-async def test_inflight_gauge_balanced_on_failure() -> None:
-    """llm_inflight_add(-1) is called in finally even when invocation fails."""
+async def test_schema_validation_error_returns_schema_invalid_fallback() -> None:
+    """ValidationError from LLM output maps to LLM_SCHEMA_INVALID and schema gap message."""
     registry = HealthRegistry()
     mock_client = MagicMock(spec=LLMClient)
-    mock_client.invoke = AsyncMock(side_effect=RuntimeError("llm exploded"))
+    mock_client.invoke = AsyncMock(side_effect=_make_validation_error())
+
+    report = await run_cold_path_diagnosis(
+        case_id="test-schema-invalid",
+        triage_excerpt=_make_eligible_excerpt("test-schema-invalid"),
+        evidence_summary=_EVIDENCE_SUMMARY,
+        llm_client=mock_client,
+        denylist=_EMPTY_DENYLIST,
+        health_registry=registry,
+        object_store_client=_make_mock_store(),
+        triage_hash=_FAKE_TRIAGE_HASH,
+    )
+
+    assert report.reason_codes == ("LLM_SCHEMA_INVALID",)
+    assert report.gaps == ("LLM output failed schema validation",)
+
+
+async def test_schema_validation_error_writes_diagnosis_json() -> None:
+    """ValidationError fallback persists diagnosis.json."""
+    registry = HealthRegistry()
+    mock_store = _make_mock_store()
+    mock_client = MagicMock(spec=LLMClient)
+    mock_client.invoke = AsyncMock(side_effect=_make_validation_error())
+
+    await run_cold_path_diagnosis(
+        case_id="test-schema-invalid-write",
+        triage_excerpt=_make_eligible_excerpt("test-schema-invalid-write"),
+        evidence_summary=_EVIDENCE_SUMMARY,
+        llm_client=mock_client,
+        denylist=_EMPTY_DENYLIST,
+        health_registry=registry,
+        object_store_client=mock_store,
+        triage_hash=_FAKE_TRIAGE_HASH,
+    )
+
+    mock_store.put_if_absent.assert_called_once()
+
+
+async def test_connect_error_returns_unavailable_fallback() -> None:
+    """ConnectError maps to LLM_UNAVAILABLE fallback."""
+    registry = HealthRegistry()
+    mock_client = MagicMock(spec=LLMClient)
+    mock_client.invoke = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+
+    report = await run_cold_path_diagnosis(
+        case_id="test-connect-error",
+        triage_excerpt=_make_eligible_excerpt("test-connect-error"),
+        evidence_summary=_EVIDENCE_SUMMARY,
+        llm_client=mock_client,
+        denylist=_EMPTY_DENYLIST,
+        health_registry=registry,
+        object_store_client=_make_mock_store(),
+        triage_hash=_FAKE_TRIAGE_HASH,
+    )
+
+    assert report.reason_codes == ("LLM_UNAVAILABLE",)
+
+
+async def test_connect_error_writes_diagnosis_json() -> None:
+    """ConnectError fallback persists diagnosis.json."""
+    registry = HealthRegistry()
+    mock_store = _make_mock_store()
+    mock_client = MagicMock(spec=LLMClient)
+    mock_client.invoke = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+
+    await run_cold_path_diagnosis(
+        case_id="test-connect-error-write",
+        triage_excerpt=_make_eligible_excerpt("test-connect-error-write"),
+        evidence_summary=_EVIDENCE_SUMMARY,
+        llm_client=mock_client,
+        denylist=_EMPTY_DENYLIST,
+        health_registry=registry,
+        object_store_client=mock_store,
+        triage_hash=_FAKE_TRIAGE_HASH,
+    )
+
+    mock_store.put_if_absent.assert_called_once()
+
+
+async def test_http_error_returns_llm_error_fallback() -> None:
+    """HTTPStatusError maps to generic LLM_ERROR fallback."""
+    registry = HealthRegistry()
+    mock_client = MagicMock(spec=LLMClient)
+    mock_client.invoke = AsyncMock(side_effect=_make_http_status_error())
+
+    report = await run_cold_path_diagnosis(
+        case_id="test-http-error",
+        triage_excerpt=_make_eligible_excerpt("test-http-error"),
+        evidence_summary=_EVIDENCE_SUMMARY,
+        llm_client=mock_client,
+        denylist=_EMPTY_DENYLIST,
+        health_registry=registry,
+        object_store_client=_make_mock_store(),
+        triage_hash=_FAKE_TRIAGE_HASH,
+    )
+
+    assert report.reason_codes == ("LLM_ERROR",)
+
+
+async def test_no_retry_on_timeout() -> None:
+    """Timeout path invokes asyncio.wait_for exactly once (no retry in same cycle)."""
+    registry = HealthRegistry()
+
+    async def _raise_timeout(awaitable: object, *, timeout: float) -> object:
+        if hasattr(awaitable, "close"):
+            awaitable.close()
+        raise asyncio.TimeoutError
 
     with patch(
-        "aiops_triage_pipeline.diagnosis.graph.llm_inflight_add",
-    ) as mock_gauge:
-        with pytest.raises(RuntimeError, match="llm exploded"):
-            await run_cold_path_diagnosis(
-                case_id="test-gauge-balance",
-                triage_excerpt=_make_eligible_excerpt("test-gauge-balance"),
-                evidence_summary=_EVIDENCE_SUMMARY,
-                llm_client=mock_client,
-                denylist=_EMPTY_DENYLIST,
-                health_registry=registry,
-                object_store_client=_make_mock_store(),
-                triage_hash=_FAKE_TRIAGE_HASH,
-            )
-
-    # +1 on entry, -1 in finally — always balanced regardless of exception
-    assert mock_gauge.call_count == 2
-    assert mock_gauge.call_args_list[0][0][0] == 1
-    assert mock_gauge.call_args_list[1][0][0] == -1
-
-
-async def test_health_registry_degraded_on_generic_exception() -> None:
-    """HealthRegistry 'llm' → DEGRADED when invocation raises a non-timeout exception."""
-    registry = HealthRegistry()
-    mock_client = MagicMock(spec=LLMClient)
-    mock_client.invoke = AsyncMock(side_effect=RuntimeError("unexpected llm error"))
-
-    with pytest.raises(RuntimeError, match="unexpected llm error"):
-        await run_cold_path_diagnosis(
-            case_id="test-degraded-generic",
-            triage_excerpt=_make_eligible_excerpt("test-degraded-generic"),
+        "aiops_triage_pipeline.diagnosis.graph.asyncio.wait_for",
+        side_effect=_raise_timeout,
+    ) as mock_wait_for:
+        report = await run_cold_path_diagnosis(
+            case_id="test-no-retry-timeout",
+            triage_excerpt=_make_eligible_excerpt("test-no-retry-timeout"),
             evidence_summary=_EVIDENCE_SUMMARY,
-            llm_client=mock_client,
+            llm_client=_make_mock_client(),
             denylist=_EMPTY_DENYLIST,
             health_registry=registry,
             object_store_client=_make_mock_store(),
             triage_hash=_FAKE_TRIAGE_HASH,
         )
 
-    assert registry.get("llm") == HealthStatus.DEGRADED
+    assert report.reason_codes == ("LLM_TIMEOUT",)
+    mock_wait_for.assert_called_once()
+
+
+async def test_fallback_report_is_schema_valid() -> None:
+    """Fallback report can be re-validated by DiagnosisReportV1 schema without errors."""
+    registry = HealthRegistry()
+    mock_client = MagicMock(spec=LLMClient)
+    mock_client.invoke = AsyncMock(side_effect=httpx.ConnectError("Connection refused"))
+
+    report = await run_cold_path_diagnosis(
+        case_id="test-fallback-schema-valid",
+        triage_excerpt=_make_eligible_excerpt("test-fallback-schema-valid"),
+        evidence_summary=_EVIDENCE_SUMMARY,
+        llm_client=mock_client,
+        denylist=_EMPTY_DENYLIST,
+        health_registry=registry,
+        object_store_client=_make_mock_store(),
+        triage_hash=_FAKE_TRIAGE_HASH,
+    )
+
+    validated = DiagnosisReportV1.model_validate(report.model_dump(mode="json"))
+    assert validated.reason_codes == ("LLM_UNAVAILABLE",)
 
 
 # ---------------------------------------------------------------------------

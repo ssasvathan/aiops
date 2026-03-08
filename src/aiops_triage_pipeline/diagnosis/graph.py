@@ -2,6 +2,9 @@
 
 Story 6.3 additions: structured prompt construction via diagnosis/prompt.py, triage_hash
 hash chain injection, diagnosis.json write-once persistence after successful LLM response.
+Story 6.4 additions: targeted exception handling per failure scenario (timeout,
+schema-invalid, unavailable, error), fallback DiagnosisReport written to
+diagnosis.json for all failure paths.
 """
 
 from __future__ import annotations
@@ -9,6 +12,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any, TypedDict
 
+import httpx
+import pydantic
 from langgraph.graph import END, START, StateGraph
 
 from aiops_triage_pipeline.config.settings import AppEnv
@@ -17,6 +22,7 @@ from aiops_triage_pipeline.contracts.enums import CriticalityTier
 from aiops_triage_pipeline.contracts.triage_excerpt import TriageExcerptV1
 from aiops_triage_pipeline.denylist.enforcement import apply_denylist
 from aiops_triage_pipeline.denylist.loader import DenylistV1
+from aiops_triage_pipeline.diagnosis.fallback import build_fallback_report
 from aiops_triage_pipeline.diagnosis.prompt import build_llm_prompt
 from aiops_triage_pipeline.health.metrics import llm_inflight_add
 from aiops_triage_pipeline.health.registry import HealthRegistry
@@ -74,6 +80,50 @@ def meets_invocation_criteria(triage_excerpt: TriageExcerptV1, app_env: AppEnv) 
         and triage_excerpt.criticality_tier == CriticalityTier.TIER_0
         and triage_excerpt.sustained is True
     )
+
+
+def _make_and_persist_fallback(
+    *,
+    reason_codes: tuple[str, ...],
+    case_id: str,
+    triage_hash: str,
+    object_store_client: ObjectStoreClientProtocol,
+    gaps: tuple[str, ...] = (),
+) -> DiagnosisReportV1:
+    """Build fallback DiagnosisReportV1, inject triage_hash/gaps, and persist diagnosis.json."""
+    raw = build_fallback_report(reason_codes=reason_codes, case_id=case_id)
+    report = DiagnosisReportV1.model_validate(
+        {
+            **raw.model_dump(mode="json"),
+            "triage_hash": triage_hash,
+            "case_id": case_id,
+            "gaps": list(gaps),
+        }
+    )
+
+    casefile_placeholder = CaseFileDiagnosisV1(
+        case_id=case_id,
+        diagnosis_report=report,
+        triage_hash=triage_hash,
+        diagnosis_hash=DIAGNOSIS_HASH_PLACEHOLDER,
+    )
+    computed_hash = compute_casefile_diagnosis_hash(casefile_placeholder)
+    casefile = CaseFileDiagnosisV1(
+        case_id=case_id,
+        diagnosis_report=report,
+        triage_hash=triage_hash,
+        diagnosis_hash=computed_hash,
+    )
+    persist_casefile_diagnosis_write_once(
+        object_store_client=object_store_client,
+        casefile=casefile,
+    )
+    _logger.info(
+        "cold_path_fallback_diagnosis_json_written",
+        case_id=case_id,
+        reason_codes=reason_codes,
+    )
+    return report
 
 
 async def run_cold_path_diagnosis(
@@ -151,14 +201,51 @@ async def run_cold_path_diagnosis(
         await health_registry.update("llm", HealthStatus.HEALTHY)
         _logger.info("cold_path_diagnosis_completed", case_id=case_id)
         return report
-    except BaseException as exc:
+    except asyncio.TimeoutError:
+        await health_registry.update("llm", HealthStatus.DEGRADED, reason="cold_path_timeout")
+        _logger.warning("cold_path_diagnosis_failed", case_id=case_id, error_type="TimeoutError")
+        return _make_and_persist_fallback(
+            reason_codes=("LLM_TIMEOUT",),
+            case_id=case_id,
+            triage_hash=triage_hash,
+            object_store_client=object_store_client,
+        )
+    except pydantic.ValidationError:
+        await health_registry.update(
+            "llm",
+            HealthStatus.DEGRADED,
+            reason="cold_path_schema_invalid",
+        )
+        _logger.warning("cold_path_diagnosis_failed", case_id=case_id, error_type="ValidationError")
+        return _make_and_persist_fallback(
+            reason_codes=("LLM_SCHEMA_INVALID",),
+            case_id=case_id,
+            triage_hash=triage_hash,
+            object_store_client=object_store_client,
+            gaps=("LLM output failed schema validation",),
+        )
+    except httpx.ConnectError:
+        await health_registry.update("llm", HealthStatus.DEGRADED, reason="cold_path_unavailable")
+        _logger.warning("cold_path_diagnosis_failed", case_id=case_id, error_type="ConnectError")
+        return _make_and_persist_fallback(
+            reason_codes=("LLM_UNAVAILABLE",),
+            case_id=case_id,
+            triage_hash=triage_hash,
+            object_store_client=object_store_client,
+        )
+    except Exception as exc:
         await health_registry.update(
             "llm", HealthStatus.DEGRADED, reason="cold_path_invocation_failed"
         )
         _logger.warning(
             "cold_path_diagnosis_failed", case_id=case_id, error_type=type(exc).__name__
         )
-        raise
+        return _make_and_persist_fallback(
+            reason_codes=("LLM_ERROR",),
+            case_id=case_id,
+            triage_hash=triage_hash,
+            object_store_client=object_store_client,
+        )
     finally:
         llm_inflight_add(-1)
 
