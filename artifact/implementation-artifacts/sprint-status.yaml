@@ -100,9 +100,9 @@ development_status:
   7-5-exposure-denylist-governance-and-llm-narrative-compliance: done
   7-6-case-labeling-schema-and-mi-1-posture-enforcement: done
   epic-7-retrospective: done
-  epic-8: in-progress
+  epic-8: done
   8-1-tiered-servicenow-incident-correlation: done
   8-2-idempotent-problem-and-pir-task-upsert: done
   8-3-sn-linkage-retry-and-state-machine: done
   8-4-sn-correlation-fallback-rate-metrics: done
-  epic-8-retrospective: optional
+  epic-8-retrospective: done

@@ -44,15 +44,25 @@ It verifies Kafka topics, Postgres, Redis, MinIO bucket, Prometheus, and harness
 Use local config:
 
 ```bash
-APP_ENV=local uv run python -m aiops_triage_pipeline --mode hot-path
-APP_ENV=local uv run python -m aiops_triage_pipeline --mode cold-path
+# Outbox publisher — polls outbox table for READY records and publishes to Kafka
 APP_ENV=local uv run python -m aiops_triage_pipeline --mode outbox-publisher
+
+# Casefile lifecycle worker — applies retention policy and purges expired CaseFiles
+APP_ENV=local uv run python -m aiops_triage_pipeline --mode casefile-lifecycle
+
+# Single-iteration variants (run once and exit)
+APP_ENV=local uv run python -m aiops_triage_pipeline --mode outbox-publisher --once
+APP_ENV=local uv run python -m aiops_triage_pipeline --mode casefile-lifecycle --once
 ```
 
-Current behavior note:
+Runtime mode status:
 
-- `__main__.py` currently prints the selected mode and exits.
-- Full mode-specific runtime execution is being implemented incrementally.
+| Mode | Status | Notes |
+|------|--------|-------|
+| `outbox-publisher` | Fully wired | Runs `OutboxPublisherWorker` with policy, denylist, and alert evaluation |
+| `casefile-lifecycle` | Fully wired | Runs `CasefileLifecycleRunner` against object storage |
+| `hot-path` | Bootstrap only | Loads settings, OTLP, and alert policy; runtime scheduler loop uses dedicated orchestration entrypoint |
+| `cold-path` | Bootstrap only | Same bootstrap; cold-path invocation uses dedicated entrypoint |
 
 ## Environment Configuration
 
@@ -64,19 +74,16 @@ Current behavior note:
 - `config/.env.prod.template`
 - `config/.env.docker`
 
-Integration modes (default-safe):
+Integration safety modes (default-safe):
 
-- `INTEGRATION_MODE_PD`
-- `INTEGRATION_MODE_SLACK`
-- `INTEGRATION_MODE_SN`
-- `INTEGRATION_MODE_LLM`
+| Variable | Integration |
+|----------|------------|
+| `INTEGRATION_MODE_PD` | PagerDuty Events V2 |
+| `INTEGRATION_MODE_SLACK` | Slack incoming webhook |
+| `INTEGRATION_MODE_SN` | ServiceNow table API |
+| `INTEGRATION_MODE_LLM` | LLM provider (LangGraph) |
 
-Allowed values:
-
-- `OFF`
-- `LOG`
-- `MOCK`
-- `LIVE`
+Allowed values for each: `OFF` (disabled) | `LOG` (log only, no call) | `MOCK` (canned response) | `LIVE` (real call)
 
 ## Test Commands
 
@@ -110,7 +117,7 @@ uv run ruff check
 
 **Symptom:** Tests in `tests/integration/` (e.g. `test_degraded_modes.py`) error at setup with:
 
-```
+```text
 docker.errors.DockerException: Error while fetching server API version:
   ('Connection aborted.', FileNotFoundError(2, 'No such file or directory'))
 ```
@@ -150,8 +157,7 @@ run only the pure unit tests:
 uv run pytest -q tests/unit
 ```
 
----
+### Other Issues
 
-- If smoke tests fail immediately, ensure services are running:
-  - `docker compose ps`
-- If Python commands fail on env resolution, verify `APP_ENV` and matching `config/.env.<APP_ENV>` file.
+- If smoke tests fail immediately, ensure services are running: `docker compose ps`
+- If Python commands fail on env resolution, verify `APP_ENV` and the matching `config/.env.<APP_ENV>` file exists.

@@ -1,190 +1,86 @@
-# Architecture Overview
+# Architecture
 
-## Purpose
+## Executive Summary
 
-`aiops-triage-pipeline` is an event-driven backend system that ingests infrastructure telemetry, classifies anomalies, enriches context, and drives deterministic triage/action preparation.
+`aiops-triage-pipeline` is a Python backend service that processes telemetry-driven anomalies through deterministic pipeline stages, persists durable case artifacts, and publishes downstream event contracts through an outbox reliability boundary.
 
-## Runtime Topology
+## Technology Stack
 
-Core local/runtime dependencies:
+- Runtime: Python 3.13, asyncio
+- Data/modeling: Pydantic v2, pydantic-settings
+- Persistence: PostgreSQL (durable outbox + linkage retry state), Redis (caches), S3-compatible object store (casefile stages)
+- Messaging: Kafka via confluent-kafka
+- Observability: OpenTelemetry + OTLP, Prometheus metrics ingestion
+- Tooling: uv, pytest, testcontainers, ruff, Docker/Compose
 
-- Prometheus (telemetry source)
-- Kafka + ZooKeeper (event transport)
-- Postgres (durable outbox state)
-- Redis (cache and dedupe)
-- S3-compatible object storage (MinIO locally)
+## Architecture Pattern
 
-Application runtime modes:
+- Primary style: layered backend service with event-driven pipeline core.
+- Reliability style: durable outbox + source-state-guarded SQL transitions.
+- Integration style: adapter modules with explicit runtime safety modes (`OFF|LOG|MOCK|LIVE`).
 
-- `hot-path`
-- `cold-path`
-- `outbox-publisher`
+## Data Architecture
 
-## Pipeline Shape
+### Durable SQL entities
 
-Hot path:
+- `outbox` table: tracks `PENDING_OBJECT -> READY -> SENT/RETRY/DEAD` lifecycle for Kafka publication.
+- `sn_linkage_retry` table: tracks ServiceNow linkage attempt state and retry windows.
 
-1. Evidence collection
-2. Peak/sustained classification
-3. Topology resolution and routing context
-4. CaseFile triage assembly
-5. Outbox staging
-6. Gating input/action assembly
-7. Dispatch integration handling
+### Object-storage entities
 
-Parallel paths:
+- Stage JSON payloads under `cases/<case_id>/<stage>.json`
+- Stage models: `CaseFileTriageV1`, `CaseFileDiagnosisV1`, `CaseFileLinkageV1`, `CaseFileLabelsV1`
+- Hash and write-once checks enforce idempotent persistence invariants.
 
-- Cold path: diagnosis enrichment and fallback behavior
-- Outbox publisher: publishes from durable outbox state
+## API Design
 
-## Package Boundaries
+### Inbound
 
-| Package | Responsibility |
-|---|---|
-| `pipeline/` | Scheduler and stage orchestration |
-| `registry/` | Topology loader, resolver, ownership routing, legacy compat views |
-| `contracts/` | Frozen v1 contracts and policy models |
-| `outbox/` | Outbox schema/state machine/publisher |
-| `diagnosis/` | Cold-path diagnosis orchestration and deterministic fallback |
-| `storage/` | CaseFile I/O and serialization helpers |
-| `cache/` | Evidence/peak/dedupe cache operations |
-| `integrations/` | External adapter boundaries and mode control |
-| `health/` | Component health tracking and telemetry exports |
-| `denylist/` | Shared denylist load/enforcement |
-| `logging/` | Structured logging setup |
+- Lightweight HTTP health endpoint from `health/server.py` (returns registry status map).
 
-## Design Invariants
+### Outbound
 
-- Deterministic behavior is preferred over implicit defaults in safety-critical paths.
-- Topology lookups are in-memory and scope-aware.
-- Outbox-mediated publishing is the durability path.
-- Cross-boundary data shaping uses shared denylist enforcement.
-- Contract models are frozen and validated at boundaries.
+- Prometheus instant query API (`/api/v1/query`)
+- PagerDuty Events V2 trigger API
+- Slack incoming webhook API
+- ServiceNow table API (`GET/POST/PATCH`)
+- Kafka topic publication (`aiops-case-header`, `aiops-triage-excerpt`)
 
-## Cold-Path / Hot-Path Handoff Contract
+## Component Overview
 
-The cold-path (LLM diagnosis) and hot-path (triage, gating, action execution) are strictly decoupled. This section defines their integration boundary, the non-blocking guarantee, the handoff artifact schema, and fallback posture.
+- `pipeline/stages/`: stage computation and gating decisions
+- `outbox/`: durable publish sequencing and worker
+- `linkage/`: ServiceNow retry state and transition safety
+- `storage/`: casefile serialization, validation, object-store writes
+- `integrations/`: external side-effect boundaries
+- `contracts/` + `models/`: frozen interfaces and domain payloads
+- `health/`: status registry, alerts, metrics export setup
 
-### Non-Blocking Guarantee
+## Source Tree (Annotated)
 
-The hot-path pipeline completes entirely without waiting on LLM diagnosis. The sequence is:
+- `src/aiops_triage_pipeline/__main__.py` - runtime mode dispatch
+- `src/aiops_triage_pipeline/pipeline/scheduler.py` - hot-path orchestration
+- `src/aiops_triage_pipeline/pipeline/stages/*` - deterministic stage modules
+- `src/aiops_triage_pipeline/outbox/*` - durable outbox state machine and repository
+- `src/aiops_triage_pipeline/linkage/*` - ServiceNow retry state machine + persistence
+- `src/aiops_triage_pipeline/storage/*` - write-once casefile persistence
 
-1. Hot-path stages complete: evidence collection → classification → topology resolution → CaseFile triage write (Invariant A) → outbox publish (Invariant B2) → Rulebook gating → action execution.
-2. After hot-path completion, a fire-and-forget async LangGraph task is spawned for eligible cases.
-3. Hot-path latency is never affected by LLM availability, LLM response time, or cold-path failures (FR66).
+## Development Workflow
 
-```mermaid
-sequenceDiagram
-    participant HP as Hot-Path
-    participant CP as Cold-Path (LangGraph)
-    participant OS as Object Storage
-    participant HR as HealthRegistry
+1. Sync deps (`uv sync --dev`)
+2. Start local infra (`docker compose up -d --build`)
+3. Validate stack (`bash scripts/smoke-test.sh`)
+4. Run tests (unit/integration/full with Docker-backed path)
+5. Lint (`uv run ruff check`)
 
-    HP->>OS: Write triage.json (Invariant A)
-    HP->>HP: Outbox publish → Kafka (Invariant B2)
-    HP->>HP: Rulebook gating → action execution
-    HP-->>CP: fire-and-forget (async, no await)
-    HP->>HP: ← returns immediately
+## Deployment Architecture
 
-    CP->>HR: register in-flight gauge
-    CP->>CP: LLM invocation (≤ 60 s timeout)
-    CP->>OS: Write diagnosis.json
-    CP->>HR: update component status
-```
+- Containerized runtime via multi-stage Dockerfile.
+- Local deployment topology via compose services: Kafka, Postgres, Redis, MinIO, Prometheus, harness, app.
+- Runtime configuration and policy behavior controlled by `config/.env.*` + `config/policies/*.yaml`.
 
-### Invocation Criteria
+## Testing Strategy
 
-LLM diagnosis is conditionally invoked. All three criteria must hold:
-
-| Criterion | Required value |
-|---|---|
-| Environment | `PROD` |
-| Topology tier | `TIER_0` |
-| Sustained state | `True` |
-
-Cases not meeting these criteria skip LLM diagnosis entirely. No `diagnosis.json` is written for ineligible cases. Absence of the file signals the case was not eligible — not an error.
-
-### LLM Input Bounds
-
-The cold-path task receives:
-
-- `TriageExcerpt.v1` (already published to Kafka by the outbox publisher)
-- A structured evidence summary bounded by a deployment-configured token budget
-
-The cold-path task MUST NOT receive raw logs, the full CaseFile, or any field that violates the exposure denylist. The denylist is applied to all LLM inputs before invocation (NFR-S8). LLM endpoints must be bank-sanctioned (NFR-S8). No retry occurs within the same evaluation cycle (NFR-P4).
-
-The fire-and-forget task registers with `HealthRegistry` with an in-flight gauge metric so LLM concurrency and failure state are observable.
-
-### Handoff Artifact
-
-The cold-path writes its result to object storage as a write-once stage file:
-
-```text
-cases/{case_id}/diagnosis.json
-```
-
-The file follows the standard [SchemaEnvelope](schema-evolution-strategy.md) pattern:
-
-| Envelope field | Value |
-|---|---|
-| `schema_name` | `"DiagnosisReport"` |
-| `schema_version` | `"v1"` |
-| `producer` | `"cold-path-llm-diagnosis"` or `"cold-path-fallback"` |
-| `payload` | `DiagnosisReportV1` (see below) |
-
-`DiagnosisReportV1` fields (`contracts/diagnosis_report.py`):
-
-| Field | Type | Description |
-|---|---|---|
-| `schema_version` | `Literal["v1"]` | Schema discriminator |
-| `case_id` | `str \| None` | Matches hot-path `case_id`; `None` in fallback |
-| `verdict` | `str` | LLM verdict or `"UNKNOWN"` for fallback |
-| `fault_domain` | `str \| None` | Identified fault domain; `None` when verdict is `UNKNOWN` |
-| `confidence` | `DiagnosisConfidence` | `LOW`, `MEDIUM`, or `HIGH` |
-| `evidence_pack` | `EvidencePack` | `facts`, `missing_evidence`, `matched_rules` |
-| `next_checks` | `tuple[str, ...]` | Recommended follow-up checks |
-| `gaps` | `tuple[str, ...]` | Evidence gaps identified |
-| `reason_codes` | `tuple[str, ...]` | Failure codes; see fallback table below |
-| `triage_hash` | `str \| None` | SHA-256 of `triage.json` (hash chain) |
-
-`diagnosis.json` includes the SHA-256 hash of `triage.json`, maintaining the CaseFile hash integrity chain (FR19).
-
-### Fallback Posture
-
-When LLM is absent, slow, or produces invalid output, the cold-path emits a deterministic schema-valid fallback `DiagnosisReportV1` and writes it to `diagnosis.json`. Every qualifying case receives a `diagnosis.json` regardless of LLM outcome.
-
-| Failure scenario | `reason_codes` | `verdict` | `confidence` |
-|---|---|---|---|
-| LLM unavailable / connection refused | `[LLM_UNAVAILABLE]` | `"UNKNOWN"` | `LOW` |
-| LLM timeout (> 60 s) | `[LLM_TIMEOUT]` | `"UNKNOWN"` | `LOW` |
-| LLM returned an error response | `[LLM_ERROR]` | `"UNKNOWN"` | `LOW` |
-| LLM output failed schema validation | `[LLM_SCHEMA_INVALID]` | `"UNKNOWN"` | `LOW` |
-| Stub / test mode active | `[LLM_STUB]` | `"UNKNOWN"` | `LOW` |
-
-`HealthRegistry` is updated with LLM component status on failure and recovery.
-
-### Boundary Rules
-
-**The hot-path MUST NOT:**
-
-- Await cold-path task completion before returning.
-- Read `diagnosis.json` or any cold-path artifact during triage, gating, or action execution.
-- Gate any action on the presence or absence of a `DiagnosisReport`.
-
-**The cold-path MUST NOT:**
-
-- Modify `triage.json` or any prior hot-path stage file.
-- Publish to Kafka or the outbox.
-- Block or delay hot-path progression.
-
-## Current Implementation Notes
-
-- Epic 1 through Epic 3 scope is implemented and marked done in sprint tracking.
-- Epic 4 is in progress; `pipeline/stages/casefile.py`, `storage/casefile_io.py`, and `models/case_file.py` are currently placeholders and expected to fill in as Epic 4 advances.
-- `src/aiops_triage_pipeline/__main__.py` currently parses mode and prints startup mode; full wiring is incremental.
-
-## Related Docs
-
-- [Contracts](contracts.md)
-- [Local Development](local-development.md)
-- [Schema Evolution Strategy](schema-evolution-strategy.md)
+- Unit tests validate contracts, stage behavior, repositories, and integration adapters.
+- Integration tests validate end-to-end and dependency-backed flows.
+- Preferred full regression command enforces Docker-backed integration execution with no skips.
