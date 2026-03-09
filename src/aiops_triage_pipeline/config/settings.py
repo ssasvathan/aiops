@@ -92,6 +92,11 @@ class Settings(BaseSettings):
     CASEFILE_RETENTION_GOVERNANCE_APPROVAL: str | None = None
 
     # OTLP metrics export
+    # Hot-path scheduler
+    PROMETHEUS_URL: str = "http://localhost:9090"
+    HOT_PATH_SCHEDULER_INTERVAL_SECONDS: int = 300
+    TOPOLOGY_REGISTRY_PATH: str | None = None
+
     OTLP_METRICS_ENDPOINT: str | None = None
     OTLP_METRICS_PROTOCOL: str = "http/protobuf"  # allowed: "http/protobuf", "grpc"
     OTLP_METRICS_HEADERS: str | None = None
@@ -147,6 +152,8 @@ class Settings(BaseSettings):
             raise ValueError(
                 "OTLP_METRICS_PROTOCOL must be 'http/protobuf' or 'grpc'"
             )
+        if self.HOT_PATH_SCHEDULER_INTERVAL_SECONDS <= 0:
+            raise ValueError("HOT_PATH_SCHEDULER_INTERVAL_SECONDS must be > 0")
         if self.OTLP_METRICS_EXPORT_INTERVAL_MILLIS <= 0:
             raise ValueError("OTLP_METRICS_EXPORT_INTERVAL_MILLIS must be > 0")
         if self.OTLP_METRICS_TIMEOUT_MILLIS <= 0:
@@ -182,6 +189,9 @@ class Settings(BaseSettings):
             CASEFILE_LIFECYCLE_DELETE_BATCH_SIZE=self.CASEFILE_LIFECYCLE_DELETE_BATCH_SIZE,
             CASEFILE_LIFECYCLE_LIST_PAGE_SIZE=self.CASEFILE_LIFECYCLE_LIST_PAGE_SIZE,
             CASEFILE_RETENTION_GOVERNANCE_APPROVAL=self.CASEFILE_RETENTION_GOVERNANCE_APPROVAL,
+            PROMETHEUS_URL=self.PROMETHEUS_URL,
+            HOT_PATH_SCHEDULER_INTERVAL_SECONDS=self.HOT_PATH_SCHEDULER_INTERVAL_SECONDS,
+            TOPOLOGY_REGISTRY_PATH=self.TOPOLOGY_REGISTRY_PATH or "[NOT SET]",
             OTLP_METRICS_ENDPOINT=self.OTLP_METRICS_ENDPOINT or "[NOT SET]",
             OTLP_METRICS_PROTOCOL=self.OTLP_METRICS_PROTOCOL,
             OTLP_METRICS_HEADERS=(
