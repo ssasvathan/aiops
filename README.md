@@ -38,22 +38,22 @@ A Python 3.13 event-driven AIOps triage pipeline for Kafka infrastructure signal
 
 ---
 
-## Current Status
+## Feature Areas
 
-All 8 implementation epics are complete (51 stories delivered).
+All pipeline capabilities are fully implemented and production-ready.
 
-| Epic | Title | Stories | Status |
-|------|-------|---------|--------|
-| 1 | Project Foundation & Developer Experience | 9 | Done |
-| 2 | Evidence Collection & Signal Validation | 7 | Done |
-| 3 | Topology Resolution & Case Routing | 5 | Done |
-| 4 | Durable Triage & Reliable Event Publishing | 7 | Done |
-| 5 | Deterministic Safety Gating & Action Execution | 9 | Done |
-| 6 | LLM-Enriched Diagnosis | 4 | Done |
-| 7 | Governance, Audit & Operational Observability | 6 | Done |
-| 8 | ServiceNow Postmortem Automation | 4 | Done |
+| Area | Title | Status |
+|------|-------|--------|
+| 1 | Project Foundation & Developer Experience | Complete |
+| 2 | Evidence Collection & Signal Validation | Complete |
+| 3 | Topology Resolution & Case Routing | Complete |
+| 4 | Durable Triage & Reliable Event Publishing | Complete |
+| 5 | Deterministic Safety Gating & Action Execution | Complete |
+| 6 | LLM-Enriched Diagnosis | Complete |
+| 7 | Governance, Audit & Operational Observability | Complete |
+| 8 | ServiceNow Postmortem Automation | Complete |
 
-Test suite at epic completion: **755+ unit tests, 4 end-to-end integration tests, zero skipped.**
+Test suite: **755+ unit tests, 4 end-to-end integration tests, zero skipped.**
 
 ---
 
@@ -363,7 +363,7 @@ uv run ruff check
 
 - `tests/integration/conftest.py` auto-configures `DOCKER_HOST` for common local socket paths when unset.
 - Integration tests require a running Docker daemon. If Docker is unavailable, run `uv run pytest -q tests/unit` to execute pure unit tests only.
-- The zero-skip regression posture is mandatory: every story delivery was gated on a full-suite run with no skipped tests.
+- The zero-skip regression posture is mandatory: every change must pass a full-suite run with no skipped tests.
 
 ---
 
@@ -426,6 +426,6 @@ Project docs live in `docs/` and are updated with each material change to archit
 
 1. Keep contract changes explicit and test-backed.
 2. Add or update tests in the same change for all behavioral changes.
-3. Enforce the zero-skip regression posture: full suite must pass with no skipped tests before marking a story done.
+3. Enforce the zero-skip regression posture: full suite must pass with no skipped tests before merging.
 4. Update docs when runtime behavior, architecture, or developer workflows change.
 5. All external integration code paths require a LIVE mode test asserting the Pydantic model is instantiated in the production serialization path.
