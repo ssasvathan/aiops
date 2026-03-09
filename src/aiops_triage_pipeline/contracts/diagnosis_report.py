@@ -26,4 +26,4 @@ class DiagnosisReportV1(BaseModel, frozen=True):
     next_checks: tuple[str, ...] = ()  # Recommended follow-up checks
     gaps: tuple[str, ...] = ()  # Evidence gaps identified
     reason_codes: tuple[str, ...] = ()  # LLM_UNAVAILABLE / LLM_TIMEOUT / LLM_ERROR / LLM_STUB
-    triage_hash: str | None = None  # SHA-256 of triage.json (hash chain, Story 6.2)
+    triage_hash: str | None = None  # SHA-256 of triage.json for audit hash chain

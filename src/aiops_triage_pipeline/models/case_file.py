@@ -1,4 +1,4 @@
-"""CaseFile triage-stage models for Story 4.1."""
+"""CaseFile triage-stage models."""
 
 from __future__ import annotations
 

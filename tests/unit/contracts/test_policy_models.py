@@ -1,4 +1,4 @@
-"""Unit tests for Story 1.3 policy contract models."""
+"""Unit tests for policy contract models."""
 
 from pathlib import Path
 

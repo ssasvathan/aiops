@@ -1,4 +1,4 @@
-"""Unit tests for audit.replay — reproduce_gate_decision() and build_audit_trail() (Story 7.4)."""
+"""Unit tests for audit.replay — reproduce_gate_decision() and build_audit_trail()."""
 
 from __future__ import annotations
 

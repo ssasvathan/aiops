@@ -25,7 +25,7 @@ def build_sustained_window_cache_key(identity_key: SustainedIdentityKey) -> str:
 
 
 def build_legacy_sustained_window_cache_key(identity_key: SustainedIdentityKey) -> str:
-    """Build legacy cache key used before Story 2.6 namespace alignment."""
+    """Build legacy cache key using the pre-namespace-alignment format."""
     return (
         f"evidence_window:{identity_key[0]}|{identity_key[1]}|"
         f"{identity_key[2]}|{identity_key[3]}"

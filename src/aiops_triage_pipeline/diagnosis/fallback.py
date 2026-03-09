@@ -11,7 +11,7 @@ def build_fallback_report(
     """Build a deterministic fallback DiagnosisReportV1 for LLM failure scenarios.
 
     Used by LLMClient in MOCK mode and all failure-injection scenarios.
-    triage_hash is intentionally None — hash chain populated in Story 6.3.
+    triage_hash is intentionally None — hash chain is populated by the cold-path diagnosis stage.
     """
     return DiagnosisReportV1(
         case_id=case_id,

@@ -10,8 +10,8 @@ class DegradedModeEvent(BaseModel, frozen=True):
     """Emitted when a component transitions to DEGRADED or UNAVAILABLE state.
 
     Used by:
-    - Story 5.5: Redis unavailability → capped to NOTIFY-only
-    - Future stories: any DegradableError handler
+    - Redis unavailability: action is capped to NOTIFY-only
+    - Any DegradableError handler that transitions a component to degraded state
 
     Attributes:
         affected_scope: Component or subsystem that degraded (e.g., "redis", "llm")
@@ -32,7 +32,7 @@ class TelemetryDegradedEvent(BaseModel, frozen=True):
     """Emitted when Prometheus becomes totally unavailable (FR67a).
 
     Used by:
-    - Story 2.7: Prometheus unavailability detection
+    - Prometheus unavailability detection
 
     Attributes:
         affected_scope: Always "prometheus" for this event type
@@ -54,7 +54,7 @@ class NotificationEvent(BaseModel, frozen=True):
     """Emitted (as a structured log event) when a postmortem obligation is dispatched (FR45).
 
     Used by:
-    - Story 5.8: Slack notification / structured log fallback for SOFT postmortem enforcement
+    - Slack notification / structured log fallback for SOFT postmortem enforcement
 
     Attributes:
         event_type:           Discriminator field — always "NotificationEvent"

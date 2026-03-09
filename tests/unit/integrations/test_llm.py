@@ -257,7 +257,7 @@ async def test_case_id_propagated_in_error_mode() -> None:
 
 
 # ---------------------------------------------------------------------------
-# LIVE mode — prompt and structured parsing (Story 6.3)
+# LIVE mode — prompt and structured parsing
 # ---------------------------------------------------------------------------
 
 

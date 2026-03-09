@@ -1,4 +1,4 @@
-"""Unit tests for RedisActionDedupeStore (Story 5.5 — AG5 dedupe, FR33)."""
+"""Unit tests for RedisActionDedupeStore (AG5 dedupe, FR33)."""
 
 import pytest
 

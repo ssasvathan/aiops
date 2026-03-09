@@ -1,10 +1,9 @@
-"""Cold-path LangGraph diagnosis graph and fire-and-forget launcher (Stories 6.2, 6.3).
+"""Cold-path LangGraph diagnosis graph and fire-and-forget launcher.
 
-Story 6.3 additions: structured prompt construction via diagnosis/prompt.py, triage_hash
-hash chain injection, diagnosis.json write-once persistence after successful LLM response.
-Story 6.4 additions: targeted exception handling per failure scenario (timeout,
-schema-invalid, unavailable, error), fallback DiagnosisReport written to
-diagnosis.json for all failure paths.
+Implements structured prompt construction via diagnosis/prompt.py, triage_hash
+hash chain injection, and diagnosis.json write-once persistence after successful LLM response.
+Handles targeted exception handling per failure scenario (timeout, schema-invalid,
+unavailable, error) with fallback DiagnosisReport written to diagnosis.json for all failure paths.
 """
 
 from __future__ import annotations
@@ -180,7 +179,7 @@ async def run_cold_path_diagnosis(
     Applies exposure denylist to triage_excerpt before sending to LLM (NFR-S8).
     Enforces 60s timeout via asyncio.wait_for at graph.ainvoke level (NFR-P4).
     Updates HealthRegistry "llm" component and in-flight OTLP gauge throughout.
-    Writes diagnosis.json to object storage after successful LLM response (Story 6.3).
+    Writes diagnosis.json to object storage after successful LLM response.
     """
     safe_excerpt_dict = apply_denylist(triage_excerpt.model_dump(mode="json"), denylist)
     safe_excerpt = TriageExcerptV1.model_validate(safe_excerpt_dict)
@@ -332,7 +331,7 @@ async def run_cold_path_diagnosis(
             # Validate LLM output shape first; only this branch maps to LLM_SCHEMA_INVALID.
             validated_llm_report = DiagnosisReportV1.model_validate(raw_report)
 
-            # Sanitize LLM narrative output through denylist before persisting (FR65, Story 7.5).
+            # Sanitize LLM narrative output through denylist before persisting (FR65).
             # Wrapped here so ValidationError from sanitization (e.g., required field denied)
             # is also treated as LLM_SCHEMA_INVALID via the existing except below.
             sanitized_report_dict = apply_denylist(

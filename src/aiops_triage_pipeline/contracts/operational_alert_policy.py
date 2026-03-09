@@ -1,4 +1,4 @@
-"""Operational alerting policy contract for Story 7.3."""
+"""Operational alerting policy contract."""
 
 from typing import Literal
 

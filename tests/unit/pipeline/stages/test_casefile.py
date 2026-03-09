@@ -1060,7 +1060,7 @@ def test_load_casefile_labels_stage_if_present_returns_none_and_logs_state(
 
 
 # ---------------------------------------------------------------------------
-# FR60 / NFR-T6 completeness assertions (Story 7.4, AC: 1, 5, 6)
+# FR60 / NFR-T6 completeness assertions (AC: 1, 5, 6)
 # ---------------------------------------------------------------------------
 
 

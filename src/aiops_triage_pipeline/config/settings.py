@@ -27,7 +27,7 @@ class IntegrationMode(str, Enum):
     LIVE = "LIVE"
 
 
-# Maps APP_ENV to maximum allowed action — consumed by pipeline gate engine (Story 5.1).
+# Maps APP_ENV to maximum allowed action — consumed by pipeline gate engine.
 # Mirrors RulebookV1.caps.max_action_by_env from architecture decision 5D.
 ENV_ACTION_CAPS: dict[str, str] = {
     "local": "OBSERVE",
@@ -91,7 +91,7 @@ class Settings(BaseSettings):
     CASEFILE_LIFECYCLE_LIST_PAGE_SIZE: int = 500
     CASEFILE_RETENTION_GOVERNANCE_APPROVAL: str | None = None
 
-    # OTLP metrics export (Story 7.2)
+    # OTLP metrics export
     OTLP_METRICS_ENDPOINT: str | None = None
     OTLP_METRICS_PROTOCOL: str = "http/protobuf"  # allowed: "http/protobuf", "grpc"
     OTLP_METRICS_HEADERS: str | None = None

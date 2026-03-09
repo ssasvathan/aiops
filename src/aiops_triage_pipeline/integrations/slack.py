@@ -31,8 +31,8 @@ class SlackClient:
     """Slack webhook client for operational notifications.
 
     Handles two independent notification paths:
-    - ``send_degraded_mode_event``: degraded-mode operational alerts (Story 5.5)
-    - ``send_postmortem_notification``: SOFT postmortem enforcement (Story 5.8, FR44/FR45)
+    - ``send_degraded_mode_event``: degraded-mode operational alerts
+    - ``send_postmortem_notification``: SOFT postmortem enforcement (FR44/FR45)
 
     In OFF mode events are silently dropped. All other modes emit a structured
     log entry; HTTP calls only occur in LIVE mode.

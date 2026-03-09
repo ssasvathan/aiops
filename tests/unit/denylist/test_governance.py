@@ -1,4 +1,4 @@
-"""Unit tests for denylist version tracking and changelog governance (Story 7.5, AC 2, 3, 6)."""
+"""Unit tests for denylist version tracking and changelog governance (AC 2, 3, 6)."""
 
 from __future__ import annotations
 

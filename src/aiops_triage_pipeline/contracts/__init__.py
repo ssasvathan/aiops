@@ -1,6 +1,6 @@
 """Frozen contract models for aiops-triage-pipeline."""
 
-# ── Event Contracts (Story 1.2) ─────────────────────────────────────────────
+# ── Event Contracts ──────────────────────────────────────────────────────────
 from aiops_triage_pipeline.contracts.action_decision import ActionDecisionV1
 from aiops_triage_pipeline.contracts.case_header_event import CaseHeaderEventV1
 from aiops_triage_pipeline.contracts.casefile_retention_policy import (
@@ -17,7 +17,7 @@ from aiops_triage_pipeline.contracts.enums import (
 )
 from aiops_triage_pipeline.contracts.gate_input import Finding, GateInputV1
 
-# ── Policy Contracts (Story 1.3) ─────────────────────────────────────────────
+# ── Policy Contracts ─────────────────────────────────────────────────────────
 from aiops_triage_pipeline.contracts.local_dev import LocalDevContractV1, LocalDevIntegrationModes
 from aiops_triage_pipeline.contracts.operational_alert_policy import (
     AlertRuleDescriptor,
@@ -59,7 +59,7 @@ __all__ = [
     "DiagnosisConfidence",
     "Environment",
     "EvidenceStatus",
-    # Event contracts (Story 1.2)
+    # Event contracts
     "ActionDecisionV1",
     "CasefileRetentionPolicy",
     "CasefileRetentionPolicyV1",
@@ -69,7 +69,7 @@ __all__ = [
     "Finding",
     "GateInputV1",
     "TriageExcerptV1",
-    # Policy contracts (Story 1.3)
+    # Policy contracts
     "GateCheck",
     "GateEffect",
     "GateEffects",

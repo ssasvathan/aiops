@@ -257,7 +257,7 @@ async def test_health_registry_updated_healthy_on_success() -> None:
 async def test_denylist_applied_to_triage_excerpt() -> None:
     """apply_denylist is called on triage_excerpt before passing to LLMClient.invoke().
 
-    Since Story 7.5, apply_denylist is called twice: once for INPUT (triage_excerpt)
+    apply_denylist is called twice: once for INPUT (triage_excerpt)
     and once for OUTPUT (LLM DiagnosisReportV1 narrative). This test verifies the first
     call receives the triage_excerpt dict.
     """
@@ -810,7 +810,7 @@ async def test_fallback_report_is_schema_valid() -> None:
 
 
 # ---------------------------------------------------------------------------
-# run_cold_path_diagnosis — triage_hash and diagnosis.json persistence (Story 6.3)
+# run_cold_path_diagnosis — triage_hash and diagnosis.json persistence
 # ---------------------------------------------------------------------------
 
 
@@ -880,7 +880,7 @@ async def test_run_cold_path_diagnosis_casefile_triage_hash_matches() -> None:
 
 
 # ---------------------------------------------------------------------------
-# spawn_cold_path_diagnosis_task — triage_hash forwarding (Story 6.3)
+# spawn_cold_path_diagnosis_task — triage_hash forwarding
 # ---------------------------------------------------------------------------
 
 
@@ -904,7 +904,7 @@ async def test_spawn_cold_path_diagnosis_task_forwards_triage_hash() -> None:
 
 
 # ---------------------------------------------------------------------------
-# run_cold_path_diagnosis — LLM narrative OUTPUT denylist enforcement (Story 7.5)
+# run_cold_path_diagnosis — LLM narrative OUTPUT denylist enforcement
 # ---------------------------------------------------------------------------
 
 _BEARER_TOKEN_DENYLIST = DenylistV1(

@@ -40,7 +40,7 @@ from aiops_triage_pipeline.contracts import (
     TruthfulnessConfig,
 )
 
-# ── Event Contract Fixtures (Story 1.2) ──────────────────────────────────────
+# ── Event Contract Fixtures ───────────────────────────────────────────────────
 
 
 @pytest.fixture()
@@ -156,7 +156,7 @@ def sample_diagnosis_report(sample_evidence_pack) -> DiagnosisReportV1:
     )
 
 
-# ── Policy Contract Fixtures (Story 1.3) ──────────────────────────────────────
+# ── Policy Contract Fixtures ──────────────────────────────────────────────────
 
 
 def _gate(gate_id: str) -> GateSpec:

@@ -163,7 +163,7 @@ services:
       start_period: 5s
     restart: unless-stopped
 
-  # app: __main__.py currently prints mode and exits — full pipeline wiring is Story 2.1+.
+  # app: __main__.py currently prints mode and exits — full pipeline wiring is pending.
   # The service is defined here so `docker compose up` exercises the Dockerfile build and
   # confirms the container can start against real infrastructure. It will show as Exited(0)
   # which is expected at this stage of development.

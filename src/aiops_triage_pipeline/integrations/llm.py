@@ -1,6 +1,6 @@
 """LLMClient — stub, failure-injection, and LIVE mode for cold-path LLM invocation.
 
-Story 6.3: LIVE mode uses a structured prompt (built by diagnosis/graph.py) and parses
+LIVE mode uses a structured prompt (built by diagnosis/graph.py) and parses
 the response as a schema-validated DiagnosisReportV1 via model_validate().
 """
 
@@ -36,7 +36,7 @@ class LLMClient:
     In MOCK or LOG mode, returns a deterministic fallback DiagnosisReportV1 with no
     external network calls. LIVE mode makes an HTTP POST to LLM_BASE_URL/diagnose
     with a structured prompt and parses the response as schema-validated
-    DiagnosisReportV1 (Story 6.3). OFF mode raises ValueError.
+    DiagnosisReportV1. OFF mode raises ValueError.
     """
 
     def __init__(

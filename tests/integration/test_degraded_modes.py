@@ -1,4 +1,4 @@
-"""Integration tests for AG5 Redis dedupe and degraded-mode behavior (Story 5.5).
+"""Integration tests for AG5 Redis dedupe and degraded-mode behavior.
 
 Tests use a real Redis instance via Testcontainers to verify:
 - Deduplication within TTL window (FR33)

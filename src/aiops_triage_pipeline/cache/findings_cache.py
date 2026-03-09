@@ -43,7 +43,7 @@ def build_legacy_interval_findings_cache_key(
     evaluation_time: datetime,
     interval_seconds: int = 300,
 ) -> str:
-    """Build key shape used before the Story 2.6 review follow-up cleanup."""
+    """Build legacy key shape using the pre-cleanup format."""
     if len(scope) < 3:
         raise ValueError(f"scope must include at least (env, cluster_id, topic), got: {scope}")
     bucket_start_epoch = _interval_bucket_epoch_seconds(

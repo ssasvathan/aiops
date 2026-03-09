@@ -1,4 +1,4 @@
-"""Story 5.9: End-to-end hot-path pipeline integration test.
+"""End-to-end hot-path pipeline integration test.
 
 Exercises the full hot-path from fixed Prometheus samples through all pipeline stages:
   evidence → peak → topology → gate-input → gate-decision → casefile → outbox → Kafka → dispatch
