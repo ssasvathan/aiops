@@ -169,6 +169,8 @@ services:
   app:
     build: .
     env_file: config/.env.docker
+    volumes:
+      - ./_bmad/input/feed-pack/topology-registry.yaml:/app/config/topology-registry.yaml:ro
     depends_on:
       kafka:
         condition: service_healthy
