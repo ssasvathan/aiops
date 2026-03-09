@@ -4,9 +4,10 @@ import argparse
 import time
 from pathlib import Path
 
+import structlog
 from sqlalchemy import create_engine
 
-from aiops_triage_pipeline.config.settings import get_settings, load_policy_yaml
+from aiops_triage_pipeline.config.settings import Settings, get_settings, load_policy_yaml
 from aiops_triage_pipeline.contracts.casefile_retention_policy import CasefileRetentionPolicyV1
 from aiops_triage_pipeline.contracts.outbox_policy import OutboxPolicyV1
 from aiops_triage_pipeline.denylist.loader import load_denylist
@@ -64,7 +65,7 @@ def main() -> None:
     raise RuntimeError(f"Unsupported mode: {args.mode}")
 
 
-def _bootstrap_mode(mode: str):
+def _bootstrap_mode(mode: str) -> tuple[Settings, structlog.BoundLogger, OperationalAlertEvaluator]:
     settings = get_settings()
     configure_logging()
     logger = get_logger("__main__")
@@ -93,18 +94,38 @@ def _bootstrap_mode(mode: str):
 
 
 def _run_hot_path() -> None:
-    _bootstrap_mode("hot-path")
-    raise RuntimeError(
-        "hot-path mode runtime loop is not wired in __main__. "
-        "Use dedicated pipeline orchestration entrypoint."
+    try:
+        _, logger, _ = _bootstrap_mode("hot-path")
+    except Exception:
+        get_logger("__main__").critical(
+            "hot_path_bootstrap_failed",
+            event_type="runtime.bootstrap_error",
+            mode="hot-path",
+            exc_info=True,
+        )
+        raise
+    logger.warning(
+        "hot_path_mode_exiting",
+        event_type="runtime.mode_stub",
+        reason="hot-path scheduler loop not yet wired in __main__",
     )
 
 
 def _run_cold_path() -> None:
-    _bootstrap_mode("cold-path")
-    raise RuntimeError(
-        "cold-path mode runtime loop is not wired in __main__. "
-        "Use dedicated diagnosis orchestration entrypoint."
+    try:
+        _, logger, _ = _bootstrap_mode("cold-path")
+    except Exception:
+        get_logger("__main__").critical(
+            "cold_path_bootstrap_failed",
+            event_type="runtime.bootstrap_error",
+            mode="cold-path",
+            exc_info=True,
+        )
+        raise
+    logger.warning(
+        "cold_path_mode_exiting",
+        event_type="runtime.mode_stub",
+        reason="cold-path diagnosis loop not yet wired in __main__",
     )
 
 

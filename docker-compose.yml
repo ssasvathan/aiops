@@ -163,10 +163,9 @@ services:
       start_period: 5s
     restart: unless-stopped
 
-  # app: __main__.py currently prints mode and exits — full pipeline wiring is pending.
-  # The service is defined here so `docker compose up` exercises the Dockerfile build and
-  # confirms the container can start against real infrastructure. It will show as Exited(0)
-  # which is expected at this stage of development.
+  # app: __main__.py bootstraps the selected mode (logging, OTLP, alert policy) then exits
+  # cleanly — runtime loops are not yet wired. The service exercises the Dockerfile build
+  # and validates startup against real infrastructure. Exited(0) is expected.
   app:
     build: .
     env_file: config/.env.docker
@@ -183,6 +182,7 @@ services:
         condition: service_completed_successfully
       minio-init:
         condition: service_completed_successfully
+    restart: "no"
 
 volumes:
   zookeeper-data:
