@@ -161,7 +161,13 @@ def evaluate_rulebook_gates(
                     )
                 else:
                     dedupe_store.remember(gate_input.action_fingerprint, state.current_action)
-            except Exception:
+            except Exception as exc:
+                logger.warning(
+                    "ag5_dedupe_store_error",
+                    event_type="gating.ag5_store_error",
+                    action_fingerprint=gate_input.action_fingerprint,
+                    error=str(exc),
+                )
                 _apply_gate_effect(
                     state=state,
                     effect=gate_spec.effect.on_store_error,

@@ -44,25 +44,38 @@ def dispatch_action(
     topology_routing_key = routing_context.routing_key if routing_context else "unknown"
 
     if decision.final_action == Action.PAGE:
-        pd_client.send_page_trigger(
-            case_id=case_id,
-            action_fingerprint=decision.action_fingerprint,
-            routing_key=topology_routing_key,
-            summary=(
-                f"AIOps PAGE alert — fingerprint={decision.action_fingerprint} "
-                f"routing_key={topology_routing_key}"
-            ),
-        )
-        logger.info(
-            "action_dispatched",
-            event_type="pipeline.stages.dispatch.action_dispatched",
-            case_id=case_id,
-            final_action=decision.final_action.value,
-            action_fingerprint=decision.action_fingerprint,
-            topology_routing_key=topology_routing_key,
-            mode=pd_client.mode.value,
-            outcome="pd_trigger_sent",
-        )
+        try:
+            pd_client.send_page_trigger(
+                case_id=case_id,
+                action_fingerprint=decision.action_fingerprint,
+                routing_key=topology_routing_key,
+                summary=(
+                    f"AIOps PAGE alert — fingerprint={decision.action_fingerprint} "
+                    f"routing_key={topology_routing_key}"
+                ),
+            )
+        except Exception as exc:
+            logger.error(
+                "action_dispatch_pd_failed",
+                event_type="pipeline.stages.dispatch.pd_dispatch_failed",
+                case_id=case_id,
+                final_action=decision.final_action.value,
+                action_fingerprint=decision.action_fingerprint,
+                topology_routing_key=topology_routing_key,
+                mode=pd_client.mode.value,
+                error=str(exc),
+            )
+        else:
+            logger.info(
+                "action_dispatched",
+                event_type="pipeline.stages.dispatch.action_dispatched",
+                case_id=case_id,
+                final_action=decision.final_action.value,
+                action_fingerprint=decision.action_fingerprint,
+                topology_routing_key=topology_routing_key,
+                mode=pd_client.mode.value,
+                outcome="pd_trigger_sent",
+            )
     else:
         # Non-PAGE actions: log for audit completeness; no external call at this stage.
         logger.info(
@@ -79,12 +92,24 @@ def dispatch_action(
     # Postmortem obligation dispatch — orthogonal to PAGE/non-PAGE (FR44, FR45).
     # Only fires when AG6 set postmortem_required=True; never blocks pipeline (NFR-R1).
     if decision.postmortem_required:
-        slack_client.send_postmortem_notification(
-            case_id=case_id,
-            final_action=decision.final_action.value,
-            routing_key=topology_routing_key,
-            support_channel=routing_context.support_channel if routing_context else None,
-            postmortem_required=decision.postmortem_required,
-            reason_codes=decision.postmortem_reason_codes,
-            denylist=denylist,
-        )
+        try:
+            slack_client.send_postmortem_notification(
+                case_id=case_id,
+                final_action=decision.final_action.value,
+                routing_key=topology_routing_key,
+                support_channel=routing_context.support_channel if routing_context else None,
+                postmortem_required=decision.postmortem_required,
+                reason_codes=decision.postmortem_reason_codes,
+                denylist=denylist,
+            )
+        except Exception as exc:
+            logger.error(
+                "action_dispatch_postmortem_failed",
+                event_type="pipeline.stages.dispatch.postmortem_dispatch_failed",
+                case_id=case_id,
+                final_action=decision.final_action.value,
+                action_fingerprint=decision.action_fingerprint,
+                topology_routing_key=topology_routing_key,
+                mode=slack_client.mode.value,
+                error=str(exc),
+            )
