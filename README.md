@@ -1,11 +1,14 @@
-# aiops-triage-pipeline
+# AIOps Triage Pipeline
 
-A Python 3.13 event-driven AIOps triage pipeline for Kafka infrastructure signals. Processes telemetry-driven anomalies through deterministic pipeline stages, persists durable case artifacts, and routes downstream actions through a reliability-first outbox boundary.
+> Intelligent, multi-signal infrastructure triage — unified telemetry ingestion, AI-powered diagnosis, and deterministic safety gating across metrics, logs, and traces from any source.
+
+**AIOps Triage Pipeline** is a production-grade AIOps platform that ingests infrastructure telemetry across metrics, logs, and traces — from multiple configurable sources — and automatically triages anomalies into auditable, coordinated incident responses. Platform engineering and SRE teams use it to detect infrastructure signals at scale, assemble durable evidence cases, and execute downstream actions — PagerDuty pages, Slack notifications, and ServiceNow postmortem workflows — without manual intervention on the hot path.
+
+Designed from the ground up for multi-telemetry, multi-source observability: the platform's extensible signal layer abstracts individual data origins, with Prometheus metrics as the first production-grade telemetry integration. Every triage decision is AI-enriched, deterministically gated, and reproducibly traceable to the policy version that produced it.
 
 ## Table of Contents
 
 - [What This Project Does](#what-this-project-does)
-- [Current Status](#current-status)
 - [Architecture at a Glance](#architecture-at-a-glance)
 - [Pipeline Stages](#pipeline-stages)
 - [Cold Path — LLM Diagnosis](#cold-path--llm-diagnosis)
@@ -21,39 +24,43 @@ A Python 3.13 event-driven AIOps triage pipeline for Kafka infrastructure signal
 - [Documentation](#documentation)
 - [Contributing](#contributing)
 
+
 ---
 
 ## What This Project Does
 
-- Collects Prometheus telemetry and classifies anomaly signals (peak, near-peak, sustained, unknown).
-- Resolves topology context per anomaly scope: stream identity, ownership hierarchy, blast radius.
-- Assembles a durable CaseFile in object storage with write-once invariants.
-- Publishes typed Kafka events (`CaseHeaderEventV1`, `TriageExcerptV1`) through a Postgres-backed durable outbox.
-- Evaluates a deterministic Rulebook gate engine (AG0–AG6) to produce an `ActionDecisionV1`.
-- Executes actions: PagerDuty page trigger, Slack notification, structured log fallback.
-- Runs an asynchronous cold-path LLM diagnosis (LangGraph) that enriches case artifacts without blocking the hot path.
+AIOps Triage Pipeline automates the full incident triage lifecycle — from multi-signal telemetry ingestion to postmortem linkage — so platform and SRE teams respond faster, with richer context and stronger operational governance across any infrastructure layer.
+
+### Signal Ingestion and Classification
+
+- Ingests infrastructure telemetry across metrics, logs, and traces from multiple configurable sources; Prometheus metrics is the current production integration.
+- Classifies anomaly signals as peak, near-peak, sustained, or unknown using configurable detection policies.
+- Resolves topology context per anomaly scope: stream identity, ownership hierarchy, and blast radius.
+
+### Durable Case Management
+
+- Assembles a write-once `CaseFile` in object storage with hash-chain provenance (Invariant A).
+- Publishes typed Kafka events (`CaseHeaderEventV1`, `TriageExcerptV1`) through a Postgres-backed durable outbox for at-least-once delivery (Invariant B2).
+
+### Deterministic Safety Gating and Action Execution
+
+- Evaluates a seven-gate Rulebook engine (AG0–AG6) to produce a deterministic `ActionDecisionV1`.
+- Executes downstream actions: PagerDuty page trigger, Slack notification, or structured log fallback.
+
+### AI-Enriched Diagnosis
+
+- Runs asynchronous LLM-driven diagnosis (LangGraph) that enriches case artifacts without blocking the hot path.
+- Produces a `DiagnosisReportV1` with structured evidence citations and a SHA-256 hash chain to `triage.json`.
+
+### Postmortem Automation
+
 - Correlates cases with ServiceNow Incidents, Problems, and PIR tasks via a tiered linkage state machine.
+- Enforces idempotent upserts with durable retry semantics through the `sn_linkage_retry` table.
+
+### Governance and Observability
+
 - Exports OpenTelemetry metrics via OTLP and evaluates operational alert thresholds at runtime.
 - Enforces exposure denylist, MI-1 posture, and policy version stamping for audit reproducibility.
-
----
-
-## Feature Areas
-
-All pipeline capabilities are fully implemented and production-ready.
-
-| Area | Title | Status |
-|------|-------|--------|
-| 1 | Project Foundation & Developer Experience | Complete |
-| 2 | Evidence Collection & Signal Validation | Complete |
-| 3 | Topology Resolution & Case Routing | Complete |
-| 4 | Durable Triage & Reliable Event Publishing | Complete |
-| 5 | Deterministic Safety Gating & Action Execution | Complete |
-| 6 | LLM-Enriched Diagnosis | Complete |
-| 7 | Governance, Audit & Operational Observability | Complete |
-| 8 | ServiceNow Postmortem Automation | Complete |
-
-Test suite: **755+ unit tests, 4 end-to-end integration tests, zero skipped.**
 
 ---
 
@@ -411,14 +418,39 @@ scripts/
 
 ## Documentation
 
-Project docs live in `docs/` and are updated with each material change to architecture, contracts, or developer workflows.
+All documentation lives in [`docs/`](docs/index.md) and is updated with each material change to architecture, contracts, or developer workflows. Start with the [Documentation Index](docs/index.md) for a full map.
+
+### Getting Started
 
 | Document | Description |
 |----------|-------------|
-| [Architecture](docs/architecture.md) | Technology stack, data architecture, component overview, deployment topology |
-| [Contracts](docs/contracts.md) | Full contract reference and compatibility rules |
-| [Local Development](docs/local-development.md) | Setup, run commands, Docker troubleshooting |
+| [Local Development](docs/local-development.md) | Environment setup, run commands, Docker troubleshooting |
+| [Development Guide](docs/development-guide.md) | Developer workflows, tooling, and regression posture |
+| [Deployment Guide](docs/deployment-guide.md) | Deployment configuration and operational runbook |
+
+### Architecture and Design
+
+| Document | Description |
+|----------|-------------|
+| [Architecture](docs/architecture.md) | System topology, stage flow, component overview, and deployment architecture |
+| [Architecture Patterns](docs/architecture-patterns.md) | Design patterns and structural decisions |
+| [Technology Stack](docs/technology-stack.md) | Full technology stack reference |
+| [Component Inventory](docs/component-inventory.md) | Component breakdown and responsibilities |
+
+### Reference
+
+| Document | Description |
+|----------|-------------|
+| [Contracts](docs/contracts.md) | Frozen contract catalog, validation rules, and compatibility policy |
+| [API Contracts](docs/api-contracts.md) | API contract schemas and usage reference |
+| [Data Models](docs/data-models.md) | Domain payload model reference |
 | [Schema Evolution Strategy](docs/schema-evolution-strategy.md) | Versioning procedures for Kafka events, CaseFile schemas, and policies |
+
+### Contributing
+
+| Document | Description |
+|----------|-------------|
+| [Contribution Guide](docs/contribution-guide.md) | Contribution standards, change guidelines, and review expectations |
 
 ---
 
