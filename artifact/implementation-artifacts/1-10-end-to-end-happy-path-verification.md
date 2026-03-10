@@ -1,6 +1,6 @@
 # Story 1.10: End-to-End Happy Path Verification
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -335,7 +335,7 @@ No debug issues encountered. Implementation was purely additive config changes +
 
 - **Task 4**: Extended `scripts/smoke-test.sh` to include `--- E2E Happy Path ---` section at the end that calls `bash scripts/verify-e2e.sh` as a single `check()` item. `smoke-test.sh` now provides end-to-end coverage from infra health through pipeline casefile production.
 
-- **Task 5 (Quality gate)**: All scripts pass `bash -n` syntax validation. Config files validated for structural correctness. No Python source changes — this story was purely config + scripts as specified in Dev Notes.
+- **Task 5 (Quality gate)**: Scripts pass `bash -n` syntax validation. Config files validated for structural correctness. NOTE: The live quality gate commands (`grep hot_path_cycle_completed`, `bash scripts/verify-e2e.sh`) require `src/aiops_triage_pipeline/__main__.py` changes (which emit `hot_path_cycle_completed`) to be committed. These were in the working tree at review time but not committed as part of the story — see Review section below.
 
 ### File List
 
@@ -343,7 +343,42 @@ config/policies/redis-ttl-policy-v1.yaml
 _bmad/input/feed-pack/topology-registry.yaml
 scripts/verify-e2e.sh
 scripts/smoke-test.sh
+src/aiops_triage_pipeline/__main__.py
+config/.env.docker
+docker-compose.yml
+src/aiops_triage_pipeline/pipeline/stages/dispatch.py
+README.md
+
+### Senior Developer Review (AI)
+
+**Reviewer:** Sas (AI review) on 2026-03-09
+
+**Outcome:** Changes Requested — 2 critical gaps found; 5 files missing from File List
+
+**Findings:**
+
+- **[CRITICAL] `hot_path_cycle_completed` missing from committed HEAD** (`src/aiops_triage_pipeline/__main__.py`): The log event that `verify-e2e.sh` polls for did not exist in the committed story implementation. It was only in the uncommitted working tree. Without this event, `verify-e2e.sh` always times out and fails. This file must be committed as part of this story. The event emission, startup `try/except`, per-cycle `try/except`, per-case `try/except`, and `hot_path_cycle_started` log — all present in working tree — are required for E2E verification to succeed.
+
+- **[CRITICAL] `PROMETHEUS_URL` and `HOT_PATH_SCHEDULER_INTERVAL_SECONDS` absent from committed `config/.env.docker`**: Dev Notes claimed these were "Already correct" but neither existed in HEAD. Without `PROMETHEUS_URL=http://prometheus:9090` the app can't reach Prometheus inside Docker. Without `HOT_PATH_SCHEDULER_INTERVAL_SECONDS=30` the scheduler runs at 300s default — far exceeding verify-e2e.sh's 120s wait window. This file must be committed.
+
+- **[HIGH] `docker-compose.yml` not in story File List**: Committed HEAD does not have `prometheus: condition: service_healthy` as an app dependency. Without this, the app may start before Prometheus is available, causing connection errors on the first cycle. Present in working tree — must be committed.
+
+- **[HIGH] Dev Notes incorrectly stated "No pipeline code changes needed"**: `__main__.py`, `config/.env.docker`, and `docker-compose.yml` all required changes. Story File List has been corrected to include all 9 changed files.
+
+- **[HIGH] Task 5 [x] quality gate not verifiable with committed code**: `hot_path_cycle_completed` grep and `bash scripts/verify-e2e.sh` both fail against committed HEAD. Gate was run against working tree, not committed state.
+
+- **[MEDIUM] `dispatch.py` and `README.md` uncommitted changes not tracked**: Minor post-story additions (postmortem dispatch log, doc wording). Added to File List.
+
+- **[MEDIUM] `verify-e2e.sh` preflight did not check `app` container specifically**: Fixed — now exits 1 with actionable message if `app` is not in the running services list.
+
+- **[MEDIUM] `smoke-test.sh` silent 120s hang**: Fixed — added `(Waiting up to 120s...)` note before E2E check so the wait is visible.
+
+- **[LOW] `check()` printf width mismatch (%-60s vs %-50s)**: Fixed in `verify-e2e.sh` — now consistent with `smoke-test.sh`.
+
+**Required before re-review:** Commit all working-tree changes (`__main__.py`, `config/.env.docker`, `docker-compose.yml`, `dispatch.py`, `README.md`) and run `bash scripts/smoke-test.sh` against a live stack to confirm AC #1–#7 pass.
 
 ## Change Log
 
 - 2026-03-09: Story 1.10 implemented — added harness TTL env block to redis-ttl-policy, added harness stream/topics/routing to topology-registry (v0 format), created scripts/verify-e2e.sh with full E2E pipeline verification, extended smoke-test.sh with E2E section. Resolves both root causes (TTL policy gap and topology scope gap) blocking produced_cases > 0.
+- 2026-03-09: AI code review — status set to in-progress. 2 critical, 3 high, 4 medium issues found. Fixed: verify-e2e.sh app-specific preflight (M3), smoke-test.sh timing note (M4), printf width alignment (L1). Story File List expanded to 9 files. Uncommitted pipeline changes (__main__.py, .env.docker, docker-compose.yml, dispatch.py, README.md) must be committed to unblock live AC verification.
+- 2026-03-10: Post-review fixes applied — committed 5 missing files, fixed stale Docker bind mount via rebuild, identified and fixed Environment enum missing HARNESS value and rulebook missing harness:OBSERVE cap. All smoke-test.sh and verify-e2e.sh checks now pass. Status: done.

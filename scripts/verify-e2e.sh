@@ -15,13 +15,19 @@ if [ -z "$running" ]; then
   echo "  docker compose up --detach --wait" >&2
   exit 1
 fi
+if ! echo "$running" | grep -q "^app$"; then
+  echo "ERROR: 'app' service is not running (may have crashed). Diagnose with:" >&2
+  echo "  docker compose logs app --tail=50" >&2
+  echo "  docker compose ps app" >&2
+  exit 1
+fi
 
 ERRORS=0
 
 check() {
   local name="$1"
   shift
-  printf "%-60s" "  Checking $name..."
+  printf "%-50s" "  Checking $name..."
   local output
   if output=$("$@" 2>&1); then
     echo "OK"
