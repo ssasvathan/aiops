@@ -5,6 +5,7 @@ from enum import Enum
 
 class Environment(str, Enum):
     LOCAL = "local"
+    HARNESS = "harness"
     DEV = "dev"
     UAT = "uat"
     PROD = "prod"

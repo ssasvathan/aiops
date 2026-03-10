@@ -13,6 +13,7 @@ defaults:
 caps:
   max_action_by_env:
     local: OBSERVE
+    harness: OBSERVE
     dev: NOTIFY
     uat: TICKET
     prod: PAGE
