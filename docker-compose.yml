@@ -163,9 +163,8 @@ services:
       start_period: 5s
     restart: unless-stopped
 
-  # app: __main__.py bootstraps the selected mode (logging, OTLP, alert policy) then exits
-  # cleanly — runtime loops are not yet wired. The service exercises the Dockerfile build
-  # and validates startup against real infrastructure. Exited(0) is expected.
+  # app: runs hot-path mode (Dockerfile CMD default) — an infinite scheduler loop.
+  # The service should stay running; Exited(0) or a crash indicates a startup failure.
   app:
     build: .
     env_file: config/.env.docker
@@ -179,6 +178,8 @@ services:
       redis:
         condition: service_healthy
       minio:
+        condition: service_healthy
+      prometheus:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully

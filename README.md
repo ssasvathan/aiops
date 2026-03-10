@@ -108,7 +108,7 @@ flowchart TD
 
 | Stage | Module | Responsibility |
 |-------|--------|----------------|
-| 1 — Evidence | `pipeline/stages/evidence.py` | Prometheus metric collection and evaluation cadence |
+| 1 — Evidence | `pipeline/stages/evidence.py` | Telemetry collection and evaluation cadence |
 | 2 — Peak | `pipeline/stages/peak.py` | Anomaly pattern detection, peak/near-peak/sustained classification |
 | 3 — Topology | `pipeline/stages/topology.py` | Registry resolution, blast radius, ownership routing |
 | 4 — CaseFile | `pipeline/stages/casefile.py` | Write-once assembly to object storage |
@@ -136,7 +136,7 @@ Hot-path orchestration is in `pipeline/scheduler.py`.
 
 The cold path runs asynchronously after hot-path dispatch and does not block or influence gate decisions.
 
-- **Stage 8 (Diagnosis):** LangGraph graph invokes the configured LLM, produces a `DiagnosisReportV1` with structured evidence citations, and writes `cases/<case_id>/diagnosis.json` to object storage.
+**Stage 8 (Diagnosis):** LangGraph graph invokes the configured LLM, produces a `DiagnosisReportV1` with structured evidence citations, and writes `cases/<case_id>/diagnosis.json` to object storage.
 - **Failure semantics:** Timeout, unavailability, schema validation failure, and internal errors each produce a deterministic fallback. The absence of `diagnosis.json` is explicit and observable — it means the LLM did not complete for this case.
 - **Hash chain:** `diagnosis.json` includes the SHA-256 hash of `triage.json` to establish tamper-evident provenance.
 

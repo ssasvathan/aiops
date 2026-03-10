@@ -113,3 +113,13 @@ def dispatch_action(
                 mode=slack_client.mode.value,
                 error=str(exc),
             )
+        else:
+            logger.info(
+                "action_dispatch_postmortem_sent",
+                event_type="pipeline.stages.dispatch.postmortem_dispatched",
+                case_id=case_id,
+                final_action=decision.final_action.value,
+                action_fingerprint=decision.action_fingerprint,
+                topology_routing_key=topology_routing_key,
+                mode=slack_client.mode.value,
+            )
