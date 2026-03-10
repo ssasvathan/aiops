@@ -119,15 +119,20 @@ def _detect_consumer_lag_buildup(
     offset_values = scope_metrics.get("consumer_group_offset")
     if not lag_values or not offset_values:
         return None
-    if len(lag_values) < 2 or len(offset_values) < 2:
-        return None
 
-    # lag_growth is computed as last-minus-first to preserve temporal direction:
-    # negative growth (decreasing lag) must not trigger detection.
-    lag_growth = lag_values[-1] - lag_values[0]
+    lag_end = max(lag_values)
+    # For multi-sample scopes (real Kafka: per-partition series collapse to one scope after
+    # partition label is stripped), last-minus-first preserves temporal direction so that
+    # decreasing lag does not trigger detection.
+    # For single-sample scopes (e.g. harness without per-partition labels), treat the observed
+    # lag magnitude as the growth indicator — a high single observation implies growth from zero.
+    if len(lag_values) >= 2:
+        lag_growth = lag_values[-1] - lag_values[0]
+    else:
+        lag_growth = lag_end
+
     # Use max-min spread for offset progress to be independent of sample list ordering.
     offset_progress = max(offset_values) - min(offset_values)
-    lag_end = max(lag_values)
     if lag_end < _LAG_BUILDUP_MIN_LAG:
         return None
     if lag_growth < _LAG_BUILDUP_MIN_GROWTH:

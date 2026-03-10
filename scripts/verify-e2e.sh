@@ -71,7 +71,10 @@ echo "--- E2E Pipeline Checks ---"
 # Check 1: produced_cases > 0 in at least one cycle
 check_produced_cases() {
   local log_lines
-  log_lines=$(docker compose logs app --since=90s 2>/dev/null | grep 'hot_path_cycle_completed' || true)
+  # Use a window that covers the full cycle-wait period plus a buffer so cycles
+  # from any harness anomaly phase are included, not just the most recent 90s.
+  local since_seconds=$(( CYCLE_WAIT_MAX * CYCLE_WAIT_SLEEP + 30 ))
+  log_lines=$(docker compose logs app --since="${since_seconds}s" 2>/dev/null | grep 'hot_path_cycle_completed' || true)
   if [ -z "$log_lines" ]; then
     echo "FAILED — no hot_path_cycle_completed entries found in last 90s"
     return 1
@@ -104,16 +107,18 @@ check_produced_cases() {
 }
 check "produced_cases > 0 in hot-path cycle" check_produced_cases
 
-# Check 2: MinIO aiops-cases bucket has at least one object
+# Check 2: MinIO aiops-cases bucket has at least one recent casefile
+# Uses mc find --newer-than to exclude stale files from previous runs so that
+# MinIO's persistent volume does not produce a false-positive on a fresh stack.
 check_minio_casefile() {
   local result
   result=$(docker compose run --rm --no-deps --entrypoint /bin/sh minio-init \
-    -c "mc alias set local http://minio:9000 minioadmin minioadmin 2>/dev/null && mc ls local/aiops-cases/ 2>/dev/null" 2>&1 || true)
+    -c "mc alias set local http://minio:9000 minioadmin minioadmin 2>/dev/null && mc find local/aiops-cases/ --newer-than 10m 2>/dev/null" 2>&1 || true)
   if [ -z "$result" ]; then
-    echo "FAILED — MinIO aiops-cases bucket is empty (no casefile written)"
+    echo "FAILED — no recent casefile in aiops-cases (newer than 10m); stale bucket or no casefile written this session"
     return 1
   fi
-  echo "OK (casefile(s) found in aiops-cases)"
+  echo "OK (recent casefile(s) found in aiops-cases)"
   return 0
 }
 check "MinIO aiops-cases has ≥1 casefile" check_minio_casefile
@@ -133,7 +138,9 @@ check_outbox_row() {
     echo "OK (outbox row count=$count)"
     return 0
   else
-    echo "FAILED — outbox table is empty (count=$count); casefile write or outbox insert failed"
+    echo "FAILED — outbox table is empty (count=0)"
+    echo "    Possible causes: (a) no anomalies detected this session (check produced_cases above)" >&2
+    echo "    or (b) casefile write or outbox insert exception (check: docker compose logs app | grep hot_path_case_processing_failed)" >&2
     return 1
   fi
 }

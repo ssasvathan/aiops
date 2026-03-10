@@ -1,6 +1,6 @@
 # Story 1.10: End-to-End Happy Path Verification
 
-Status: done
+Status: in-progress
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -348,6 +348,10 @@ config/.env.docker
 docker-compose.yml
 src/aiops_triage_pipeline/pipeline/stages/dispatch.py
 README.md
+src/aiops_triage_pipeline/pipeline/stages/anomaly.py
+src/aiops_triage_pipeline/config/settings.py
+harness/main.py
+harness/patterns/volume_drop.py
 
 ### Senior Developer Review (AI)
 
@@ -382,3 +386,4 @@ README.md
 - 2026-03-09: Story 1.10 implemented — added harness TTL env block to redis-ttl-policy, added harness stream/topics/routing to topology-registry (v0 format), created scripts/verify-e2e.sh with full E2E pipeline verification, extended smoke-test.sh with E2E section. Resolves both root causes (TTL policy gap and topology scope gap) blocking produced_cases > 0.
 - 2026-03-09: AI code review — status set to in-progress. 2 critical, 3 high, 4 medium issues found. Fixed: verify-e2e.sh app-specific preflight (M3), smoke-test.sh timing note (M4), printf width alignment (L1). Story File List expanded to 9 files. Uncommitted pipeline changes (__main__.py, .env.docker, docker-compose.yml, dispatch.py, README.md) must be committed to unblock live AC verification.
 - 2026-03-10: Post-review fixes applied — committed 5 missing files, fixed stale Docker bind mount via rebuild, identified and fixed Environment enum missing HARNESS value and rulebook missing harness:OBSERVE cap. All smoke-test.sh and verify-e2e.sh checks now pass. Status: done.
+- 2026-03-10: AI adversarial code review (2nd pass) — live E2E still failing (produced_cases=0, outbox empty). Root cause: `_detect_consumer_lag_buildup` requires ≥2 lag samples but harness emits single-partition Gauges yielding exactly 1 sample per instant query — lag anomaly never fires. Fixed: (C1) relax sample guard in anomaly.py to handle single-sample scopes; (H1) reorder harness patterns to lead with throughput_proxy so detectable anomaly fires within first 30s; (H2) widen verify-e2e.sh produced_cases window to cover full cycle-wait period; (H3) MinIO check now uses mc find --newer-than 10m to reject stale files from previous sessions; (H4) added harness to AppEnv enum and ENV_ACTION_CAPS in settings.py; (M1) volume_drop harness pattern now emits total_produce_requests_per_sec; (M3) improved outbox empty diagnostic message. Status: in-progress — re-verify with live stack required.

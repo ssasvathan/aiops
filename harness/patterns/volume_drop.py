@@ -1,7 +1,7 @@
 """Volume drop pattern: messages_in drops from normal to near-zero."""
 import time
 
-from metrics import bytes_in, messages_in
+from metrics import bytes_in, messages_in, total_produce
 
 
 def run(duration: int, intensity: float) -> None:
@@ -25,4 +25,11 @@ def run(duration: int, intensity: float) -> None:
             cluster_name="harness-cluster",
             topic="harness-vol-topic",
         ).set(rate * 200)  # ~200 bytes/msg
+        # total_produce is required by _detect_volume_drop (threshold: >= 150/s).
+        # Use a stable baseline so the expected-request check is always satisfied.
+        total_produce.labels(
+            env="harness",
+            cluster_name="harness-cluster",
+            topic="harness-vol-topic",
+        ).set(200 * intensity)
         time.sleep(1)

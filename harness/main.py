@@ -10,7 +10,7 @@ PATTERN = os.environ.get("HARNESS_PATTERN", "all")
 CYCLE_SECONDS = int(os.environ.get("HARNESS_CYCLE_SECONDS", "60"))
 INTENSITY = float(os.environ.get("HARNESS_INTENSITY", "0.5"))
 
-_ALL_PATTERNS = [consumer_lag, throughput_proxy, volume_drop, normal]
+_ALL_PATTERNS = [throughput_proxy, consumer_lag, volume_drop, normal]
 _PATTERN_MAP = {
     "consumer_lag": [consumer_lag],
     "throughput_constrained": [throughput_proxy],

@@ -15,6 +15,7 @@ _APP_ENV = os.getenv("APP_ENV", "local")
 
 class AppEnv(str, Enum):
     local = "local"
+    harness = "harness"
     dev = "dev"
     uat = "uat"
     prod = "prod"
@@ -31,6 +32,7 @@ class IntegrationMode(str, Enum):
 # Mirrors RulebookV1.caps.max_action_by_env from architecture decision 5D.
 ENV_ACTION_CAPS: dict[str, str] = {
     "local": "OBSERVE",
+    "harness": "OBSERVE",
     "dev": "NOTIFY",
     "uat": "TICKET",
     "prod": "PAGE",
