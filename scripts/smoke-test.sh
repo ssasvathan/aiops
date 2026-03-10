@@ -69,6 +69,10 @@ check "Canonical metric present (messagesinpersec)" \
 check "Harness label namespace (env=harness)" \
   bash -c "for i in 1 2 3; do curl -sf http://localhost:8000/metrics | grep -q 'env=\"harness\"' && exit 0; sleep 1; done; exit 1"
 
+echo "--- E2E Happy Path ---"
+check "E2E happy path (verify-e2e.sh)" \
+  bash scripts/verify-e2e.sh
+
 echo ""
 if [ "$ERRORS" -eq 0 ]; then
   echo "All checks passed!"

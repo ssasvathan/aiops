@@ -1,5 +1,19 @@
 version: 1
 
+routing_directory:
+  - routing_key: OWN::Streaming::KafkaPlatform::Ops
+    owning_team_id: kafka-platform-ops
+    owning_team_name: Kafka Platform Ops
+    support_channel: '#platform-kafka-ops'
+    escalation_policy_ref: null
+    service_now_assignment_group: null
+
+ownership_map:
+  consumer_group_owners: []
+  topic_owners: []
+  stream_default_owner: []
+  platform_default: "OWN::Streaming::KafkaPlatform::Ops"
+
 streams:
   - stream_id: kafka_ingestion_shared_p
     env: prod
@@ -45,6 +59,14 @@ streams:
       min_window_minutes: 60
       recompute_frequency: weekly
 
+  - stream_id: harness_validation
+    env: harness
+    cluster_id: harness-cluster
+    description: "Harness synthetic stream for local E2E validation — dev tool only"
+    criticality_tier: TIER_1
+    owners:
+      platform_team: streaming-platform-ops
+
 topic_index:
   payment-p-events:
     role: SOURCE_TOPIC
@@ -62,3 +84,19 @@ topic_index:
   e2-p-raw:
     role: AUDIT_RAW_SHARED
     stream_id: kafka_ingestion_shared_p
+
+  harness-lag-topic:
+    role: SOURCE_TOPIC
+    stream_id: harness_validation
+
+  harness-proxy-topic:
+    role: SOURCE_TOPIC
+    stream_id: harness_validation
+
+  harness-vol-topic:
+    role: SOURCE_TOPIC
+    stream_id: harness_validation
+
+  harness-normal-topic:
+    role: SOURCE_TOPIC
+    stream_id: harness_validation
