@@ -29,6 +29,44 @@ This starts:
 - Harness
 - App container
 
+## Harness — Traffic Generation
+
+The `harness` service is a local-only dev tool that generates synthetic Prometheus metrics simulating real Kafka JMX exporter data. It starts automatically with `docker compose up`.
+
+The harness exposes metrics at `http://localhost:8000/metrics`. Prometheus scrapes it via the `aiops-harness` job, making the signals available to the pipeline's evidence stage.
+
+### Traffic patterns
+
+| `HARNESS_PATTERN` value | What it simulates |
+|---|---|
+| `consumer_lag` | Consumer group lag grows while offset stays fixed (consumer stopped) |
+| `throughput_constrained` | High message rate with elevated failed produce requests (throttling) |
+| `volume_drop` | Normal rate for 30% of the cycle, then near-zero |
+| `normal` | Stable baseline — no anomaly |
+| `all` | Cycles through all four patterns in sequence (default) |
+
+### Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `HARNESS_PATTERN` | `all` | Active traffic pattern. See table above for valid values. |
+| `HARNESS_CYCLE_SECONDS` | `60` | Seconds each pattern runs before cycling to the next. Each pattern emits on a 1-second tick loop for this many ticks. Must be `> 0`. |
+| `HARNESS_INTENSITY` | `0.5` | Scaling multiplier for metric values. Range: `0.0` (near-zero) to `1.0` (full-scale). Values outside this range are accepted but may produce nonsensical metric values. |
+
+**Example at `HARNESS_INTENSITY=0.5`:**
+
+- `consumer_lag`: lag builds from `0` to `5,000` over the cycle
+- `throughput_constrained`: `messages_in = 2,500/s`, `failed_produce = 25/s`
+- `volume_drop`: normal phase at `250 msg/s`, drops to `2.0 msg/s`
+
+Override defaults by setting env vars in `docker-compose.yml` under the `harness` service, or by passing them directly:
+
+```bash
+HARNESS_PATTERN=consumer_lag HARNESS_CYCLE_SECONDS=30 docker compose up harness
+```
+
+The harness has no dependency on Kafka or the pipeline app. It generates metric values directly via `prometheus_client.Gauge.set()` and is completely self-contained.
+
 ## Validate Stack Health
 
 Run the smoke script:

@@ -307,6 +307,8 @@ The entry point (`__main__.py`) dispatches to one of four modes via `--mode`.
 | `outbox-publisher` | Fully wired | Polls the `outbox` table for `READY` records and publishes to Kafka |
 | `casefile-lifecycle` | Fully wired | Runs the retention policy against object storage; purges expired CaseFiles |
 
+See [Runtime Modes](docs/runtime-modes.md) for full startup initialisation details, per-cycle stage flow, dependency matrix, and `--once` flag behaviour.
+
 ---
 
 ## Configuration

@@ -37,6 +37,7 @@
 
 | Document | Description |
 |----------|-------------|
+| [Runtime Modes](./runtime-modes.md) | Per-mode startup initialisation, stage flow, dependency matrix, and `--once` flag behaviour |
 | [Contracts](./contracts.md) | Frozen contract catalog, validation rules, and compatibility policy |
 | [API Contracts](./api-contracts.md) | API contract schemas and usage reference |
 | [Data Models](./data-models.md) | Domain payload model reference |
