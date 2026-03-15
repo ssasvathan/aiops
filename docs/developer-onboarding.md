@@ -290,7 +290,9 @@ Gates AG0–AG6 run sequentially on each `GateInputV1`. Each gate may reduce the
 | AG3 | Paging denied for SOURCE_TOPIC | Never PAGE on SOURCE_TOPIC anomalies |
 | AG4 | Confidence + sustained gating | Prevent high-urgency actions when confidence/sustained are weak |
 | AG5 | Storm control (dedupe) | Prevent repeated paging/ticket storms on the same fingerprint |
-| AG6 | Postmortem policy selector | Selectively require postmortems (SOFT in Phase 1A, HARD in Phase 1B when SN linkage exists) |
+| AG6 | Postmortem policy selector | Selectively require postmortems (SOFT today; HARD planned for Phase 1B once SN linkage is wired) |
+
+**AG0 failure effect:** When AG0 validation fails, it sets `state.input_valid = False`. Gates AG1–AG5 still execute, but AG6 checks `input_valid` before evaluating — suppressing postmortem logic on malformed inputs. This is the only inter-gate state propagation in the current implementation.
 
 **Skip-by-priority pattern** — gates AG4 and AG5 require a minimum action level and are skipped when the current action is already below it (AG0–AG3 and AG6 do not use this pattern):
 
