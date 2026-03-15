@@ -97,9 +97,13 @@ flowchart TD
     CF --> S3[(S3\nCaseFile)]
     CF --> PG[(Postgres\nOutbox)]
 
-    style DS fill:#d4edda
-    style CF fill:#d4edda
+    style EV fill:#d4edda
+    style PK fill:#d4edda
+    style TP fill:#d4edda
+    style GI fill:#d4edda
     style GD fill:#d4edda
+    style CF fill:#d4edda
+    style DS fill:#d4edda
     style DX fill:#fff3cd,stroke:#ffc107,stroke-dasharray:4
     style LK fill:#fff3cd,stroke:#ffc107,stroke-dasharray:4
 ```
@@ -286,7 +290,7 @@ Gates AG0–AG6 run sequentially on each `GateInputV1`. Each gate may reduce the
 | AG3 | Paging denied for SOURCE_TOPIC | Never PAGE on SOURCE_TOPIC anomalies |
 | AG4 | Confidence + sustained gating | Prevent high-urgency actions when confidence/sustained are weak |
 | AG5 | Storm control (dedupe) | Prevent repeated paging/ticket storms on the same fingerprint |
-| AG6 | Postmortem policy selector | Selectively require postmortems based on phase and SN linkage |
+| AG6 | Postmortem policy selector | Selectively require postmortems (SOFT in Phase 1A, HARD in Phase 1B when SN linkage exists) |
 
 **Skip-by-priority pattern** — gates AG4 and AG5 require a minimum action level and are skipped when the current action is already below it (AG0–AG3 and AG6 do not use this pattern):
 
