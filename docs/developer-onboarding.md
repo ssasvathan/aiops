@@ -558,7 +558,79 @@ These appear in nearly every contract and model — knowing them prevents confus
 
 ## 6. Configuration
 
-<!-- PLACEHOLDER -->
+This section covers the three layers of configuration. After reading it you'll know where to look to change any system behaviour without touching application code.
+
+### Layer 1: Settings (`config/settings.py`)
+
+Settings are loaded via `pydantic-settings` from environment variables and `.env` files. The `APP_ENV` variable selects which `.env.<env>` file to load (e.g. `APP_ENV=local` loads `.env.local`).
+
+| Group | Key Variables |
+|-------|---------------|
+| Infrastructure | `KAFKA_BOOTSTRAP_SERVERS`, `DATABASE_URL`, `REDIS_URL`, `S3_BUCKET` |
+| Integration modes | `INTEGRATION_MODE_PD`, `INTEGRATION_MODE_SLACK`, `INTEGRATION_MODE_SN`, `INTEGRATION_MODE_LLM` |
+| Scheduler | `HOT_PATH_SCHEDULER_INTERVAL_SECONDS`, `OUTBOX_PUBLISHER_POLL_INTERVAL_SECONDS` |
+| Observability | `OTLP_METRICS_ENDPOINT`, `OTLP_METRICS_PROTOCOL` |
+
+← `src/aiops_triage_pipeline/config/settings.py`
+
+### Layer 2: Policy YAMLs (`config/policies/`)
+
+Policies are loaded once at startup and drive all pipeline behaviour. To change how the pipeline behaves, edit a YAML — not application code.
+
+| Policy file | Contract | Controls |
+|-------------|----------|----------|
+| `rulebook-v1.yaml` | `RulebookV1` | Gate rules AG0–AG6 and their effects |
+| `peak-policy-v1.yaml` | `PeakPolicyV1` | Anomaly classification thresholds |
+| `prometheus-metrics-contract-v1.yaml` | `PrometheusMetricsContractV1` | Which metrics to ingest |
+| `casefile-retention-policy-v1.yaml` | `CasefileRetentionPolicyV1` | S3 retention duration |
+| `outbox-policy-v1.yaml` | `OutboxPolicyV1` | Outbox batch size and retry limits |
+| `redis-ttl-policy-v1.yaml` | `RedisTtlPolicyV1` | Cache TTLs per data type |
+| `local-dev-contract-v1.yaml` | `LocalDevContractV1` | Local-only overrides and fixtures |
+| `operational-alert-policy-v1.yaml` | `OperationalAlertPolicyV1` | Health alert thresholds |
+| `servicenow-linkage-contract-v1.yaml` | `ServiceNowLinkageContractV1` | SN field mappings |
+| `topology-registry-loader-rules-v1.yaml` | `TopologyRegistryLoaderRulesV1` | Registry parsing rules |
+
+> **Note:** The topology registry itself is an external file — its path is set via `TOPOLOGY_REGISTRY_PATH` and is not committed under `config/policies/`.
+
+### Layer 3: Integration Modes
+
+The `OFF | LOG | MOCK | LIVE` pattern is checked before every external call. The actual dispatch is handled in the integration adapters (e.g. `integrations/pagerduty.py`):
+
+```python
+# from integrations/pagerduty.py — PagerDutyClient.send_page_trigger()
+if self._mode == PagerDutyIntegrationMode.OFF:
+    return
+
+# LOG and MOCK: emit structured log, no HTTP call
+logger.info("pd_page_trigger_dispatch", ..., mode=self._mode.value)
+
+if self._mode == PagerDutyIntegrationMode.LOG:
+    return
+
+if self._mode == PagerDutyIntegrationMode.MOCK:
+    self._mock_send_count += 1
+    return
+
+# LIVE: attempt PD Events V2 delivery
+self._send_live(...)
+```
+
+← `src/aiops_triage_pipeline/integrations/pagerduty.py`
+
+This means: running the hot-path locally with `INTEGRATION_MODE_PD=LOG` logs every PagerDuty payload without making a single real call. You can observe the full dispatch flow risk-free.
+
+### Environment Action Caps
+
+AG1 gate enforces a hard cap on the maximum action allowed per environment:
+
+| Environment | Max allowed action |
+|-------------|-------------------|
+| `local` / `harness` | `OBSERVE` |
+| `dev` | `NOTIFY` |
+| `uat` | `TICKET` |
+| `prod` | `PAGE` |
+
+This is enforced by the rulebook, not the application code — see `config/policies/rulebook-v1.yaml`.
 
 ---
 
