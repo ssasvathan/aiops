@@ -326,7 +326,112 @@ These directories are not empty placeholders. New contributors should not skip t
 
 ## 4. Runtime Modes
 
-<!-- PLACEHOLDER -->
+This section covers the four runtime modes. After reading it you'll know which mode to start for any local development task and what infrastructure each mode requires.
+
+### Mode Overview
+
+```mermaid
+graph TD
+    HP[hot-path] -->|reads| PROM[(Prometheus)]
+    HP -->|reads/writes| REDIS[(Redis)]
+    HP -->|writes| S3[(S3)]
+    HP -->|writes| PG[(Postgres\nOutbox)]
+    HP -->|calls| PD[PagerDuty]
+    HP -->|calls| SL[Slack]
+
+    OP[outbox-publisher] -->|reads/writes| PG
+    OP -->|publishes| KF[(Kafka)]
+    OP -->|reads| S3
+
+    CL[casefile-lifecycle] -->|reads/writes| S3
+
+    CP["cold-path\n(bootstrap stub —\nno infra deps)"]
+```
+
+### Per-Mode Walkthrough
+
+---
+
+**`hot-path`** — the primary mode
+
+**Purpose:** Loads all policies, initialises all runtime clients, then runs the complete triage loop (`asyncio.run(_hot_path_scheduler_loop(...))`). This is the mode to run locally to exercise the full pipeline.
+
+**Run command:**
+```bash
+APP_ENV=local python -m aiops_triage_pipeline --mode hot-path
+```
+
+**`--once` flag:** Not supported. The hot-path runs as a continuous scheduler loop.
+
+**When you'd use this:** Developing or testing any hot-path stage (evidence → dispatch), integration mode behaviour, or policy changes.
+
+---
+
+**`cold-path`** — orchestration stub
+
+**Purpose:** Intended to run LLM Diagnosis (Stage 8) and ServiceNow Linkage (Stage 9) asynchronously after hot-path dispatch.
+
+**Current state:** The `__main__.py` entrypoint logs a warning and exits immediately. The domain modules (`diagnosis/`, `linkage/`) are implemented but not yet wired through this mode.
+
+**Run command:**
+```bash
+APP_ENV=local python -m aiops_triage_pipeline --mode cold-path
+```
+
+**`--once` flag:** N/A (stub exits immediately).
+
+**When you'd use this:** Not yet useful for end-to-end runs. Develop and test `diagnosis/` and `linkage/` by calling their domain functions directly in tests.
+
+---
+
+**`outbox-publisher`** — Kafka publication worker
+
+**Purpose:** Polls the Postgres outbox for pending rows and publishes `CaseHeaderEventV1` and `TriageExcerptV1` to Kafka.
+
+**Run command:**
+```bash
+APP_ENV=local python -m aiops_triage_pipeline --mode outbox-publisher
+```
+
+**`--once` flag:** Supported. Processes one batch and exits — useful for verifying outbox publication in isolation.
+
+```bash
+APP_ENV=local python -m aiops_triage_pipeline --mode outbox-publisher --once
+```
+
+**When you'd use this:** Developing Kafka integration, verifying outbox schema, or debugging publication failures.
+
+---
+
+**`casefile-lifecycle`** — retention worker
+
+**Purpose:** Purges expired CaseFiles from S3 according to the retention policy.
+
+**Run command:**
+```bash
+APP_ENV=local python -m aiops_triage_pipeline --mode casefile-lifecycle
+```
+
+**`--once` flag:** Supported. Runs one deletion sweep and exits.
+
+```bash
+APP_ENV=local python -m aiops_triage_pipeline --mode casefile-lifecycle --once
+```
+
+**When you'd use this:** Developing or testing the retention policy, or verifying S3 lifecycle behaviour.
+
+---
+
+### Dependency Matrix
+
+| Mode | Redis | Postgres | Kafka | S3 | Prometheus |
+|------|-------|----------|-------|----|------------|
+| `hot-path` | ✓ | ✓ | — | ✓ | ✓ |
+| `cold-path` | — | — | — | — | — |
+| `outbox-publisher` | — | ✓ | ✓ | ✓ | — |
+| `casefile-lifecycle` | — | — | — | ✓ | — |
+
+> See `docs/runtime-modes.md` for full per-mode environment variable reference.
 
 ---
 
