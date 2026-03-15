@@ -636,4 +636,69 @@ This is enforced by the rulebook, not the application code — see `config/polic
 
 ## 7. Code Navigation
 
-<!-- PLACEHOLDER -->
+This section is a practical navigation guide. After reading it you'll know exactly which file to open for any common contributor task.
+
+### Annotated Directory Tree
+
+```
+src/aiops_triage_pipeline/
+├── __main__.py              # CLI entrypoint — mode dispatch
+├── config/                  # Settings loader (pydantic-settings)
+├── contracts/               # Frozen Pydantic v2 contracts (GateInputV1, ActionDecisionV1, …)
+├── pipeline/
+│   ├── stages/              # Domain-layer stage functions (what contributors edit)
+│   │   ├── evidence.py      # Stage 1 — Prometheus sample processing
+│   │   ├── peak.py          # Stage 2 — Anomaly classification
+│   │   ├── topology.py      # Stage 3 — Registry join
+│   │   ├── gating.py        # Stages 4–5 — Gate input assembly + rulebook evaluation
+│   │   ├── casefile.py      # Stage 6 — CaseFile assembly + outbox preparation
+│   │   ├── dispatch.py      # Stage 7 — Action dispatch (PD / Slack)
+│   │   ├── outbox.py        # Outbox-publisher state-transition helpers
+│   │   └── linkage.py       # Stage 9 — ServiceNow linkage entry point
+│   └── scheduler.py         # Infrastructure glue: run_*_stage_cycle() wrappers
+├── outbox/
+│   ├── repository.py        # insert_pending_object() — hot-path outbox insertion
+│   └── publisher.py         # Kafka publication logic
+├── diagnosis/               # Stage 8 — LangGraph graph, prompt builder, diagnosis.json persistence
+├── linkage/                 # Stage 9 — ServiceNow retry state machine + repository
+├── integrations/            # PagerDuty, Slack, Kafka client wrappers
+├── models/                  # Internal domain types (not contracts)
+├── storage/                 # S3 object store client + lifecycle management
+├── health/                  # Health registry, degraded-mode alerts
+├── audit/                   # Replay utilities for past triage decisions
+├── registry/                # Topology registry loader
+├── cache/                   # Redis findings-cache client
+└── errors/                  # Domain error types
+
+config/
+└── policies/                # YAML policy files (edit to change behaviour, not code)
+
+harness/                     # Test harness fixtures and helpers
+tests/                       # Test suite (mirrors src/ layout)
+```
+
+### Where Do I Look When...?
+
+| I want to... | Look here |
+|---|---|
+| Change how anomalies are classified | `pipeline/stages/peak.py` + `config/policies/peak-policy-v1.yaml` |
+| Add or modify a rulebook gate | `pipeline/stages/gating.py` + `contracts/rulebook.py` |
+| Change what gets published to Kafka | `contracts/case_header_event.py` or `contracts/triage_excerpt.py` |
+| Add a new Prometheus metric to ingest | `config/policies/prometheus-metrics-contract-v1.yaml` |
+| Change casefile retention behaviour | `storage/lifecycle.py` + `config/policies/casefile-retention-policy-v1.yaml` |
+| Add a new integration | `integrations/` + mode in `config/settings.py` |
+| Understand a CaseFile written to S3 | `models/case_file.py` |
+| Trace a past triage decision | `audit/replay.py` |
+| Add a new topology scope | `registry/loader.py` — the registry itself is an external file set via `TOPOLOGY_REGISTRY_PATH`, not committed under `config/policies/` |
+| Understand health/degraded posture | `health/registry.py` + `health/alerts.py` |
+
+All paths are relative to `src/aiops_triage_pipeline/` unless otherwise noted.
+
+### Local Dev Checklist
+
+1. `uv sync --dev`
+2. `docker compose up -d --build`
+3. `bash scripts/smoke-test.sh`
+4. Pick a mode and run it (start with `hot-path` for full pipeline; `--once` where supported)
+
+> See `docs/local-development.md` for full environment setup, troubleshooting, and `.env.local` configuration.
