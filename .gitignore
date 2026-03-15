@@ -40,3 +40,4 @@ Thumbs.db
 .coverage
 htmlcov/
 .ruff_cache/
+.worktrees/
