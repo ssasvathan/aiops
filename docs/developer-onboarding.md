@@ -437,7 +437,120 @@ APP_ENV=local python -m aiops_triage_pipeline --mode casefile-lifecycle --once
 
 ## 5. Data Contracts
 
-<!-- PLACEHOLDER -->
+This section covers how data moves between pipeline stages. After reading it you'll understand the frozen-contract pattern and be able to find any contract field in the codebase.
+
+### Contracts vs Models
+
+**Contracts** are stable frozen interfaces shared across subsystem boundaries — serialized, versioned, never mutated. They carry the `V1` suffix and live in `contracts/`.
+
+**Models** are internal domain types used within a single stage or subsystem. They live in `models/` or alongside their stage in `pipeline/stages/`.
+
+A contributor changes a model freely. Changing a contract requires explicit versioning and test coverage — see `docs/schema-evolution-strategy.md`.
+
+### Key Contracts
+
+---
+
+**`GateInputV1`** — assembles all evidence for a scope into the rulebook input
+
+← `src/aiops_triage_pipeline/contracts/gate_input.py`
+
+```python
+class GateInputV1(BaseModel, frozen=True):
+    env: Environment
+    cluster_id: str
+    stream_id: str
+    topic: str
+    topic_role: Literal["SOURCE_TOPIC", "SHARED_TOPIC", "SINK_TOPIC"]
+    anomaly_family: Literal["CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY"]
+    criticality_tier: CriticalityTier
+    proposed_action: Action
+    sustained: bool
+    findings: tuple[Finding, ...]
+    action_fingerprint: str
+    # ... additional fields (diagnosis_confidence, evidence_status_map, consumer_group, partition_count_observed, peak, case_id, decision_basis)
+```
+
+---
+
+**`ActionDecisionV1`** — the rulebook's output; what action to take and why
+
+← `src/aiops_triage_pipeline/contracts/action_decision.py`
+
+```python
+class ActionDecisionV1(BaseModel, frozen=True):
+    final_action: Action
+    env_cap_applied: bool
+    gate_rule_ids: tuple[str, ...]
+    gate_reason_codes: tuple[str, ...]
+    action_fingerprint: str
+    postmortem_required: bool
+    # ... additional fields (postmortem_mode, postmortem_reason_codes)
+```
+
+---
+
+**`CaseHeaderEventV1`** — published to Kafka, identifies the case
+
+← `src/aiops_triage_pipeline/contracts/case_header_event.py`
+
+```python
+class CaseHeaderEventV1(BaseModel, frozen=True):
+    case_id: str
+    env: Environment
+    cluster_id: str
+    stream_id: str
+    topic: str
+    anomaly_family: Literal["CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY"]
+    criticality_tier: CriticalityTier
+    final_action: Action
+    routing_key: str
+    evaluation_ts: AwareDatetime
+    # ... additional fields (topic_role)
+```
+
+---
+
+**`TriageExcerptV1`** — published to Kafka, carries the triage summary
+
+← `src/aiops_triage_pipeline/contracts/triage_excerpt.py`
+
+```python
+class TriageExcerptV1(BaseModel, frozen=True):
+    case_id: str
+    env: Environment
+    cluster_id: str
+    stream_id: str
+    topic: str
+    anomaly_family: Literal["CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY"]
+    topic_role: Literal["SOURCE_TOPIC", "SHARED_TOPIC", "SINK_TOPIC"]
+    criticality_tier: CriticalityTier
+    routing_key: str
+    sustained: bool
+    findings: tuple[Finding, ...]
+    triage_timestamp: AwareDatetime
+    # ... additional fields (peak, evidence_status_map)
+```
+
+---
+
+### Shared Enums
+
+These appear in nearly every contract and model — knowing them prevents confusion when reading both hot-path and cold-path code.
+
+← `src/aiops_triage_pipeline/contracts/enums.py`
+
+| Enum | Values |
+|------|--------|
+| `Environment` | `LOCAL`, `HARNESS`, `DEV`, `UAT`, `PROD` |
+| `Action` | `OBSERVE`, `NOTIFY`, `TICKET`, `PAGE` (ordered by urgency) |
+| `CriticalityTier` | `TIER_0`, `TIER_1`, `TIER_2`, `UNKNOWN` |
+| `EvidenceStatus` | `PRESENT`, `UNKNOWN`, `ABSENT`, `STALE` |
+| `DiagnosisConfidence` | `LOW`, `MEDIUM`, `HIGH` |
+
+> **Important:** `EvidenceStatus.UNKNOWN` means the Prometheus series is missing — never treat it as zero. AG2 gate enforces this.
+
+> For the procedure when a contract must change: `docs/schema-evolution-strategy.md`
 
 ---
 
