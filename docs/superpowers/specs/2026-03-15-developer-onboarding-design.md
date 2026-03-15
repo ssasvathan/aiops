@@ -61,31 +61,50 @@ Prometheus → [Pipeline Stages] → S3 CaseFile
 Full stage flow (Stages 1–9) with hot path vs cold path clearly labelled. Shows the async fork after Stage 7 for the cold path. Shows the Outbox as a separate publication channel.
 
 ### Per-Stage Walkthrough
-For each hot-path stage (1–7): one-sentence description, key entry function with file + line pointer, and a representative function signature code snippet.
+For each hot-path stage: one-sentence description, key entry function with file pointer, and the real function signature from the codebase as a code snippet. Stage numbering and naming follows `docs/runtime-modes.md` and the actual file layout — do not invent stage numbers for gating sub-steps.
 
-Example format:
+Stages covered in order (matching `runtime-modes.md` per-cycle flow):
+1. **Evidence** — Prometheus samples are collected separately, then `collect_evidence_stage_output()` processes them into findings. Note: this function is synchronous, not async; Prometheus collection happens upstream in `run_evidence_stage_cycle()` in `scheduler.py`.
+2. **Peak** — `collect_peak_stage_output()` in `pipeline/stages/peak.py`
+3. **Topology** — `collect_topology_stage_output()` in `pipeline/stages/topology.py`
+4. **Gate Inputs** — `collect_gate_inputs_by_scope()` in `pipeline/stages/gating.py`
+5. **Gate Decisions** — `evaluate_rulebook_gate_inputs_by_scope()` in `pipeline/stages/gating.py`
+6. **CaseFile Assembly + Outbox** — `assemble_casefile_triage_stage()` and `persist_casefile_and_prepare_outbox_ready()` in `pipeline/stages/casefile.py`; also includes the outbox row insert via `pipeline/stages/outbox.py` — this is the key step that decouples hot-path from Kafka
+7. **Dispatch** — `dispatch_action()` in `pipeline/stages/dispatch.py`
+
+**Note for document writer:** All stage entry functions shown (e.g. `collect_gate_inputs_by_scope()`, `evaluate_rulebook_gate_inputs_by_scope()`) are the domain-layer functions in `pipeline/stages/`. The scheduler (`pipeline/scheduler.py`) wraps these in `run_*_stage_cycle()` helpers. Show the domain-layer signatures in the per-stage walkthrough — these are what contributors read and modify. Do not show the scheduler wrappers in the per-stage section.
+
+**Outbox insertion:** In the hot-path, the outbox row is inserted by calling `outbox_repository.insert_pending_object()` directly in `_hot_path_scheduler_loop()` — not via `pipeline/stages/outbox.py`. The `pipeline/stages/outbox.py` module serves the **outbox-publisher** worker path. The per-stage walkthrough for Stage 6 should point to `outbox/repository.py:insert_pending_object()` for the insertion step, and clarify that `pipeline/stages/outbox.py` is used by the separate outbox-publisher process.
+
+Example format for each stage entry in the document:
 ```
-**Stage 1 — Evidence Collection**
-Queries Prometheus for all configured metrics and builds per-scope anomaly findings.
-Entry: `collect_evidence_stage_output()` — `pipeline/stages/evidence.py`
+**Stage 1 — Evidence**
+Processes collected Prometheus samples into per-scope anomaly findings.
+← src/aiops_triage_pipeline/pipeline/stages/evidence.py
 ```
 ```python
-async def collect_evidence_stage_output(
-    settings: Settings,
-    prometheus_client: PrometheusClient,
-    metrics_contract: PrometheusMetricsContractV1,
-    denylist: Denylist,
-    ...
+def collect_evidence_stage_output(
+    samples_by_metric: Mapping[str, list[Mapping[str, Any]]],
+    *,
+    findings_cache_client: FindingsCacheClientProtocol | None = None,
+    redis_ttl_policy: RedisTtlPolicyV1 | None = None,
+    evaluation_time: datetime | None = None,
+    telemetry_degraded_active: bool = False,
+    telemetry_degraded_events: Sequence[TelemetryDegradedEvent] = (),
+    max_safe_action: Action | None = None,
 ) -> EvidenceStageOutput:
 ```
-
-Stages covered: Evidence → Peak → Topology → Gate Input Assembly → Gate Decision → CaseFile Assembly → Dispatch.
+All snippets must use the real signatures from the codebase — no simplified or fabricated examples.
 
 ### Gate Engine Subsection
 A table of AG0–AG6 with each gate's responsibility. A short code note showing the short-circuit pattern (a gate returning `BLOCK` causes all subsequent gates to be skipped).
 
 ### Cold Path Note
-Stages 8 (LLM Diagnosis) and 9 (ServiceNow Linkage) run asynchronously after hot-path dispatch. Stage 8 is not yet wired (bootstrap stub). Brief explanation of what they will do, with pointers to `diagnosis/` and `linkage/`.
+Stages 8 (LLM Diagnosis) and 9 (ServiceNow Linkage) run asynchronously after hot-path dispatch. The `--mode cold-path` dispatch in `__main__.py` is currently a bootstrap stub (logs a warning and exits). However, the underlying domain logic is substantially implemented and testable independently:
+- `diagnosis/` — LangGraph graph, prompt builder, fallback path, `diagnosis.json` write-once persistence
+- `linkage/` — ServiceNow retry state machine, repository, schema (`linkage/repository.py`, `linkage/state_machine.py`, `pipeline/stages/linkage.py`)
+
+New contributors should not assume these directories are empty placeholders — they contain real logic awaiting orchestration wiring.
 
 ---
 
@@ -104,8 +123,8 @@ For each of the 4 modes:
 - **When you'd use this:** practical dev context
 
 Modes covered:
-1. `hot-path` — primary triage loop (continuous)
-2. `cold-path` — async diagnosis and linkage (stub, not yet wired)
+1. `hot-path` — **Fully wired**: loads all policies, initialises all runtime clients (Prometheus, Redis, S3, Postgres, PagerDuty, Slack, Topology), then runs `asyncio.run(_hot_path_scheduler_loop(...))` — the complete triage loop. This is the primary mode developers run locally to exercise the full pipeline.
+2. `cold-path` — **Bootstrap stub in `__main__.py`**: the entrypoint logs a warning and exits. The domain modules (`diagnosis/`, `linkage/`) are implemented but not yet orchestrated through this mode.
 3. `outbox-publisher` — polls Postgres outbox, publishes to Kafka (continuous or `--once`)
 4. `casefile-lifecycle` — purges expired CaseFiles from S3 (hourly or `--once`)
 
@@ -122,17 +141,26 @@ Reproduced from existing docs: which mode needs Redis / Postgres / Kafka / S3 / 
 Short explanation: *contracts* are stable frozen interfaces shared across subsystem boundaries (serialized, versioned, never mutated); *models* are internal domain types used within a stage. A contributor changes a model freely; changing a contract requires explicit versioning and test coverage.
 
 ### Key Contracts
-For each of the four most commonly encountered contracts, show the frozen pattern and key fields:
+For each of the four most commonly encountered contracts, show the frozen pattern and key fields. Use full paths in the format `← src/aiops_triage_pipeline/contracts/<file>.py`:
 
-1. **`GateInputV1`** (`contracts/gate_input.py`) — assembles all evidence for a scope into the rulebook input
-2. **`ActionDecisionV1`** (`contracts/action_decision.py`) — the rulebook's output; what action to take and why
-3. **`CaseHeaderEventV1`** (`contracts/case_header_event.py`) — published to Kafka, identifies the case
-4. **`TriageExcerptV1`** (`contracts/triage_excerpt.py`) — published to Kafka, carries the triage summary
+1. **`GateInputV1`** (`← src/aiops_triage_pipeline/contracts/gate_input.py`) — assembles all evidence for a scope into the rulebook input
+2. **`ActionDecisionV1`** (`← src/aiops_triage_pipeline/contracts/action_decision.py`) — the rulebook's output; what action to take and why
+3. **`CaseHeaderEventV1`** (`← src/aiops_triage_pipeline/contracts/case_header_event.py`) — published to Kafka, identifies the case
+4. **`TriageExcerptV1`** (`← src/aiops_triage_pipeline/contracts/triage_excerpt.py`) — published to Kafka, carries the triage summary
+
+All contract file pointers throughout Section 5 must use the full `src/aiops_triage_pipeline/` prefix for consistency with the rest of the document.
 
 Each snippet shows the `class ... (BaseModel, frozen=True)` pattern and 3–5 representative fields.
 
 ### Shared Enums
-Short table of `Environment`, `Action`, `CriticalityTier`, `EvidenceStatus` with their values. These appear in nearly every contract and model — knowing them prevents confusion.
+Short table of all enums from `src/aiops_triage_pipeline/contracts/enums.py` with their values:
+- `Environment` — LOCAL, HARNESS, DEV, UAT, PROD
+- `Action` — OBSERVE, NOTIFY, TICKET, PAGE
+- `CriticalityTier` — TIER_0, TIER_1, TIER_2, UNKNOWN
+- `EvidenceStatus` — PRESENT, UNKNOWN, ABSENT, STALE
+- `DiagnosisConfidence` — LOW, MEDIUM, HIGH
+
+These appear in nearly every contract and model — knowing them prevents confusion when reading the cold-path domain code (`DiagnosisReportV1`) as well as hot-path contracts.
 
 ### Pointer
 Ends with a link to `docs/schema-evolution-strategy.md` for the procedure when a contract must change.
@@ -181,7 +209,7 @@ Trimmed to the directories a contributor touches most. Each directory gets a one
 | Add a new integration | `integrations/` + mode in `config/settings.py` |
 | Understand a CaseFile written to S3 | `models/case_file.py` |
 | Trace a past triage decision | `audit/replay.py` |
-| Add a new topology scope | `registry/loader.py` + topology registry YAML |
+| Add a new topology scope | `registry/loader.py`; the registry itself is an external file — its path is set via the `TOPOLOGY_REGISTRY_PATH` env var, not committed under `config/policies/` |
 | Understand health/degraded posture | `health/registry.py` + `health/alerts.py` |
 
 ### Local Dev Checklist

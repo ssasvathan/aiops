@@ -99,8 +99,8 @@ Runtime mode status:
 |------|--------|-------|
 | `outbox-publisher` | Fully wired | Runs `OutboxPublisherWorker` with policy, denylist, and alert evaluation |
 | `casefile-lifecycle` | Fully wired | Runs `CasefileLifecycleRunner` against object storage |
-| `hot-path` | Bootstrap only | Loads settings, OTLP, and alert policy; runtime scheduler loop uses dedicated orchestration entrypoint |
-| `cold-path` | Bootstrap only | Same bootstrap; cold-path invocation uses dedicated entrypoint |
+| `hot-path` | Fully wired | Loads all policies and runtime clients; runs the complete `_hot_path_scheduler_loop` async triage cycle |
+| `cold-path` | Bootstrap stub | `__main__.py` entrypoint logs a warning and exits; domain modules (`diagnosis/`, `linkage/`) are implemented but not yet orchestrated |
 
 ## Environment Configuration
 
