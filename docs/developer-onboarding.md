@@ -78,7 +78,243 @@ flowchart LR
 
 ## 3. The Pipeline Journey
 
-<!-- PLACEHOLDER -->
+This section covers the full journey of a single anomaly through the pipeline. After reading it you'll be able to trace any triage decision from its Prometheus origin to its dispatched action.
+
+### Stage Flow
+
+```mermaid
+flowchart TD
+    EV[Stage 1\nEvidence] --> PK[Stage 2\nPeak]
+    PK --> TP[Stage 3\nTopology]
+    TP --> GI[Stage 4\nGate Inputs]
+    GI --> GD[Stage 5\nGate Decisions]
+    GD --> CF[Stage 6\nCaseFile Assembly\n+ Outbox Insert]
+    CF --> DS[Stage 7\nDispatch]
+
+    DS -.->|async, post-dispatch| DX[Stage 8\nLLM Diagnosis]
+    DX -.-> LK[Stage 9\nServiceNow Linkage]
+
+    CF --> S3[(S3\nCaseFile)]
+    CF --> PG[(Postgres\nOutbox)]
+
+    style DS fill:#d4edda
+    style CF fill:#d4edda
+    style GD fill:#d4edda
+    style DX fill:#fff3cd,stroke:#ffc107,stroke-dasharray:4
+    style LK fill:#fff3cd,stroke:#ffc107,stroke-dasharray:4
+```
+
+> **Green** = hot-path (synchronous, runs every scheduler cycle). **Yellow/dashed** = cold-path (async, post-dispatch, orchestration stub in progress).
+
+---
+
+### Per-Stage Walkthrough
+
+> The domain-layer functions below are what contributors read and modify. The scheduler (`pipeline/scheduler.py`) wraps these in `run_*_stage_cycle()` helpers — those are infrastructure glue, not domain logic.
+
+---
+
+**Stage 1 — Evidence**
+Processes collected Prometheus samples into per-scope anomaly findings. Prometheus collection happens upstream in `run_evidence_stage_cycle()` in `scheduler.py`; this function is synchronous and operates on already-collected samples.
+
+← `src/aiops_triage_pipeline/pipeline/stages/evidence.py`
+
+```python
+def collect_evidence_stage_output(
+    samples_by_metric: Mapping[str, list[Mapping[str, Any]]],
+    *,
+    findings_cache_client: FindingsCacheClientProtocol | None = None,
+    redis_ttl_policy: RedisTtlPolicyV1 | None = None,
+    evaluation_time: datetime | None = None,
+    telemetry_degraded_active: bool = False,
+    telemetry_degraded_events: Sequence[TelemetryDegradedEvent] = (),
+    max_safe_action: Action | None = None,
+) -> EvidenceStageOutput:
+```
+
+---
+
+**Stage 2 — Peak**
+Classifies whether each scope is experiencing a peak (anomaly intensity above policy thresholds) and computes sustained-window state.
+
+← `src/aiops_triage_pipeline/pipeline/stages/peak.py`
+
+```python
+def collect_peak_stage_output(
+    *,
+    rows: Sequence[EvidenceRow],
+    historical_windows_by_scope: Mapping[PeakScope, Sequence[float]],
+    evidence_status_map_by_scope: (
+        Mapping[tuple[str, ...], Mapping[str, EvidenceStatus]] | None
+    ) = None,
+    anomaly_findings: Sequence[AnomalyFinding] = (),
+    prior_sustained_window_state_by_key: (
+        Mapping[SustainedIdentityKey, SustainedWindowState] | None
+    ) = None,
+    peak_policy: PeakPolicyV1 | None = None,
+    rulebook_policy: RulebookV1 | None = None,
+    evaluation_time: datetime | None = None,
+) -> PeakStageOutput:
+```
+
+---
+
+**Stage 3 — Topology**
+Joins evidence findings with the topology registry snapshot to resolve routing context and scope metadata.
+
+← `src/aiops_triage_pipeline/pipeline/stages/topology.py`
+
+```python
+def collect_topology_stage_output(
+    *,
+    snapshot: TopologyRegistrySnapshot,
+    evidence_output: EvidenceStageOutput,
+) -> TopologyStageOutput:
+```
+
+---
+
+**Stage 4 — Gate Inputs**
+Assembles all evidence, peak, and context data for each scope into the `GateInputV1` contracts that the rulebook will evaluate.
+
+← `src/aiops_triage_pipeline/pipeline/stages/gating.py`
+
+```python
+def collect_gate_inputs_by_scope(
+    *,
+    evidence_output: EvidenceStageOutput,
+    peak_output: PeakStageOutput,
+    context_by_scope: Mapping[GateScope, GateInputContext],
+    max_safe_action: Action | None = None,
+) -> dict[GateScope, tuple[GateInputV1, ...]]:
+```
+
+---
+
+**Stage 5 — Gate Decisions**
+Runs each scope's `GateInputV1` contracts through the rulebook (AG0–AG6) and produces an `ActionDecisionV1` per scope.
+
+← `src/aiops_triage_pipeline/pipeline/stages/gating.py`
+
+```python
+def evaluate_rulebook_gate_inputs_by_scope(
+    *,
+    gate_inputs_by_scope: Mapping[GateScope, tuple[GateInputV1, ...]],
+    rulebook: RulebookV1,
+    dedupe_store: GateDedupeStoreProtocol | None = None,
+    latency_warning_threshold_ms: int = 500,
+) -> dict[GateScope, tuple[ActionDecisionV1, ...]]:
+```
+
+---
+
+**Stage 6 — CaseFile Assembly + Outbox Insert**
+Assembles the complete triage artifact and persists it to S3, then inserts an outbox row in Postgres to decouple the hot-path from Kafka.
+
+← `src/aiops_triage_pipeline/pipeline/stages/casefile.py`
+
+```python
+def assemble_casefile_triage_stage(
+    *,
+    scope: tuple[str, ...],
+    evidence_output: EvidenceStageOutput,
+    peak_output: PeakStageOutput,
+    topology_output: TopologyStageOutput,
+    gate_input: GateInputV1,
+    action_decision: ActionDecisionV1,
+    rulebook_policy: RulebookV1,
+    peak_policy: PeakPolicyV1,
+    prometheus_metrics_contract: PrometheusMetricsContractV1,
+    denylist: DenylistV1,
+    diagnosis_policy_version: str,
+    triage_timestamp: datetime | None = None,
+    case_id: str | None = None,
+) -> CaseFileTriageV1:
+
+def persist_casefile_and_prepare_outbox_ready(
+    *,
+    casefile: CaseFileTriageV1,
+    object_store_client: ObjectStoreClientProtocol,
+) -> OutboxReadyCasefileV1:
+```
+
+**Outbox insertion:** After `persist_casefile_and_prepare_outbox_ready()`, the hot-path calls `outbox_repository.insert_pending_object()` directly in `_hot_path_scheduler_loop()`. This is the step that decouples the hot-path from Kafka — a transactional outbox row is inserted, not a Kafka publish.
+
+← `src/aiops_triage_pipeline/outbox/repository.py`
+
+```python
+def insert_pending_object(
+    self,
+    *,
+    confirmed_casefile: OutboxReadyCasefileV1,
+    now: datetime | None = None,
+) -> OutboxRecordV1:
+```
+
+> `pipeline/stages/outbox.py` provides higher-level state-transition helpers used by the outbox-publisher worker — not by the hot-path loop.
+
+---
+
+**Stage 7 — Dispatch**
+Takes the `ActionDecisionV1` and routes it to PagerDuty, Slack, or log-fallback, depending on integration modes and the denylist.
+
+← `src/aiops_triage_pipeline/pipeline/stages/dispatch.py`
+
+```python
+def dispatch_action(
+    *,
+    case_id: str,
+    decision: ActionDecisionV1,
+    routing_context: TopologyRoutingContext | None,
+    pd_client: PagerDutyClient,
+    slack_client: SlackClient,
+    denylist: DenylistV1,
+) -> None:
+```
+
+---
+
+### Gate Engine
+
+Gates AG0–AG6 run sequentially on each `GateInputV1`. Each gate may reduce the proposed action (`cap_action_to`); a gate that is already below a gate's activation threshold is skipped automatically.
+
+| Gate | Name | Responsibility |
+|------|------|----------------|
+| AG0 | Schema & invariants | Never page/ticket on malformed or incomplete decision inputs |
+| AG1 | Environment + tier caps | PAGE is only allowed in PROD + TIER_0 |
+| AG2 | Evidence sufficiency | If required evidence is UNKNOWN/ABSENT/STALE, downgrade — never assume 0 |
+| AG3 | Paging denied for SOURCE_TOPIC | Never PAGE on SOURCE_TOPIC anomalies |
+| AG4 | Confidence + sustained gating | Prevent high-urgency actions when confidence/sustained are weak |
+| AG5 | Storm control (dedupe) | Prevent repeated paging/ticket storms on the same fingerprint |
+| AG6 | Postmortem policy selector | Selectively require postmortems based on phase and SN linkage |
+
+**Skip-by-priority pattern** — gates AG4 and AG5 require a minimum action level and are skipped when the current action is already below it (AG0–AG3 and AG6 do not use this pattern):
+
+```python
+# from pipeline/stages/gating.py
+if gate_id == "AG4":
+    if _ACTION_PRIORITY[state.current_action] < _ACTION_PRIORITY[Action.TICKET]:
+        continue  # AG4 is irrelevant if action is already below TICKET
+
+if gate_id == "AG5":
+    if _ACTION_PRIORITY[state.current_action] <= _ACTION_PRIORITY[Action.OBSERVE]:
+        continue  # AG5 is irrelevant if action is OBSERVE
+```
+
+← `src/aiops_triage_pipeline/pipeline/stages/gating.py`
+
+---
+
+### Cold Path: Stages 8 and 9
+
+Stages 8 (LLM Diagnosis) and 9 (ServiceNow Linkage) run asynchronously after hot-path dispatch. The `--mode cold-path` entrypoint in `__main__.py` is currently a bootstrap stub — it logs a warning and exits.
+
+However, the domain logic is substantially implemented and testable independently:
+
+- **`diagnosis/`** — LangGraph graph, prompt builder, fallback path, `diagnosis.json` write-once persistence
+- **`linkage/`** — ServiceNow retry state machine, repository, schema (`linkage/repository.py`, `linkage/state_machine.py`, `pipeline/stages/linkage.py`)
+
+These directories are not empty placeholders. New contributors should not skip them — they contain real logic awaiting orchestration wiring.
 
 ---
 
