@@ -69,12 +69,12 @@ Stages covered in order (matching `runtime-modes.md` per-cycle flow):
 3. **Topology** — `collect_topology_stage_output()` in `pipeline/stages/topology.py`
 4. **Gate Inputs** — `collect_gate_inputs_by_scope()` in `pipeline/stages/gating.py`
 5. **Gate Decisions** — `evaluate_rulebook_gate_inputs_by_scope()` in `pipeline/stages/gating.py`
-6. **CaseFile Assembly + Outbox** — `assemble_casefile_triage_stage()` and `persist_casefile_and_prepare_outbox_ready()` in `pipeline/stages/casefile.py`; also includes the outbox row insert via `pipeline/stages/outbox.py` — this is the key step that decouples hot-path from Kafka
+6. **CaseFile Assembly + Outbox** — `assemble_casefile_triage_stage()` and `persist_casefile_and_prepare_outbox_ready()` in `pipeline/stages/casefile.py`; the hot-path then calls `outbox_repository.insert_pending_object()` directly (`outbox/repository.py`) — this is the key step that decouples hot-path from Kafka
 7. **Dispatch** — `dispatch_action()` in `pipeline/stages/dispatch.py`
 
 **Note for document writer:** All stage entry functions shown (e.g. `collect_gate_inputs_by_scope()`, `evaluate_rulebook_gate_inputs_by_scope()`) are the domain-layer functions in `pipeline/stages/`. The scheduler (`pipeline/scheduler.py`) wraps these in `run_*_stage_cycle()` helpers. Show the domain-layer signatures in the per-stage walkthrough — these are what contributors read and modify. Do not show the scheduler wrappers in the per-stage section.
 
-**Outbox insertion:** In the hot-path, the outbox row is inserted by calling `outbox_repository.insert_pending_object()` directly in `_hot_path_scheduler_loop()` — not via `pipeline/stages/outbox.py`. The `pipeline/stages/outbox.py` module serves the **outbox-publisher** worker path. The per-stage walkthrough for Stage 6 should point to `outbox/repository.py:insert_pending_object()` for the insertion step, and clarify that `pipeline/stages/outbox.py` is used by the separate outbox-publisher process.
+**Outbox insertion:** In the hot-path, the outbox row is inserted by calling `outbox_repository.insert_pending_object()` directly in `_hot_path_scheduler_loop()` (`outbox/repository.py`). `pipeline/stages/outbox.py` provides higher-level state-transition helpers used by both the hot path and the outbox-publisher worker — but the hot-path loop calls the repository directly, not the stage helpers. The per-stage walkthrough for Stage 6 should point to `outbox/repository.py:insert_pending_object()` for the hot-path insertion step, and note that `pipeline/stages/outbox.py` provides the outbox-publisher's higher-level helpers.
 
 Example format for each stage entry in the document:
 ```
