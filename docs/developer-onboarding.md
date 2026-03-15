@@ -506,7 +506,7 @@ class CaseHeaderEventV1(BaseModel, frozen=True):
     final_action: Action
     routing_key: str
     evaluation_ts: AwareDatetime
-    # ... additional fields (topic_role)
+    # ... additional fields (schema_version)
 ```
 
 ---
@@ -542,11 +542,13 @@ These appear in nearly every contract and model — knowing them prevents confus
 
 | Enum | Values |
 |------|--------|
-| `Environment` | `LOCAL`, `HARNESS`, `DEV`, `UAT`, `PROD` |
+| `Environment` | `LOCAL` (`"local"`), `HARNESS` (`"harness"`), `DEV` (`"dev"`), `UAT` (`"uat"`), `PROD` (`"prod"`) |
 | `Action` | `OBSERVE`, `NOTIFY`, `TICKET`, `PAGE` (ordered by urgency) |
 | `CriticalityTier` | `TIER_0`, `TIER_1`, `TIER_2`, `UNKNOWN` |
 | `EvidenceStatus` | `PRESENT`, `UNKNOWN`, `ABSENT`, `STALE` |
 | `DiagnosisConfidence` | `LOW`, `MEDIUM`, `HIGH` |
+
+*`Environment` values serialize to lowercase strings in JSON (e.g. `"local"`, `"prod"`); all other enums serialize to uppercase.*
 
 > **Important:** `EvidenceStatus.UNKNOWN` means the Prometheus series is missing — never treat it as zero. AG2 gate enforces this.
 
