@@ -1,28 +1,140 @@
-# AIOps Triage Pipeline — Developer Onboarding
+# Developer Onboarding Guide Implementation Plan
 
-> For a new contributor who has just cloned the repo and wants to build an accurate mental model before writing code.
+> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
----
+**Goal:** Write `docs/developer-onboarding.md` — a single Markdown file that gives a new contributor an accurate mental model of the AIOps Triage Pipeline before they touch code.
 
-## Contents
+**Architecture:** Seven sections, progressing from problem → concepts → pipeline stages → runtime modes → data contracts → configuration → code navigation. All code snippets use real signatures from the codebase. Three Mermaid diagrams provide visual orientation. No invented examples.
 
-1. [What Problem Does This Solve?](#1-what-problem-does-this-solve)
-2. [How the System Thinks](#2-how-the-system-thinks)
-3. [The Pipeline Journey](#3-the-pipeline-journey)
-4. [Runtime Modes](#4-runtime-modes)
-5. [Data Contracts](#5-data-contracts)
-6. [Configuration](#6-configuration)
-7. [Code Navigation](#7-code-navigation)
+**Tech Stack:** Markdown, Mermaid (GitHub-flavoured), Pydantic v2 contract signatures.
+
+**Spec:** `docs/superpowers/specs/2026-03-15-developer-onboarding-design.md`
 
 ---
 
-## 1. What Problem Does This Solve?
+## File Structure
 
+| Action | Path | Responsibility |
+|--------|------|----------------|
+| **Create** | `docs/developer-onboarding.md` | The complete onboarding document |
+
+No source code is modified. This plan produces one new file.
+
+---
+
+## Verification Approach
+
+Because this is a documentation task there are no unit tests. Verification for each section means:
+
+1. **Spec compliance** — every bullet from the design spec is addressed.
+2. **Accuracy** — all function signatures, file paths, and field names match the actual codebase.
+3. **Mermaid validity** — diagrams render without syntax errors (use `npx @mermaid-js/mermaid-cli` or visually verify in a Markdown previewer).
+
+A final checklist derived from the spec's **Success Criteria** is run at the end of the plan.
+
+---
+
+## Chunk 1: Skeleton + Sections 1 and 2
+
+### Task 1: Create the file skeleton
+
+**Files:**
+- Create: `docs/developer-onboarding.md`
+
+- [ ] **Step 1: Create the skeleton**
+
+  Create `docs/developer-onboarding.md` with the following structure (section bodies are empty placeholders):
+
+  ```markdown
+  # AIOps Triage Pipeline — Developer Onboarding
+
+  > For a new contributor who has just cloned the repo and wants to build an accurate mental model before writing code.
+
+  ---
+
+  ## Contents
+
+  1. [What Problem Does This Solve?](#1-what-problem-does-this-solve)
+  2. [How the System Thinks](#2-how-the-system-thinks)
+  3. [The Pipeline Journey](#3-the-pipeline-journey)
+  4. [Runtime Modes](#4-runtime-modes)
+  5. [Data Contracts](#5-data-contracts)
+  6. [Configuration](#6-configuration)
+  7. [Code Navigation](#7-code-navigation)
+
+  ---
+
+  ## 1. What Problem Does This Solve?
+
+  <!-- PLACEHOLDER -->
+
+  ---
+
+  ## 2. How the System Thinks
+
+  <!-- PLACEHOLDER -->
+
+  ---
+
+  ## 3. The Pipeline Journey
+
+  <!-- PLACEHOLDER -->
+
+  ---
+
+  ## 4. Runtime Modes
+
+  <!-- PLACEHOLDER -->
+
+  ---
+
+  ## 5. Data Contracts
+
+  <!-- PLACEHOLDER -->
+
+  ---
+
+  ## 6. Configuration
+
+  <!-- PLACEHOLDER -->
+
+  ---
+
+  ## 7. Code Navigation
+
+  <!-- PLACEHOLDER -->
+  ```
+
+- [ ] **Step 2: Verify the file exists and renders headings**
+
+  ```bash
+  grep "^##" docs/developer-onboarding.md
+  ```
+
+  Expected output: 7 section headings listed.
+
+- [ ] **Step 3: Commit**
+
+  ```bash
+  git add docs/developer-onboarding.md
+  git commit -m "docs: scaffold developer-onboarding skeleton"
+  ```
+
+---
+
+### Task 2: Write Section 1 — What Problem Does This Solve?
+
+**Files:**
+- Modify: `docs/developer-onboarding.md` (Section 1 body)
+
+**Content to write** (replace the `<!-- PLACEHOLDER -->` under Section 1):
+
+```markdown
 This section establishes *why this system exists* and the vocabulary used throughout. After reading it you'll know what the system produces and the mental vocabulary used in every other section.
 
-Infrastructure at scale generates a continuous stream of telemetries including metrics, logs and traces. Triaging anomalies manually — deciding whether a consumer-lag spike is noise, a soft issue requiring a Slack notification, or an incident requiring an immediate page — is slow, inconsistent, and error-prone when done by humans across hundreds of Kafka topics.
+Infrastructure at scale generates a continuous stream of Prometheus metrics. Triaging anomalies manually — deciding whether a consumer-lag spike is noise, a soft issue requiring a Slack notification, or an incident requiring an immediate page — is slow, inconsistent, and error-prone when done by humans across hundreds of Kafka topics.
 
-The AIOps Triage Pipeline automates this triage loop. At the current phase (MVP), It ingests Prometheus metrics, classifies anomaly patterns, assembles a durable case artifact, gates the proposed action through a deterministic rulebook, and dispatches to the appropriate channel (PagerDuty, Slack, or a structured log fallback). Every decision is explainable and replayable from stored artifacts.
+The AIOps Triage Pipeline automates this triage loop. It ingests Prometheus samples, classifies anomaly patterns, assembles a durable case artifact, gates the proposed action through a deterministic rulebook, and dispatches to the appropriate channel (PagerDuty, Slack, or a structured log fallback). Every decision is explainable and replayable from stored artifacts.
 
 **What the system produces:**
 - A **CaseFile** — an immutable JSON artifact written to S3, recording the complete triage context.
@@ -30,11 +142,35 @@ The AIOps Triage Pipeline automates this triage loop. At the current phase (MVP)
 - An **ActionDecisionV1** — the rulebook's verdict: what action to take and why.
 
 **Core vocabulary:** *anomaly → triage → case → gate → action*. These five words appear throughout the codebase; keep them in mind as you read.
+```
+
+- [ ] **Step 1: Replace the Section 1 placeholder** with the content above.
+
+- [ ] **Step 2: Verify**
+
+  ```bash
+  grep -c "CaseFile\|ActionDecisionV1\|Kafka" docs/developer-onboarding.md
+  ```
+
+  Expected: at least 3 matches.
+
+- [ ] **Step 3: Commit**
+
+  ```bash
+  git add docs/developer-onboarding.md
+  git commit -m "docs(onboarding): write section 1 - problem statement"
+  ```
 
 ---
 
-## 2. How the System Thinks
+### Task 3: Write Section 2 — How the System Thinks
 
+**Files:**
+- Modify: `docs/developer-onboarding.md` (Section 2 body)
+
+**Content to write** (replace the `<!-- PLACEHOLDER -->` under Section 2):
+
+```markdown
 This section covers four mental models that govern every design decision in this codebase. After reading it you'll be able to predict *why* the code is structured the way it is.
 
 ### Mental Model 1: The Pipeline Is Sequential and Deterministic
@@ -53,7 +189,7 @@ Every external call (PagerDuty, Slack, Kafka, ServiceNow, LLM) has an explicit s
 
 CaseFiles are immutable artifacts written to object storage. Each enrichment stage writes exactly one file (`triage.json`, `diagnosis.json`, `linkage.json`). A missing file means that stage did not complete — never that it failed silently. The system's state is always observable from S3.
 
-### High-Level Concept (MVP)
+### High-Level Concept
 
 ```mermaid
 flowchart LR
@@ -67,51 +203,97 @@ flowchart LR
     end
 
     S6 --> S3out[S3 CaseFile]
-    S6 --> OB[Outbox<br/>Postgres]
+    S6 --> OB[Outbox\nPostgres]
     OB -->|publisher worker| K[Kafka Events]
-    S7 --> AD[Action Dispatch<br>PD / Slack]
+    S7 --> AD[Action Dispatch\nPD / Slack]
 ```
 
 > **Legend:** Solid arrows = hot-path (synchronous). Dashed arrows = cold-path (async, post-dispatch).
+```
+
+- [ ] **Step 1: Replace the Section 2 placeholder** with the content above.
+
+- [ ] **Step 2: Verify all four mental models are present**
+
+  ```bash
+  grep "Mental Model" docs/developer-onboarding.md | wc -l
+  ```
+
+  Expected: 4
+
+- [ ] **Step 3: Commit**
+
+  ```bash
+  git add docs/developer-onboarding.md
+  git commit -m "docs(onboarding): write section 2 - mental models and concept diagram"
+  ```
 
 ---
 
-## 3. The Pipeline Journey
+## Chunk 2: Section 3 — The Pipeline Journey
 
+### Task 4: Write Section 3 — The Pipeline Journey
+
+**Files:**
+- Modify: `docs/developer-onboarding.md` (Section 3 body)
+
+**Reference files to read before writing:**
+- `src/aiops_triage_pipeline/pipeline/stages/evidence.py:134-176`
+- `src/aiops_triage_pipeline/pipeline/stages/peak.py:64-162`
+- `src/aiops_triage_pipeline/pipeline/stages/topology.py:63-72`
+- `src/aiops_triage_pipeline/pipeline/stages/gating.py:86-202` (gate loop + AG0-AG6 pattern)
+- `src/aiops_triage_pipeline/pipeline/stages/casefile.py:58-126` and `:230-294`
+- `src/aiops_triage_pipeline/outbox/repository.py:40-86`
+- `src/aiops_triage_pipeline/pipeline/stages/dispatch.py:12-125`
+- `config/policies/rulebook-v1.yaml` (gate names and intents)
+
+**Content structure to write:**
+
+The section has four parts:
+1. Full stage-flow Mermaid diagram
+2. Per-stage walkthrough (Stages 1–7 hot path)
+3. Gate Engine subsection (AG0–AG6 table + short-circuit pattern)
+4. Cold Path note (Stages 8–9)
+
+---
+
+#### Part A: Stage-flow diagram
+
+```markdown
 This section covers the full journey of a single anomaly through the pipeline. After reading it you'll be able to trace any triage decision from its Prometheus origin to its dispatched action.
 
 ### Stage Flow
 
 ```mermaid
 flowchart TD
-    EV[Stage 1<br>Evidence] --> PK[Stage 2<br>Peak]
-    PK --> TP[Stage 3<br>Topology]
-    TP --> GI[Stage 4<br>Gate Inputs]
-    GI --> GD[Stage 5<br>Gate Decisions]
-    GD --> CF[Stage 6<br>CaseFile Assembly<br>+ Outbox Insert]
-    CF --> DS[Stage 7<br>Dispatch]
+    EV[Stage 1\nEvidence] --> PK[Stage 2\nPeak]
+    PK --> TP[Stage 3\nTopology]
+    TP --> GI[Stage 4\nGate Inputs]
+    GI --> GD[Stage 5\nGate Decisions]
+    GD --> CF[Stage 6\nCaseFile Assembly\n+ Outbox Insert]
+    CF --> DS[Stage 7\nDispatch]
 
-    DS -.->|async, post-dispatch| DX[Stage 8<br>LLM Diagnosis]
-    DX -.-> LK[Stage 9<br>ServiceNow Linkage]
+    DS -.->|async, post-dispatch| DX[Stage 8\nLLM Diagnosis]
+    DX -.-> LK[Stage 9\nServiceNow Linkage]
 
-    CF --> S3[(S3<br>CaseFile)]
-    CF --> PG[(Postgres<br>Outbox)]
+    CF --> S3[(S3\nCaseFile)]
+    CF --> PG[(Postgres\nOutbox)]
 
-    style EV fill:#fff3cd
-    style PK fill:#fff3cd
-    style TP fill:#fff3cd
-    style GI fill:#fff3cd
-    style GD fill:#fff3cd
-    style CF fill:#fff3cd
-    style DS fill:#fff3cd
+    style DS fill:#d4edda
+    style CF fill:#d4edda
+    style GD fill:#d4edda
     style DX fill:#fff3cd,stroke:#ffc107,stroke-dasharray:4
     style LK fill:#fff3cd,stroke:#ffc107,stroke-dasharray:4
 ```
 
 > **Green** = hot-path (synchronous, runs every scheduler cycle). **Yellow/dashed** = cold-path (async, post-dispatch, orchestration stub in progress).
+```
 
----
+#### Part B: Per-stage walkthrough
 
+Write a subsection `### Per-Stage Walkthrough` with entries for each of the 7 hot-path stages. Use the real signatures from the codebase (gathered above). Follow the format from the spec exactly:
+
+```markdown
 ### Per-Stage Walkthrough
 
 > The domain-layer functions below are what contributors read and modify. The scheduler (`pipeline/scheduler.py`) wraps these in `run_*_stage_cycle()` helpers — those are infrastructure glue, not domain logic.
@@ -275,9 +457,15 @@ def dispatch_action(
     denylist: DenylistV1,
 ) -> None:
 ```
+```
 
----
+#### Part C: Gate Engine subsection
 
+Write `### Gate Engine` with:
+- A table of AG0–AG6 using data from `config/policies/rulebook-v1.yaml`
+- The action-priority short-circuit pattern
+
+```markdown
 ### Gate Engine
 
 Gates AG0–AG6 run sequentially on each `GateInputV1`. Each gate may reduce the proposed action (`cap_action_to`); a gate that is already below a gate's activation threshold is skipped automatically.
@@ -290,11 +478,9 @@ Gates AG0–AG6 run sequentially on each `GateInputV1`. Each gate may reduce the
 | AG3 | Paging denied for SOURCE_TOPIC | Never PAGE on SOURCE_TOPIC anomalies |
 | AG4 | Confidence + sustained gating | Prevent high-urgency actions when confidence/sustained are weak |
 | AG5 | Storm control (dedupe) | Prevent repeated paging/ticket storms on the same fingerprint |
-| AG6 | Postmortem policy selector | Selectively require postmortems (SOFT today; HARD planned for Phase 1B once SN linkage is wired) |
+| AG6 | Postmortem policy selector | Selectively require postmortems based on phase and SN linkage |
 
-**AG0 failure effect:** When AG0 validation fails, it sets `state.input_valid = False`. Gates AG1–AG5 still execute, but AG6 checks `input_valid` before evaluating — suppressing postmortem logic on malformed inputs. This is the only inter-gate state propagation in the current implementation.
-
-**Skip-by-priority pattern** — gates AG4 and AG5 require a minimum action level and are skipped when the current action is already below it (AG0–AG3 and AG6 do not use this pattern):
+**Skip-by-priority pattern** — gates that require a minimum action level are skipped when the current action is already below it:
 
 ```python
 # from pipeline/stages/gating.py
@@ -308,9 +494,11 @@ if gate_id == "AG5":
 ```
 
 ← `src/aiops_triage_pipeline/pipeline/stages/gating.py`
+```
 
----
+#### Part D: Cold Path note
 
+```markdown
 ### Cold Path: Stages 8 and 9
 
 Stages 8 (LLM Diagnosis) and 9 (ServiceNow Linkage) run asynchronously after hot-path dispatch. The `--mode cold-path` entrypoint in `__main__.py` is currently a bootstrap stub — it logs a warning and exits.
@@ -321,11 +509,57 @@ However, the domain logic is substantially implemented and testable independentl
 - **`linkage/`** — ServiceNow retry state machine, repository, schema (`linkage/repository.py`, `linkage/state_machine.py`, `pipeline/stages/linkage.py`)
 
 These directories are not empty placeholders. New contributors should not skip them — they contain real logic awaiting orchestration wiring.
+```
+
+- [ ] **Step 1: Replace the Section 3 placeholder** with all four parts (A, B, C, D) above.
+
+- [ ] **Step 2: Verify all 7 stage entries are present**
+
+  ```bash
+  grep "Stage [1-7] —" docs/developer-onboarding.md | wc -l
+  ```
+
+  Expected: 7
+
+- [ ] **Step 3: Verify all gate rows are present**
+
+  ```bash
+  grep "AG[0-6]" docs/developer-onboarding.md | wc -l
+  ```
+
+  Expected: ≥ 14 (7 in the table rows + ≥7 in code/other references)
+
+- [ ] **Step 4: Verify real function signatures are used (not fabricated)**
+
+  ```bash
+  grep "collect_evidence_stage_output\|collect_peak_stage_output\|dispatch_action" docs/developer-onboarding.md
+  ```
+
+  Expected: each function name appears at least once.
+
+- [ ] **Step 5: Commit**
+
+  ```bash
+  git add docs/developer-onboarding.md
+  git commit -m "docs(onboarding): write section 3 - pipeline journey, gates, cold path"
+  ```
 
 ---
 
-## 4. Runtime Modes
+## Chunk 3: Sections 4 and 5
 
+### Task 5: Write Section 4 — Runtime Modes
+
+**Files:**
+- Modify: `docs/developer-onboarding.md` (Section 4 body)
+
+**Reference files to read before writing:**
+- `src/aiops_triage_pipeline/__main__.py` (mode dispatch, lines 78-488)
+- `docs/runtime-modes.md` (dependency matrix table — reproduce it)
+
+**Content to write:**
+
+```markdown
 This section covers the four runtime modes. After reading it you'll know which mode to start for any local development task and what infrastructure each mode requires.
 
 ### Mode Overview
@@ -335,7 +569,7 @@ graph TD
     HP[hot-path] -->|reads| PROM[(Prometheus)]
     HP -->|reads/writes| REDIS[(Redis)]
     HP -->|writes| S3[(S3)]
-    HP -->|writes| PG[(Postgres<br>Outbox)]
+    HP -->|writes| PG[(Postgres\nOutbox)]
     HP -->|calls| PD[PagerDuty]
     HP -->|calls| SL[Slack]
 
@@ -345,7 +579,7 @@ graph TD
 
     CL[casefile-lifecycle] -->|reads/writes| S3
 
-    CP["cold-path<br>(bootstrap stub —<br>no infra deps)"]
+    CP["cold-path\n(bootstrap stub —\nno infra deps)"]
 ```
 
 ### Per-Mode Walkthrough
@@ -432,11 +666,42 @@ APP_ENV=local python -m aiops_triage_pipeline --mode casefile-lifecycle --once
 | `casefile-lifecycle` | — | — | — | ✓ | — |
 
 > See `docs/runtime-modes.md` for full per-mode environment variable reference.
+```
+
+- [ ] **Step 1: Replace the Section 4 placeholder** with the content above.
+
+- [ ] **Step 2: Verify all four modes are documented**
+
+  ```bash
+  grep '`hot-path`\|`cold-path`\|`outbox-publisher`\|`casefile-lifecycle`' docs/developer-onboarding.md | wc -l
+  ```
+
+  Expected: ≥ 8 (each mode appears at least twice).
+
+- [ ] **Step 3: Commit**
+
+  ```bash
+  git add docs/developer-onboarding.md
+  git commit -m "docs(onboarding): write section 4 - runtime modes"
+  ```
 
 ---
 
-## 5. Data Contracts
+### Task 6: Write Section 5 — Data Contracts
 
+**Files:**
+- Modify: `docs/developer-onboarding.md` (Section 5 body)
+
+**Reference files to read before writing:**
+- `src/aiops_triage_pipeline/contracts/gate_input.py:80-103`
+- `src/aiops_triage_pipeline/contracts/action_decision.py:10-19`
+- `src/aiops_triage_pipeline/contracts/case_header_event.py:10-21`
+- `src/aiops_triage_pipeline/contracts/triage_excerpt.py:11-26`
+- `src/aiops_triage_pipeline/contracts/enums.py`
+
+**Content to write:**
+
+```markdown
 This section covers how data moves between pipeline stages. After reading it you'll understand the frozen-contract pattern and be able to find any contract field in the codebase.
 
 ### Contracts vs Models
@@ -458,17 +723,12 @@ A contributor changes a model freely. Changing a contract requires explicit vers
 ```python
 class GateInputV1(BaseModel, frozen=True):
     env: Environment
-    cluster_id: str
-    stream_id: str
-    topic: str
-    topic_role: Literal["SOURCE_TOPIC", "SHARED_TOPIC", "SINK_TOPIC"]
-    anomaly_family: Literal["CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY"]
     criticality_tier: CriticalityTier
     proposed_action: Action
     sustained: bool
     findings: tuple[Finding, ...]
     action_fingerprint: str
-    # ... additional fields (diagnosis_confidence, evidence_status_map, consumer_group, partition_count_observed, peak, case_id, decision_basis)
+    # ... additional fields (topic, cluster_id, stream_id, anomaly_family, evidence_status_map, …)
 ```
 
 ---
@@ -483,9 +743,8 @@ class ActionDecisionV1(BaseModel, frozen=True):
     env_cap_applied: bool
     gate_rule_ids: tuple[str, ...]
     gate_reason_codes: tuple[str, ...]
-    action_fingerprint: str
     postmortem_required: bool
-    # ... additional fields (postmortem_mode, postmortem_reason_codes)
+    # ... additional fields (action_fingerprint, postmortem_mode, postmortem_reason_codes)
 ```
 
 ---
@@ -498,15 +757,11 @@ class ActionDecisionV1(BaseModel, frozen=True):
 class CaseHeaderEventV1(BaseModel, frozen=True):
     case_id: str
     env: Environment
-    cluster_id: str
-    stream_id: str
     topic: str
-    anomaly_family: Literal["CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY"]
     criticality_tier: CriticalityTier
     final_action: Action
-    routing_key: str
     evaluation_ts: AwareDatetime
-    # ... additional fields (schema_version)
+    # ... additional fields (cluster_id, stream_id, anomaly_family, routing_key)
 ```
 
 ---
@@ -519,17 +774,12 @@ class CaseHeaderEventV1(BaseModel, frozen=True):
 class TriageExcerptV1(BaseModel, frozen=True):
     case_id: str
     env: Environment
-    cluster_id: str
-    stream_id: str
     topic: str
-    anomaly_family: Literal["CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY"]
     topic_role: Literal["SOURCE_TOPIC", "SHARED_TOPIC", "SINK_TOPIC"]
     criticality_tier: CriticalityTier
-    routing_key: str
-    sustained: bool
     findings: tuple[Finding, ...]
     triage_timestamp: AwareDatetime
-    # ... additional fields (peak, evidence_status_map)
+    # ... additional fields (cluster_id, stream_id, anomaly_family, routing_key, sustained, evidence_status_map)
 ```
 
 ---
@@ -542,22 +792,59 @@ These appear in nearly every contract and model — knowing them prevents confus
 
 | Enum | Values |
 |------|--------|
-| `Environment` | `LOCAL` (`"local"`), `HARNESS` (`"harness"`), `DEV` (`"dev"`), `UAT` (`"uat"`), `PROD` (`"prod"`) |
+| `Environment` | `LOCAL`, `HARNESS`, `DEV`, `UAT`, `PROD` |
 | `Action` | `OBSERVE`, `NOTIFY`, `TICKET`, `PAGE` (ordered by urgency) |
 | `CriticalityTier` | `TIER_0`, `TIER_1`, `TIER_2`, `UNKNOWN` |
 | `EvidenceStatus` | `PRESENT`, `UNKNOWN`, `ABSENT`, `STALE` |
 | `DiagnosisConfidence` | `LOW`, `MEDIUM`, `HIGH` |
 
-*`Environment` values serialize to lowercase strings in JSON (e.g. `"local"`, `"prod"`); all other enums serialize to uppercase.*
-
 > **Important:** `EvidenceStatus.UNKNOWN` means the Prometheus series is missing — never treat it as zero. AG2 gate enforces this.
 
 > For the procedure when a contract must change: `docs/schema-evolution-strategy.md`
+```
+
+- [ ] **Step 1: Replace the Section 5 placeholder** with the content above.
+
+- [ ] **Step 2: Verify all four contracts are documented**
+
+  ```bash
+  grep "GateInputV1\|ActionDecisionV1\|CaseHeaderEventV1\|TriageExcerptV1" docs/developer-onboarding.md | wc -l
+  ```
+
+  Expected: ≥ 8
+
+- [ ] **Step 3: Verify the frozen pattern appears**
+
+  ```bash
+  grep "frozen=True" docs/developer-onboarding.md
+  ```
+
+  Expected: at least one match.
+
+- [ ] **Step 4: Commit**
+
+  ```bash
+  git add docs/developer-onboarding.md
+  git commit -m "docs(onboarding): write section 5 - data contracts and enums"
+  ```
 
 ---
 
-## 6. Configuration
+## Chunk 4: Sections 6 and 7 + Final Verification
 
+### Task 7: Write Section 6 — Configuration
+
+**Files:**
+- Modify: `docs/developer-onboarding.md` (Section 6 body)
+
+**Reference files to read before writing:**
+- `src/aiops_triage_pipeline/config/settings.py` — skim for key variable groups
+- `config/policies/` — list of YAML files and what each controls
+- `src/aiops_triage_pipeline/pipeline/stages/dispatch.py` — integration mode check pattern
+
+**Content to write:**
+
+```markdown
 This section covers the three layers of configuration. After reading it you'll know where to look to change any system behaviour without touching application code.
 
 ### Layer 1: Settings (`config/settings.py`)
@@ -565,11 +852,11 @@ This section covers the three layers of configuration. After reading it you'll k
 Settings are loaded via `pydantic-settings` from environment variables and `.env` files. The `APP_ENV` variable selects which `.env.<env>` file to load (e.g. `APP_ENV=local` loads `.env.local`).
 
 | Group | Key Variables |
-|-------|---------------|
-| Infrastructure | `KAFKA_BOOTSTRAP_SERVERS`, `DATABASE_URL`, `REDIS_URL`, `S3_BUCKET` |
-| Integration modes | `INTEGRATION_MODE_PD`, `INTEGRATION_MODE_SLACK`, `INTEGRATION_MODE_SN`, `INTEGRATION_MODE_LLM` |
-| Scheduler | `HOT_PATH_SCHEDULER_INTERVAL_SECONDS`, `OUTBOX_PUBLISHER_POLL_INTERVAL_SECONDS` |
-| Observability | `OTLP_METRICS_ENDPOINT`, `OTLP_METRICS_PROTOCOL` |
+|-------|--------------|
+| Infrastructure | `KAFKA_BOOTSTRAP_SERVERS`, `POSTGRES_DSN`, `REDIS_URL`, `S3_BUCKET_NAME` |
+| Integration modes | `INTEGRATION_MODE_PD`, `INTEGRATION_MODE_SLACK`, `INTEGRATION_MODE_KAFKA`, `INTEGRATION_MODE_SERVICENOW`, `INTEGRATION_MODE_LLM` |
+| Scheduler | `HOT_PATH_INTERVAL_SECONDS`, `OUTBOX_POLL_INTERVAL_SECONDS` |
+| Observability | `OTLP_ENDPOINT`, `OTLP_ENABLED` |
 
 ← `src/aiops_triage_pipeline/config/settings.py`
 
@@ -594,30 +881,23 @@ Policies are loaded once at startup and drive all pipeline behaviour. To change 
 
 ### Layer 3: Integration Modes
 
-The `OFF | LOG | MOCK | LIVE` pattern is checked before every external call. The actual dispatch is handled in the integration adapters (e.g. `integrations/pagerduty.py`):
+The `OFF | LOG | MOCK | LIVE` pattern is checked before every external call:
 
 ```python
-# from integrations/pagerduty.py — PagerDutyClient.send_page_trigger()
-if self._mode == PagerDutyIntegrationMode.OFF:
+# from pipeline/stages/dispatch.py
+if pd_client.integration_mode == IntegrationMode.OFF:
     return
-
-# LOG and MOCK: emit structured log, no HTTP call
-logger.info("pd_page_trigger_dispatch", ..., mode=self._mode.value)
-
-if self._mode == PagerDutyIntegrationMode.LOG:
+if pd_client.integration_mode == IntegrationMode.LOG:
+    logger.info("PagerDuty payload (LOG mode)", payload=payload)
     return
-
-if self._mode == PagerDutyIntegrationMode.MOCK:
-    self._mock_send_count += 1
-    return
-
-# LIVE: attempt PD Events V2 delivery
-self._send_live(...)
+if pd_client.integration_mode == IntegrationMode.MOCK:
+    return _mock_pd_response()
+# LIVE: make the real call
 ```
 
-← `src/aiops_triage_pipeline/integrations/pagerduty.py`
+← `src/aiops_triage_pipeline/pipeline/stages/dispatch.py`
 
-This means: running the hot-path locally with `INTEGRATION_MODE_PD=LOG` logs every PagerDuty payload without making a single real call. You can observe the full dispatch flow risk-free.
+This means: running `hot-path` locally with `INTEGRATION_MODE_PD=LOG` logs every PagerDuty payload without making a single real call. You can observe the full dispatch flow risk-free.
 
 ### Environment Action Caps
 
@@ -631,11 +911,35 @@ AG1 gate enforces a hard cap on the maximum action allowed per environment:
 | `prod` | `PAGE` |
 
 This is enforced by the rulebook, not the application code — see `config/policies/rulebook-v1.yaml`.
+```
+
+- [ ] **Step 1: Replace the Section 6 placeholder** with the content above.
+
+- [ ] **Step 2: Verify the OFF/LOG/MOCK/LIVE pattern appears**
+
+  ```bash
+  grep "OFF\|LOG\|MOCK\|LIVE" docs/developer-onboarding.md | wc -l
+  ```
+
+  Expected: ≥ 4
+
+- [ ] **Step 3: Commit**
+
+  ```bash
+  git add docs/developer-onboarding.md
+  git commit -m "docs(onboarding): write section 6 - configuration layers"
+  ```
 
 ---
 
-## 7. Code Navigation
+### Task 8: Write Section 7 — Code Navigation
 
+**Files:**
+- Modify: `docs/developer-onboarding.md` (Section 7 body)
+
+**Content to write:**
+
+```markdown
 This section is a practical navigation guide. After reading it you'll know exactly which file to open for any common contributor task.
 
 ### Annotated Directory Tree
@@ -702,3 +1006,121 @@ All paths are relative to `src/aiops_triage_pipeline/` unless otherwise noted.
 4. Pick a mode and run it (start with `hot-path` for full pipeline; `--once` where supported)
 
 > See `docs/local-development.md` for full environment setup, troubleshooting, and `.env.local` configuration.
+```
+
+- [ ] **Step 1: Replace the Section 7 placeholder** with the content above.
+
+- [ ] **Step 2: Verify the navigation table has ~10 rows**
+
+  ```bash
+  grep "| I want to" docs/developer-onboarding.md
+  grep "| Change\|| Add\|| Understand\|| Trace" docs/developer-onboarding.md | wc -l
+  ```
+
+  Expected: ≥ 9 rows in the navigation table.
+
+- [ ] **Step 3: Commit**
+
+  ```bash
+  git add docs/developer-onboarding.md
+  git commit -m "docs(onboarding): write section 7 - code navigation and local dev checklist"
+  ```
+
+---
+
+### Task 9: Final Verification Against Success Criteria
+
+**Files:**
+- Read: `docs/developer-onboarding.md` (complete)
+- Read: `docs/superpowers/specs/2026-03-15-developer-onboarding-design.md` (spec)
+
+Run the spec's 5 success criteria first, then the 2 formatting convention checks.
+
+**Spec Success Criteria (from `docs/superpowers/specs/2026-03-15-developer-onboarding-design.md`)**
+
+- [ ] **Criterion 1: A new developer can describe what the system does and what it produces**
+
+  ```bash
+  grep "CaseFile\|Kafka\|ActionDecisionV1\|PagerDuty\|Slack" docs/developer-onboarding.md | wc -l
+  ```
+
+  Expected: ≥ 10 matches across the document.
+
+- [ ] **Criterion 2: Can follow the flow of a single anomaly through all pipeline stages**
+
+  ```bash
+  grep "Stage [1-9]" docs/developer-onboarding.md | wc -l
+  ```
+
+  Expected: ≥ 7 (Stages 1-7 referenced in Stage Flow section).
+
+- [ ] **Criterion 3: Knows which mode to run for their current task**
+
+  ```bash
+  grep "hot-path\|cold-path\|outbox-publisher\|casefile-lifecycle" docs/developer-onboarding.md | wc -l
+  ```
+
+  Expected: ≥ 8
+
+- [ ] **Criterion 4: Can find the file to edit for any common task**
+
+  ```bash
+  grep "pipeline/stages/\|contracts/\|config/policies/" docs/developer-onboarding.md | wc -l
+  ```
+
+  Expected: ≥ 15
+
+- [ ] **Criterion 5: All function signatures are real (not fabricated)**
+
+  Cross-check each function name in the document against its source file:
+
+  ```bash
+  grep "def collect_evidence_stage_output\|def collect_peak_stage_output\|def dispatch_action\|def insert_pending_object" \
+    src/aiops_triage_pipeline/pipeline/stages/evidence.py \
+    src/aiops_triage_pipeline/pipeline/stages/peak.py \
+    src/aiops_triage_pipeline/pipeline/stages/dispatch.py \
+    src/aiops_triage_pipeline/outbox/repository.py
+  ```
+
+  Expected: all four function names found in the real source.
+
+**Formatting Convention Checks (spec formatting requirements, not success criteria)**
+
+- [ ] **Check 6: Three Mermaid diagrams are present**
+
+  ```bash
+  grep -c "^```mermaid" docs/developer-onboarding.md
+  ```
+
+  Expected: 3
+
+- [ ] **Check 7: All file pointers use the `src/aiops_triage_pipeline/` prefix**
+
+  ```bash
+  grep "← " docs/developer-onboarding.md | grep -v "src/aiops_triage_pipeline/" | head -5
+  ```
+
+  Expected: no output (all pointers use the full prefix).
+
+- [ ] **Final commit**
+
+  ```bash
+  git add docs/developer-onboarding.md
+  git commit -m "docs(onboarding): complete developer onboarding guide"
+  ```
+
+---
+
+## Summary
+
+| Task | Output | Verification |
+|------|--------|-------------|
+| 1 | File skeleton with ToC | 7 headings present |
+| 2 | Section 1 — Problem statement | Key terms present |
+| 3 | Section 2 — Mental models + concept diagram | 4 mental models, 1 Mermaid |
+| 4 | Section 3 — Pipeline Journey (7 stages, gate table, cold path note) | 7 stage entries, 14+ gate refs, 1 Mermaid |
+| 5 | Section 4 — Runtime modes + dependency matrix | 4 modes, 1 Mermaid |
+| 6 | Section 5 — Data contracts + enums | 4 contracts, frozen pattern |
+| 7 | Section 6 — Configuration layers + caps table | OFF/LOG/MOCK/LIVE pattern |
+| 8 | Section 7 — Directory tree, navigation table, dev checklist | ≥9 nav rows |
+| 9 | Final verification against spec success criteria | All 5 spec criteria + 2 formatting checks pass |
