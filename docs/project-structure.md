@@ -14,7 +14,6 @@
 - `harness/` - test/load harness and synthetic patterns
 - `docs/` - architecture and local development documentation
 - `scripts/` - utility scripts (for example smoke tests)
-- `_bmad/` - BMAD workflow and agent assets
 - `artifact/` - planning and implementation artifacts
 
 ## Classification Rationale

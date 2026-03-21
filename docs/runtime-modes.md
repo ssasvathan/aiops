@@ -48,15 +48,15 @@ Each scheduler tick executes these stages in sequence:
 
 ```mermaid
 flowchart TD
-    A[Reload topology if changed] --> B[Stage 1: Evidence\nQuery Prometheus]
-    B --> C[Stage 2: Peak\nClassify anomaly patterns]
-    C --> D[Stage 3: Topology\nResolve scope and routing]
-    D --> E[Stage 4: Gate Inputs\nAssemble per scope]
-    E --> F[Stage 5: Gate Decisions\nApply rulebook + deduplicate]
+    A[Reload topology if changed] --> B[Stage 1: Evidence<br>Query Prometheus]
+    B --> C[Stage 2: Peak<br>Classify anomaly patterns]
+    C --> D[Stage 3: Topology<br>Resolve scope and routing]
+    D --> E[Stage 4: Gate Inputs<br>Assemble per scope]
+    E --> F[Stage 5: Gate Decisions<br>Apply rulebook + deduplicate]
     F --> G{Decisions?}
-    G -->|yes| H[Assemble CaseFile\nPersist to S3]
-    H --> I[Insert outbox row\nPENDING → READY]
-    I --> J[Dispatch action\nPD / Slack]
+    G -->|yes| H[Assemble CaseFile<br>Persist to S3]
+    H --> I[Insert outbox row<br>PENDING → READY]
+    I --> J[Dispatch action<br>PD / Slack]
     G -->|no| K[Emit Redis degraded-mode events]
     J --> K
     K --> L[Sleep to next interval boundary]

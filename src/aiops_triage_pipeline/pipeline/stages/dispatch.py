@@ -89,7 +89,7 @@ def dispatch_action(
             outcome="no_pd_trigger",
         )
 
-    # Postmortem obligation dispatch — orthogonal to PAGE/non-PAGE (FR44, FR45).
+    # Postmortem obligation dispatch — orthogonal to PAGE/non-PAGE.
     # Only fires when AG6 set postmortem_required=True; never blocks pipeline (NFR-R1).
     if decision.postmortem_required:
         try:
