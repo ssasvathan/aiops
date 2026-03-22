@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -170,6 +171,49 @@ def test_run_cold_path_bootstraps_and_logs_warning(monkeypatch) -> None:
     call_args = logger.warning.call_args
     assert call_args[0][0] == "cold_path_mode_exiting"
     assert call_args[1]["event_type"] == "runtime.mode_stub"
+
+
+def test_run_casefile_lifecycle_logs_policy_path_and_governance_ref(monkeypatch) -> None:
+    logger = MagicMock()
+    settings = SimpleNamespace(
+        APP_ENV=SimpleNamespace(value="prod"),
+        CASEFILE_RETENTION_GOVERNANCE_APPROVAL="CHG-TEST-9000",
+        CASEFILE_LIFECYCLE_DELETE_BATCH_SIZE=250,
+        CASEFILE_LIFECYCLE_LIST_PAGE_SIZE=250,
+        CASEFILE_LIFECYCLE_POLL_INTERVAL_SECONDS=1800.0,
+    )
+
+    class _RunnerProbe:
+        def run_once(self):
+            return SimpleNamespace(
+                scanned_count=1,
+                eligible_count=1,
+                purged_count=1,
+                failed_count=0,
+                case_ids=("case-old-a",),
+            )
+
+    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
+    monkeypatch.setattr(__main__, "build_s3_object_store_client_from_settings", lambda _: object())
+    monkeypatch.setattr(
+        __main__,
+        "load_policy_yaml",
+        lambda *_a, **_k: SimpleNamespace(schema_version="v1"),
+    )
+    monkeypatch.setattr(__main__, "CasefileLifecycleRunner", lambda **_kwargs: _RunnerProbe())
+
+    __main__._run_casefile_lifecycle(once=True)
+
+    start_call = next(
+        call
+        for call in logger.info.call_args_list
+        if call.args and call.args[0] == "casefile_lifecycle_mode_started"
+    )
+    assert start_call.kwargs["governance_approval_ref"] == "CHG-TEST-9000"
+    assert start_call.kwargs["retention_policy_path"].endswith(
+        "config/policies/casefile-retention-policy-v1.yaml"
+    )
+    assert start_call.kwargs["policy_schema_version"] == "v1"
 
 
 def test_run_hot_path_emits_structured_error_on_bootstrap_failure(monkeypatch) -> None:

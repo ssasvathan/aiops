@@ -53,7 +53,7 @@ development_status:
   2-2-enforce-outbox-source-state-transitions: done
   2-3-publish-ready-outbox-rows-with-concurrency-safety: done
   2-4-dispatch-pagerduty-and-slack-actions-with-denylist-safety: done
-  2-5-run-casefile-lifecycle-retention-purge: backlog
+  2-5-run-casefile-lifecycle-retention-purge: done
   epic-2-retrospective: optional
   epic-3: backlog
   3-1-implement-cold-path-kafka-consumer-runtime-mode: backlog

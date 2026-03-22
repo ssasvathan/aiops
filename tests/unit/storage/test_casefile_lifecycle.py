@@ -230,6 +230,34 @@ def test_runner_tracks_partial_delete_failures() -> None:
     assert result.case_ids == ("case-old-1", "case-old-2")
 
 
+def test_runner_emits_lifecycle_metrics(monkeypatch) -> None:
+    now = datetime(2026, 3, 6, 12, 0, tzinfo=UTC)
+    client = _InMemoryLifecycleObjectStore(
+        inventory={"cases/case-old-1/triage.json": datetime(2023, 1, 1, 1, 0, tzinfo=UTC)}
+    )
+    runner = CasefileLifecycleRunner(
+        object_store_client=client,
+        policy=_policy(),
+        app_env="prod",
+        policy_ref="casefile-retention-policy-v1",
+        governance_approval_ref="CHG-12345",
+        delete_batch_size=100,
+        list_page_size=100,
+    )
+    metric_calls: list[tuple[int, int, int, int]] = []
+
+    monkeypatch.setattr(
+        "aiops_triage_pipeline.storage.lifecycle.health_metrics.record_casefile_lifecycle_purge_outcome",
+        lambda *, scanned_count, eligible_count, purged_count, failed_count: metric_calls.append(
+            (scanned_count, eligible_count, purged_count, failed_count)
+        ),
+    )
+
+    runner.run_once(now=now)
+
+    assert metric_calls == [(1, 1, 1, 0)]
+
+
 def test_runner_requires_governance_approval_for_destructive_purge() -> None:
     now = datetime(2026, 3, 6, 12, 0, tzinfo=UTC)
     client = _InMemoryLifecycleObjectStore(
@@ -247,6 +275,26 @@ def test_runner_requires_governance_approval_for_destructive_purge() -> None:
 
     with pytest.raises(InvariantViolation, match="governance approval"):
         runner.run_once(now=now)
+
+
+def test_runner_rejects_blank_governance_approval_for_destructive_purge() -> None:
+    now = datetime(2026, 3, 6, 12, 0, tzinfo=UTC)
+    client = _InMemoryLifecycleObjectStore(
+        inventory={"cases/case-old-1/triage.json": datetime(2023, 1, 1, 1, 0, tzinfo=UTC)}
+    )
+    runner = CasefileLifecycleRunner(
+        object_store_client=client,
+        policy=_policy(),
+        app_env="prod",
+        policy_ref="casefile-retention-policy-v1",
+        governance_approval_ref="   ",
+        delete_batch_size=100,
+        list_page_size=100,
+    )
+
+    with pytest.raises(InvariantViolation, match="governance approval"):
+        runner.run_once(now=now)
+    assert client.delete_calls == []
 
 
 def test_runner_emits_audit_log_with_required_fields() -> None:
@@ -279,3 +327,33 @@ def test_runner_emits_audit_log_with_required_fields() -> None:
     assert fields["case_ids"] == ("case-old-1",)
     assert fields["purged_count"] == 1
     assert fields["failed_count"] == 0
+    assert fields["failed_keys"] == ()
+
+
+def test_runner_audit_log_includes_failed_keys() -> None:
+    now = datetime(2026, 3, 6, 12, 0, tzinfo=UTC)
+    failing_key = "cases/case-old-2/triage.json"
+    client = _InMemoryLifecycleObjectStore(
+        inventory={
+            "cases/case-old-1/triage.json": datetime(2023, 1, 1, 1, 0, tzinfo=UTC),
+            failing_key: datetime(2023, 1, 2, 1, 0, tzinfo=UTC),
+        },
+        fail_delete_keys={failing_key},
+    )
+    runner = CasefileLifecycleRunner(
+        object_store_client=client,
+        policy=_policy(),
+        app_env="prod",
+        policy_ref="casefile-retention-policy-v1",
+        governance_approval_ref="CHG-12345",
+        delete_batch_size=100,
+        list_page_size=100,
+    )
+    logger = _RecordingLogger()
+    runner._logger = logger  # noqa: SLF001
+
+    runner.run_once(now=now)
+
+    _, fields = logger.events[0]
+    assert fields["failed_count"] == 1
+    assert fields["failed_keys"] == (failing_key,)

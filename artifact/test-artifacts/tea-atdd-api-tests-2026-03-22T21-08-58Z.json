@@ -1,0 +1,33 @@
+{
+  "success": true,
+  "subagent": "atdd-api-tests",
+  "tests": [
+    {
+      "file": "tests/atdd/test_story_2_5_casefile_lifecycle_retention_purge_red_phase.py",
+      "description": "ATDD backend acceptance tests for Story 2.5 lifecycle retention purge (RED PHASE)",
+      "expected_to_fail": true,
+      "acceptance_criteria_covered": [
+        "Expired casefile artifacts are purged while non-expired artifacts remain untouched",
+        "Purge counts and failures are observable via metrics/logs without silent loss"
+      ],
+      "priority_coverage": {
+        "P0": 2,
+        "P1": 1,
+        "P2": 0,
+        "P3": 0
+      }
+    }
+  ],
+  "fixture_needs": [
+    "tests/atdd/fixtures/story_2_5_test_data.py"
+  ],
+  "knowledge_fragments_used": [
+    "data-factories",
+    "test-quality",
+    "test-levels-framework",
+    "test-priorities-matrix"
+  ],
+  "test_count": 3,
+  "tdd_phase": "RED",
+  "summary": "Generated 3 failing backend ATDD tests for Story 2.5"
+}

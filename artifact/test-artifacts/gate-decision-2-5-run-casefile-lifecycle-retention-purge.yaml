@@ -1,0 +1,38 @@
+target:
+  type: story
+  id: "2-5-run-casefile-lifecycle-retention-purge"
+  title: "Run Casefile Lifecycle Retention Purge"
+
+decision:
+  value: PASS
+  date: "2026-03-22T21:25:36Z"
+  mode: deterministic
+  rationale: >-
+    P0 coverage is 100% (required), P1 coverage is 100% (PASS target 90%), and
+    overall coverage is 100% (minimum 80%), with no uncovered P0/P1 criteria.
+
+criteria:
+  p0_coverage_required_pct: 100
+  p0_coverage_actual_pct: 100
+  p1_coverage_target_pass_pct: 90
+  p1_coverage_minimum_pct: 80
+  p1_coverage_actual_pct: 100
+  overall_coverage_minimum_pct: 80
+  overall_coverage_actual_pct: 100
+  critical_gaps: 0
+  high_gaps: 0
+
+evidence:
+  phase1_matrix: "/tmp/tea-trace-coverage-matrix-2026-03-22T21-25-36Z.json"
+  traceability_report: "artifact/test-artifacts/traceability/traceability-2-5-run-casefile-lifecycle-retention-purge.md"
+  story_artifact: "artifact/implementation-artifacts/2-5-run-casefile-lifecycle-retention-purge.md"
+  test_results:
+    command: "TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs"
+    passed: 934
+    failed: 0
+    skipped: 0
+
+next_actions:
+  - "Proceed with normal release flow for this story scope."
+  - "Retain lifecycle metrics and failed-keys audit coverage in regression."
+  - "Run /bmad:tea:test-review for periodic quality-maintenance checks."

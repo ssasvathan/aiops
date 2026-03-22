@@ -136,6 +136,16 @@ _pipeline_peak_history_evictions_total = _meter.create_counter(
     description="Total number of in-process peak-history scope evictions",
     unit="1",
 )
+_casefile_lifecycle_runs_total = _meter.create_counter(
+    name="aiops.casefile_lifecycle.runs_total",
+    description="Total number of casefile lifecycle purge runs",
+    unit="1",
+)
+_casefile_lifecycle_objects_total = _meter.create_counter(
+    name="aiops.casefile_lifecycle.objects_total",
+    description="Casefile lifecycle object counts by outcome",
+    unit="1",
+)
 _sn_correlation_tier_total = _meter.create_up_down_counter(
     name="aiops.servicenow.correlation_tier_total",
     description="Correlation outcomes by tier label",
@@ -368,6 +378,33 @@ def record_pipeline_peak_history_evictions(*, evicted_count: int) -> None:
     _pipeline_peak_history_evictions_total.add(
         evicted_count,
         attributes={"component": "pipeline"},
+    )
+
+
+def record_casefile_lifecycle_purge_outcome(
+    *,
+    scanned_count: int,
+    eligible_count: int,
+    purged_count: int,
+    failed_count: int,
+) -> None:
+    attrs = {"component": "casefile_lifecycle"}
+    _casefile_lifecycle_runs_total.add(1, attributes=attrs)
+    _casefile_lifecycle_objects_total.add(
+        max(scanned_count, 0),
+        attributes={**attrs, "outcome": "scanned"},
+    )
+    _casefile_lifecycle_objects_total.add(
+        max(eligible_count, 0),
+        attributes={**attrs, "outcome": "eligible"},
+    )
+    _casefile_lifecycle_objects_total.add(
+        max(purged_count, 0),
+        attributes={**attrs, "outcome": "purged"},
+    )
+    _casefile_lifecycle_objects_total.add(
+        max(failed_count, 0),
+        attributes={**attrs, "outcome": "failed"},
     )
 
 

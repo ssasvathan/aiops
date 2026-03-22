@@ -11,6 +11,7 @@ from pydantic import BaseModel
 
 from aiops_triage_pipeline.contracts.casefile_retention_policy import CasefileRetentionPolicyV1
 from aiops_triage_pipeline.errors.exceptions import InvariantViolation
+from aiops_triage_pipeline.health import metrics as health_metrics
 from aiops_triage_pipeline.logging.setup import get_logger
 from aiops_triage_pipeline.storage.client import ObjectStoreClientProtocol
 
@@ -53,7 +54,7 @@ class CasefileLifecycleRunner:
         self._policy_ref = policy_ref
         self._governance_approval_ref = (
             governance_approval_ref.strip() if governance_approval_ref else None
-        )
+        ) or None
         self._delete_batch_size = delete_batch_size
         self._list_page_size = list_page_size
         self._logger = get_logger("storage.lifecycle")
@@ -152,7 +153,14 @@ class CasefileLifecycleRunner:
             eligible_count=result.eligible_count,
             purged_count=result.purged_count,
             failed_count=result.failed_count,
+            failed_keys=tuple(sorted(failed_keys)),
             governance_approval_ref=self._governance_approval_ref,
+        )
+        health_metrics.record_casefile_lifecycle_purge_outcome(
+            scanned_count=result.scanned_count,
+            eligible_count=result.eligible_count,
+            purged_count=result.purged_count,
+            failed_count=result.failed_count,
         )
         return result
 

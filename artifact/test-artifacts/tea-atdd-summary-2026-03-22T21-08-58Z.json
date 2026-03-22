@@ -1,0 +1,15 @@
+{
+  "story_id": "2-5-run-casefile-lifecycle-retention-purge",
+  "tdd_phase": "RED",
+  "total_tests": 3,
+  "api_tests": 3,
+  "e2e_tests": 0,
+  "fixtures_created": 1,
+  "expected_to_fail": true,
+  "subagent_execution": "SEQUENTIAL (API -> E2E)",
+  "performance_gain": "baseline (no parallel speedup)",
+  "evidence": {
+    "command": "uv run pytest -q tests/atdd/test_story_2_5_casefile_lifecycle_retention_purge_red_phase.py",
+    "result": "3 failed in 0.78s"
+  }
+}

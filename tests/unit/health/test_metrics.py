@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import importlib
+
 import pytest
 
 from aiops_triage_pipeline.models.health import HealthStatus
@@ -182,6 +184,32 @@ def test_record_peak_history_metrics_track_scope_count_and_evictions(monkeypatch
         (-2, {"component": "pipeline"}),
     ]
     assert evictions.calls == [(2, {"component": "pipeline"})]
+
+
+def test_record_casefile_lifecycle_purge_outcome_emits_run_and_object_counts(monkeypatch) -> None:
+    from aiops_triage_pipeline.health import metrics as metrics_module
+
+    metrics = importlib.reload(metrics_module)
+
+    runs_total = _RecordingInstrument()
+    objects_total = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_casefile_lifecycle_runs_total", runs_total)
+    monkeypatch.setattr(metrics, "_casefile_lifecycle_objects_total", objects_total)
+
+    metrics.record_casefile_lifecycle_purge_outcome(
+        scanned_count=7,
+        eligible_count=3,
+        purged_count=2,
+        failed_count=1,
+    )
+
+    assert runs_total.calls == [(1, {"component": "casefile_lifecycle"})]
+    assert objects_total.calls == [
+        (7, {"component": "casefile_lifecycle", "outcome": "scanned"}),
+        (3, {"component": "casefile_lifecycle", "outcome": "eligible"}),
+        (2, {"component": "casefile_lifecycle", "outcome": "purged"}),
+        (1, {"component": "casefile_lifecycle", "outcome": "failed"}),
+    ]
 
 
 def test_record_sn_correlation_tier_tracks_tier_counts_and_fallback_rate(monkeypatch) -> None:
