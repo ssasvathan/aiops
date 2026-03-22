@@ -238,6 +238,76 @@ def test_mark_outbox_record_publish_failure_rejects_dead_source_state() -> None:
         )
 
 
+def test_mark_outbox_record_ready_raises_when_source_status_is_ready() -> None:
+    ready = create_ready_outbox_record(
+        confirmed_casefile=_ready_casefile(),
+        now=datetime(2026, 3, 5, 12, 0, tzinfo=UTC),
+    )
+    with pytest.raises(InvariantViolation, match="cannot mark record READY from status=READY"):
+        mark_outbox_record_ready(record=ready, now=datetime(2026, 3, 5, 12, 1, tzinfo=UTC))
+
+
+def test_mark_outbox_record_ready_raises_when_source_status_is_sent() -> None:
+    sent = create_ready_outbox_record(
+        confirmed_casefile=_ready_casefile(),
+        now=datetime(2026, 3, 5, 12, 0, tzinfo=UTC),
+    ).model_copy(update={"status": "SENT"})
+    with pytest.raises(InvariantViolation, match="cannot mark record READY from status=SENT"):
+        mark_outbox_record_ready(record=sent, now=datetime(2026, 3, 5, 12, 1, tzinfo=UTC))
+
+
+def test_mark_outbox_record_ready_raises_when_source_status_is_retry() -> None:
+    retry = create_ready_outbox_record(
+        confirmed_casefile=_ready_casefile(),
+        now=datetime(2026, 3, 5, 12, 0, tzinfo=UTC),
+    ).model_copy(update={"status": "RETRY"})
+    with pytest.raises(InvariantViolation, match="cannot mark record READY from status=RETRY"):
+        mark_outbox_record_ready(record=retry, now=datetime(2026, 3, 5, 12, 1, tzinfo=UTC))
+
+
+def test_mark_outbox_record_ready_raises_when_source_status_is_dead() -> None:
+    dead = create_ready_outbox_record(
+        confirmed_casefile=_ready_casefile(),
+        now=datetime(2026, 3, 5, 12, 0, tzinfo=UTC),
+    ).model_copy(update={"status": "DEAD"})
+    with pytest.raises(InvariantViolation, match="cannot mark record READY from status=DEAD"):
+        mark_outbox_record_ready(record=dead, now=datetime(2026, 3, 5, 12, 1, tzinfo=UTC))
+
+
+def test_mark_outbox_record_ready_produces_correct_fields_from_pending_object() -> None:
+    pending = create_pending_outbox_record(
+        confirmed_casefile=_ready_casefile(),
+        now=datetime(2026, 3, 5, 11, 59, tzinfo=UTC),
+    )
+    ready_at = datetime(2026, 3, 5, 12, 0, tzinfo=UTC)
+
+    ready = mark_outbox_record_ready(record=pending, now=ready_at)
+
+    assert ready.status == "READY"
+    assert ready.case_id == pending.case_id
+    assert ready.casefile_object_path == pending.casefile_object_path
+    assert ready.triage_hash == pending.triage_hash
+    assert ready.updated_at == ready_at
+    assert ready.created_at == pending.created_at
+    assert ready.delivery_attempts == 0
+    assert ready.next_attempt_at is None
+    assert ready.last_error_code is None
+    assert ready.last_error_message is None
+
+
+def test_resolve_transition_now_clamps_when_now_is_earlier_than_record_updated_at() -> None:
+    pending = create_pending_outbox_record(
+        confirmed_casefile=_ready_casefile(),
+        now=datetime(2026, 3, 5, 12, 2, tzinfo=UTC),
+    )
+    earlier_now = datetime(2026, 3, 5, 12, 0, tzinfo=UTC)
+
+    ready = mark_outbox_record_ready(record=pending, now=earlier_now)
+
+    assert ready.status == "READY"
+    assert ready.updated_at == pending.updated_at
+
+
 def test_retention_cutoff_for_state_uses_policy_days() -> None:
     policy = OutboxPolicyV1(
         retention_by_env={

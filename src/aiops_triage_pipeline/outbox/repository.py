@@ -83,7 +83,7 @@ class OutboxSqlRepository:
         except InvariantViolation:
             raise
         except Exception as exc:  # noqa: BLE001
-            raise self._wrap_repo_exc(exc)
+            raise self._wrap_repo_exc(exc) from exc
 
     def transition_to_ready(
         self,
@@ -109,7 +109,7 @@ class OutboxSqlRepository:
         except InvariantViolation:
             raise
         except Exception as exc:  # noqa: BLE001
-            raise self._wrap_repo_exc(exc)
+            raise self._wrap_repo_exc(exc) from exc
 
     def transition_to_sent(
         self,
@@ -135,7 +135,7 @@ class OutboxSqlRepository:
         except InvariantViolation:
             raise
         except Exception as exc:  # noqa: BLE001
-            raise self._wrap_repo_exc(exc)
+            raise self._wrap_repo_exc(exc) from exc
 
     def transition_publish_failure(
         self,
@@ -172,7 +172,7 @@ class OutboxSqlRepository:
         except InvariantViolation:
             raise
         except Exception as exc:  # noqa: BLE001
-            raise self._wrap_repo_exc(exc)
+            raise self._wrap_repo_exc(exc) from exc
 
     def select_publishable(
         self,
@@ -205,7 +205,7 @@ class OutboxSqlRepository:
         except CriticalDependencyError:
             raise
         except Exception as exc:  # noqa: BLE001
-            raise self._wrap_repo_exc(exc)
+            raise self._wrap_repo_exc(exc) from exc
 
     def select_backlog_health(
         self,
@@ -258,7 +258,7 @@ class OutboxSqlRepository:
         except CriticalDependencyError:
             raise
         except Exception as exc:  # noqa: BLE001
-            raise self._wrap_repo_exc(exc)
+            raise self._wrap_repo_exc(exc) from exc
 
     def select_expired_for_cleanup(
         self,
@@ -305,7 +305,7 @@ class OutboxSqlRepository:
         except CriticalDependencyError:
             raise
         except Exception as exc:  # noqa: BLE001
-            raise self._wrap_repo_exc(exc)
+            raise self._wrap_repo_exc(exc) from exc
 
     def get_by_case_id(self, case_id: str) -> OutboxRecordV1 | None:
         try:
@@ -314,7 +314,7 @@ class OutboxSqlRepository:
         except CriticalDependencyError:
             raise
         except Exception as exc:  # noqa: BLE001
-            raise self._wrap_repo_exc(exc)
+            raise self._wrap_repo_exc(exc) from exc
 
     def _run_ddl(self) -> None:
         try:
@@ -322,7 +322,7 @@ class OutboxSqlRepository:
         except CriticalDependencyError:
             raise
         except Exception as exc:  # noqa: BLE001
-            raise self._wrap_repo_exc(exc)
+            raise self._wrap_repo_exc(exc) from exc
 
     @contextmanager
     def _tx(self) -> Iterator[Connection]:
