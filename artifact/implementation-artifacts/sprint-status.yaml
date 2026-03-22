@@ -1,0 +1,74 @@
+# generated: 2026-03-22T00:22:25-04:00
+# project: aiOps
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: /home/sas/workspace/aiops/artifact/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+#   - in-progress: Developer actively working on implementation
+#   - review: Ready for code review (via Dev's code-review workflow)
+#   - done: Story completed
+#
+# Retrospective Status:
+#   - optional: Can be completed but not required
+#   - done: Retrospective has been completed
+#
+# WORKFLOW NOTES:
+# ===============
+# - Epic transitions to 'in-progress' automatically when first story is created
+# - Stories can be worked in parallel if team capacity allows
+# - SM typically creates next story after previous one is 'done' to incorporate learnings
+# - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
+
+generated: "2026-03-22T00:22:25-04:00"
+project: "aiOps"
+project_key: "NOKEY"
+tracking_system: "file-system"
+story_location: "/home/sas/workspace/aiops/artifact/implementation-artifacts"
+
+development_status:
+  epic-1: backlog
+  1-1-collect-telemetry-and-detect-core-anomalies: backlog
+  1-2-persist-and-reuse-redis-baselines-and-state-in-bulk: backlog
+  1-3-classify-peak-and-sustained-conditions-with-bounded-memory: backlog
+  1-4-resolve-topology-ownership-and-blast-radius-from-unified-registry: backlog
+  1-5-execute-yaml-rulebook-gates-ag0-ag3-via-isolated-rule-engine: backlog
+  1-6-complete-ag4-ag6-atomic-deduplication-and-decision-trail-output: backlog
+  epic-1-retrospective: optional
+  epic-2: backlog
+  2-1-write-triage-casefiles-with-hash-chain-and-policy-stamps: backlog
+  2-2-enforce-outbox-source-state-transitions: backlog
+  2-3-publish-ready-outbox-rows-with-concurrency-safety: backlog
+  2-4-dispatch-pagerduty-and-slack-actions-with-denylist-safety: backlog
+  2-5-run-casefile-lifecycle-retention-purge: backlog
+  epic-2-retrospective: optional
+  epic-3: backlog
+  3-1-implement-cold-path-kafka-consumer-runtime-mode: backlog
+  3-2-reconstruct-case-context-and-build-deterministic-evidence-summary: backlog
+  3-3-invoke-llm-for-all-cases-with-enriched-prompt-and-schema-validation: backlog
+  3-4-persist-diagnosis-artifact-with-fallback-guarantees: backlog
+  epic-3-retrospective: optional
+  epic-4: backlog
+  4-1-add-distributed-cycle-lock-with-fail-open-behavior: backlog
+  4-2-coordinate-scope-shards-and-recover-from-pod-failure: backlog
+  4-3-roll-out-distributed-coordination-incrementally: backlog
+  epic-4-retrospective: optional
+  epic-5: backlog
+  5-1-load-and-validate-policies-at-startup: backlog
+  5-2-enforce-security-critical-integration-configuration: backlog
+  5-3-enable-operator-and-maintainer-policy-tuning-workflows: backlog
+  5-4-expose-health-metrics-and-runtime-alert-evaluation: backlog
+  epic-5-retrospective: optional
