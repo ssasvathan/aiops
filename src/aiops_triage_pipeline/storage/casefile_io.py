@@ -34,6 +34,8 @@ _CANONICAL_CASEFILE_STAGE_NAMES: tuple[CaseFileStageName, ...] = (
     "linkage",
     "labels",
 )
+
+
 class CasefilePersistResult(BaseModel, frozen=True):
     """Confirmed persistence metadata used by outbox-ready handoff paths."""
 

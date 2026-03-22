@@ -378,6 +378,7 @@ def test_assemble_casefile_triage_stage_builds_complete_payload(tmp_path: Path) 
     assert assembled.policy_versions.prometheus_metrics_contract_version == "v1.0.0"
     assert assembled.policy_versions.exposure_denylist_version == "v1.0.0"
     assert assembled.policy_versions.diagnosis_policy_version == "v1"
+    assert assembled.policy_versions.anomaly_detection_policy_version == "v1"
     assert len(assembled.triage_hash) == 64
     assert assembled.triage_hash == compute_casefile_triage_hash(assembled)
     assert has_valid_casefile_triage_hash(assembled)
@@ -1145,3 +1146,181 @@ def test_casefile_audit_trail_fields_complete(tmp_path: Path) -> None:
 
     # triage_hash is 64-char hex
     assert re.fullmatch(r"[0-9a-f]{64}", assembled.triage_hash)
+
+
+# ---------------------------------------------------------------------------
+# Story 2.1 ATDD — RED phase tests (AC: 1, 2)
+# ---------------------------------------------------------------------------
+
+
+def test_persist_casefile_diagnosis_stage_raises_invariant_violation_when_triage_absent() -> None:
+    """AC: 2 / Invariant A — persist_casefile_diagnosis_stage must raise InvariantViolation
+    when triage.json has not been persisted first.  Downstream stages must never be written
+    without a confirmed triage artifact in object storage."""
+    object_store_client = _InMemoryObjectStoreClient()
+    # object_store_client is empty — triage.json not present (Invariant A precondition).
+    fake_triage_hash = "a" * 64
+    diagnosis = _sample_diagnosis_casefile(
+        case_id="case-2-1-invariant-a",
+        triage_hash=fake_triage_hash,
+    )
+
+    with pytest.raises(InvariantViolation, match="triage.json"):
+        persist_casefile_diagnosis_stage(
+            casefile=diagnosis,
+            object_store_client=object_store_client,
+        )
+
+
+def test_persist_casefile_linkage_stage_raises_invariant_violation_when_triage_absent() -> None:
+    """AC: 2 / Invariant A — persist_casefile_linkage_stage must raise InvariantViolation
+    when triage.json has not been persisted first."""
+    object_store_client = _InMemoryObjectStoreClient()
+    # object_store_client is empty — triage.json not present.
+    fake_triage_hash = "b" * 64
+    linkage = _sample_linkage_casefile(
+        case_id="case-2-1-invariant-a-linkage",
+        triage_hash=fake_triage_hash,
+    )
+
+    with pytest.raises(InvariantViolation, match="triage.json"):
+        persist_casefile_linkage_stage(
+            casefile=linkage,
+            object_store_client=object_store_client,
+        )
+
+
+def test_persist_casefile_labels_stage_raises_invariant_violation_when_triage_absent() -> None:
+    """AC: 2 / Invariant A — persist_casefile_labels_stage must raise InvariantViolation
+    when triage.json has not been persisted first."""
+    object_store_client = _InMemoryObjectStoreClient()
+    # object_store_client is empty — triage.json not present.
+    fake_triage_hash = "c" * 64
+    labels = _sample_labels_casefile(
+        case_id="case-2-1-invariant-a-labels",
+        triage_hash=fake_triage_hash,
+    )
+
+    with pytest.raises(InvariantViolation, match="triage.json"):
+        persist_casefile_labels_stage(
+            casefile=labels,
+            object_store_client=object_store_client,
+        )
+
+
+def test_assemble_casefile_triage_stage_policy_versions_all_five_fields_non_empty(
+    tmp_path: Path,
+) -> None:
+    """AC: 1 / FR31 — assemble_casefile_triage_stage must populate all five CaseFilePolicyVersions
+    fields with non-empty strings. No field may be absent or empty at assembly time."""
+    (
+        scope,
+        evidence_output,
+        peak_output,
+        topology_output,
+        gate_input,
+        action_decision,
+    ) = _build_scope_inputs(tmp_path)
+
+    assembled = assemble_casefile_triage_stage(
+        scope=scope,
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        topology_output=topology_output,
+        gate_input=gate_input,
+        action_decision=action_decision,
+        rulebook_policy=_rulebook_policy_for_tests(),
+        peak_policy=_peak_policy_for_tests(),
+        prometheus_metrics_contract=_prometheus_contract_for_tests(),
+        denylist=_denylist_for_tests(),
+        diagnosis_policy_version="v1",
+        triage_timestamp=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
+    )
+
+    pv = assembled.policy_versions
+    for field_name in (
+        "rulebook_version",
+        "peak_policy_version",
+        "prometheus_metrics_contract_version",
+        "exposure_denylist_version",
+        "diagnosis_policy_version",
+    ):
+        value = getattr(pv, field_name)
+        assert value and isinstance(value, str), (
+            f"CaseFilePolicyVersions.{field_name} must be a non-empty string, got {value!r}"
+        )
+
+
+def test_assemble_casefile_triage_stage_anomaly_detection_policy_version_stamped(
+    tmp_path: Path,
+) -> None:
+    """AC: 1 / FR31 — assemble_casefile_triage_stage must stamp anomaly_detection_policy_version
+    in CaseFilePolicyVersions for 25-month decision replay."""
+    (
+        scope,
+        evidence_output,
+        peak_output,
+        topology_output,
+        gate_input,
+        action_decision,
+    ) = _build_scope_inputs(tmp_path)
+
+    assembled = assemble_casefile_triage_stage(
+        scope=scope,
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        topology_output=topology_output,
+        gate_input=gate_input,
+        action_decision=action_decision,
+        rulebook_policy=_rulebook_policy_for_tests(),
+        peak_policy=_peak_policy_for_tests(),
+        prometheus_metrics_contract=_prometheus_contract_for_tests(),
+        denylist=_denylist_for_tests(),
+        diagnosis_policy_version="v1",
+        triage_timestamp=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
+    )
+
+    pv = assembled.policy_versions
+    # FR31: anomaly_detection_policy_version must be stamped and non-empty.
+    assert hasattr(pv, "anomaly_detection_policy_version"), (
+        "CaseFilePolicyVersions is missing anomaly_detection_policy_version (FR31 gap)"
+    )
+    assert pv.anomaly_detection_policy_version and isinstance(
+        pv.anomaly_detection_policy_version, str
+    ), "anomaly_detection_policy_version must be a non-empty string"
+
+
+def test_assemble_casefile_triage_stage_diagnosis_policy_version_from_argument(
+    tmp_path: Path,
+) -> None:
+    """AC: 1 — diagnosis_policy_version must be sourced from the passed argument (not a
+    hard-coded string). Calling with a distinct version value must produce a casefile with
+    that exact version stamped in policy_versions."""
+    (
+        scope,
+        evidence_output,
+        peak_output,
+        topology_output,
+        gate_input,
+        action_decision,
+    ) = _build_scope_inputs(tmp_path)
+
+    assembled = assemble_casefile_triage_stage(
+        scope=scope,
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        topology_output=topology_output,
+        gate_input=gate_input,
+        action_decision=action_decision,
+        rulebook_policy=_rulebook_policy_for_tests(),
+        peak_policy=_peak_policy_for_tests(),
+        prometheus_metrics_contract=_prometheus_contract_for_tests(),
+        denylist=_denylist_for_tests(),
+        diagnosis_policy_version="diagnosis-v99",
+        triage_timestamp=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
+    )
+
+    assert assembled.policy_versions.diagnosis_policy_version == "diagnosis-v99", (
+        "diagnosis_policy_version must reflect the value passed at call time, "
+        "not a hard-coded string"
+    )

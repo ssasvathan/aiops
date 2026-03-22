@@ -606,3 +606,118 @@ def test_list_present_casefile_stages_returns_written_stages_only() -> None:
     )
 
     assert present == ("triage", "diagnosis")
+
+
+# ---------------------------------------------------------------------------
+# Story 2.1 ATDD — RED phase tests (AC: 1, 2)
+# ---------------------------------------------------------------------------
+
+
+def test_persist_casefile_triage_write_once_raises_invariant_violation_on_placeholder_hash() -> (
+    None
+):
+    """AC: 1 — persist_casefile_triage_write_once must reject a casefile whose triage_hash has
+    not been finalized (still set to TRIAGE_HASH_PLACEHOLDER).  The hash guard must fire before
+    any object-store interaction to enforce write-once integrity."""
+    client = _FakeObjectStoreClient()
+    # Build a casefile with the placeholder hash still set (not yet finalized).
+    raw = _sample_casefile().model_dump(mode="json")
+    raw["triage_hash"] = TRIAGE_HASH_PLACEHOLDER
+    unfinalized = CaseFileTriageV1.model_validate(raw)
+
+    with pytest.raises(InvariantViolation):
+        persist_casefile_triage_write_once(
+            object_store_client=client,
+            casefile=unfinalized,
+        )
+
+
+def test_persist_casefile_triage_write_once_idempotent_retry_raises_on_differing_payload() -> None:
+    """AC: 1 — idempotent retry path must validate payload equality before returning 'idempotent'.
+    An existing object with a different payload (even a structurally valid JSON with a different
+    triage_hash) must cause InvariantViolation, not a silent idempotent acceptance."""
+    client = _FakeObjectStoreClient()
+    casefile = _sample_casefile()
+    key = build_casefile_triage_object_key(casefile.case_id)
+
+    # Pre-seed store with a structurally valid triage payload whose content differs from
+    # the in-flight casefile (simulating a concurrent write of a different decision body).
+    # Use a raw JSON payload that passes schema validation but has a mismatched triage_hash.
+    import json as _json
+
+    different_raw = _json.loads(serialize_casefile_triage(casefile).decode("utf-8"))
+    different_raw["policy_versions"]["rulebook_version"] = "different-rulebook"
+    # Recompute the hash for the modified payload so that it is internally consistent but
+    # represents a different casefile (different decision content).
+    from aiops_triage_pipeline.models.case_file import TRIAGE_HASH_PLACEHOLDER as _PH
+
+    different_raw["triage_hash"] = _PH  # placeholder to allow model validation
+    temp = CaseFileTriageV1.model_validate(different_raw)
+    from aiops_triage_pipeline.storage.casefile_io import compute_casefile_triage_hash as _cth
+
+    different_with_hash = temp.model_copy(update={"triage_hash": _cth(temp)})
+    client.store[key] = serialize_casefile_triage(different_with_hash)
+
+    # Idempotent branch triggers → existing payload differs → InvariantViolation expected.
+    with pytest.raises(InvariantViolation, match="write-once"):
+        persist_casefile_triage_write_once(
+            object_store_client=client,
+            casefile=casefile,
+        )
+
+
+def test_casefile_policy_versions_anomaly_detection_policy_version_field_present() -> None:
+    """AC: 1 / FR31 — CaseFilePolicyVersions must stamp anomaly_detection_policy_version so that
+    all active policies affecting triage decisions are covered for 25-month decision replay."""
+    pv = CaseFilePolicyVersions(
+        rulebook_version="1",
+        peak_policy_version="v1",
+        prometheus_metrics_contract_version="v1.0.0",
+        exposure_denylist_version="v1.0.0",
+        diagnosis_policy_version="v1",
+        anomaly_detection_policy_version="v1",  # FR31 gap — field not yet in model
+    )
+    assert pv.anomaly_detection_policy_version == "v1"
+
+
+def test_casefile_policy_versions_anomaly_detection_policy_version_rejects_empty() -> None:
+    """AC: 1 / FR31 — anomaly_detection_policy_version must enforce min_length=1 to prevent
+    silent empty-stamp persistence."""
+    with pytest.raises(ValidationError):
+        CaseFilePolicyVersions(
+            rulebook_version="1",
+            peak_policy_version="v1",
+            prometheus_metrics_contract_version="v1.0.0",
+            exposure_denylist_version="v1.0.0",
+            diagnosis_policy_version="v1",
+            anomaly_detection_policy_version="",  # must reject empty string
+        )
+
+
+def test_hash_computation_excludes_raw_sensitive_fields_in_baseline() -> None:
+    """AC: 1 / NFR-S1 — denylist sanitization must run before hash computation so that raw
+    sensitive field values never appear in the hash payload baseline.
+    Verifies that the canonical hash payload (with placeholder) does not contain raw token
+    values that would appear in an unsanitized decision_basis."""
+    import json
+
+    casefile = _sample_casefile()
+    # Inject a sensitive token into a copy of the casefile to simulate a pre-sanitize case.
+    raw = casefile.model_dump(mode="json")
+    raw["gate_input"]["decision_basis"] = {"auth": "Bearer SomeTokenValue"}
+    raw["triage_hash"] = TRIAGE_HASH_PLACEHOLDER
+    dirty = CaseFileTriageV1.model_validate(raw)
+    # The canonical hash payload (placeholder substituted) should not contain the raw bearer
+    # token since sanitization should have cleared it before this function is called.
+    canonical_json = dirty.model_copy(
+        update={"triage_hash": TRIAGE_HASH_PLACEHOLDER}
+    ).model_dump_json()
+    # This test documents the contract: the canonical payload passed to the hash function
+    # must not contain unsanitized bearer tokens.
+    # (In a correctly sanitized casefile produced by assemble_casefile_triage_stage, this
+    # assertion always holds. The test serves as a regression guard for new code paths.)
+    assert "Bearer SomeTokenValue" not in json.loads(canonical_json).get(
+        "gate_input", {}
+    ).get("decision_basis", {}).get("auth", ""), (
+        "Raw sensitive token value must never appear in the canonical hash payload baseline"
+    )

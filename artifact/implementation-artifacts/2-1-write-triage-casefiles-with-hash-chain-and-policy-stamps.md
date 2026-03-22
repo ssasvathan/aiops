@@ -1,6 +1,6 @@
 # Story 2.1: Write Triage Casefiles with Hash Chain and Policy Stamps
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -34,7 +34,7 @@ so that every decision is auditable for long-term replay.
 - [x] Task 2: Verify and harden SHA-256 hash chain correctness (AC: 1)
   - [x] Confirm `compute_casefile_triage_hash` uses the `TRIAGE_HASH_PLACEHOLDER` canonicalization pattern and round-trip validates through `validate_casefile_triage_json`.
   - [x] Confirm `persist_casefile_triage_write_once` verifies hash consistency before calling `put_if_absent` (pre-persistence guard in `casefile_io.py` already present — verify it raises `InvariantViolation` on mismatch, not a generic error).
-  - [x] Confirm idempotent retry path (`PutIfAbsentResult.ALREADY_EXISTS`) re-reads the existing object and validates payload equality and hash equality before returning `"idempotent"` — no silent acceptance of mismatched content.
+  - [x] Confirm idempotent retry path (`PutIfAbsentResult.EXISTS`) re-reads the existing object and validates payload equality and hash equality before returning `"idempotent"` — no silent acceptance of mismatched content.
 
 - [x] Task 3: Enforce Invariant A — `triage.json` existence gates all downstream stages (AC: 2)
   - [x] Verify `persist_casefile_diagnosis_stage` raises `InvariantViolation("diagnosis stage requires triage.json to exist")` when `read_casefile_stage_json_or_none` returns `None` for the `"triage"` stage.
@@ -266,16 +266,48 @@ claude-sonnet-4-6
 
 - artifact/implementation-artifacts/2-1-write-triage-casefiles-with-hash-chain-and-policy-stamps.md
 - artifact/implementation-artifacts/sprint-status.yaml
+- artifact/test-artifacts/atdd-checklist-2-1-write-triage-casefiles-with-hash-chain-and-policy-stamps.md
 - src/aiops_triage_pipeline/models/case_file.py
 - src/aiops_triage_pipeline/pipeline/stages/casefile.py
 - src/aiops_triage_pipeline/contracts/gate_input.py
+- src/aiops_triage_pipeline/storage/casefile_io.py
+- tests/unit/pipeline/stages/test_casefile.py
+- tests/unit/storage/test_casefile_io.py
+
+## Senior Developer Review (AI)
+
+**Reviewer:** Code Review Workflow (bmad-bmm-code-review) — 2026-03-22
+**Verdict:** Approved with fixes applied
+
+### Findings Summary
+
+| ID | Severity | Description | Status |
+|----|----------|-------------|--------|
+| M1 | Medium | Story File List omitted all 3 changed/added files (2 test files + ATDD artifact) | Fixed |
+| M2 | Medium | Stale RED-phase `# type: ignore[attr-defined]` comments in 2 test files (3 occurrences) | Fixed |
+| M3 | Medium | `test_assemble_casefile_triage_stage_builds_complete_payload` missing assertion for `anomaly_detection_policy_version` | Fixed |
+| M4 | Medium | Missing blank lines before `CasefilePersistResult` class in `casefile_io.py` (PEP 8 E302) | Fixed |
+| L1 | Low | ATDD temp artifact untracked and not in File List (epic-1 retro hygiene requirement) | Fixed via M1 |
+| L2 | Low | Task 2 description referenced wrong enum name `PutIfAbsentResult.ALREADY_EXISTS` (correct: `EXISTS`) | Fixed |
+| L3 | Low | Stale "will FAIL (RED)" docstrings in 3 ATDD test functions after implementation was completed | Fixed |
+
+**Total fixed:** 6 distinct issues (7 instances). All Critical, High, Medium, and Low findings resolved.
+
+**Quality Gates After Fixes:**
+- `uv run ruff check`: 0 errors
+- `pytest -q -rs`: 890 passed, 0 skipped, 0 failed
+
+**AC Validation:**
+- AC 1 (triage.json written once with SHA-256 chain + policy stamps): IMPLEMENTED. `anomaly_detection_policy_version` added to `CaseFilePolicyVersions`. All six policy version fields stamped. Hash chain via `TRIAGE_HASH_PLACEHOLDER` pattern verified. `persist_casefile_triage_write_once` rejects placeholder hashes and validates idempotent retry payload equality.
+- AC 2 (Invariant A enforced): IMPLEMENTED. `persist_casefile_diagnosis_stage`, `persist_casefile_linkage_stage`, and `persist_casefile_labels_stage` all raise `InvariantViolation` when triage stage absent. Outbox path only reachable after `persist_casefile_and_prepare_outbox_ready` confirmed return.
 
 ## Story Completion Status
 
-- Story status: `review`
-- Completion note: Implementation complete. Added `anomaly_detection_policy_version` field (FR31 gap), wired it through `assemble_casefile_triage_stage`, and added defence-in-depth bearer token sanitization to `GateInputV1.decision_basis`. All 4 ATDD RED tests now pass. Full regression: 890 passed, 0 skipped. Ruff check passes.
+- Story status: `done`
+- Completion note: Implementation complete and code-reviewed. All 6 review findings (4 Medium, 3 Low) fixed. `anomaly_detection_policy_version` field (FR31 gap), wired it through `assemble_casefile_triage_stage`, and added defence-in-depth bearer token sanitization to `GateInputV1.decision_basis`. All 4 ATDD RED tests now pass. Full regression: 890 passed, 0 skipped. Ruff check passes.
 
 ## Change Log
 
 - 2026-03-22: Story created via create-story workflow with full artifact analysis and sprint status synchronization; status set to `ready-for-dev`.
 - 2026-03-22: Implementation complete — added `anomaly_detection_policy_version` to `CaseFilePolicyVersions` (FR31), wired into `assemble_casefile_triage_stage`, added bearer token sanitization field validator to `GateInputV1.decision_basis` (NFR-S1). Status advanced to `review`.
+- 2026-03-22: Code review complete (bmad-bmm-code-review). 4 Medium + 3 Low findings fixed: File List completed (M1), stale `type: ignore[attr-defined]` comments removed (M2), missing `anomaly_detection_policy_version` assertion added to completeness test (M3), missing blank lines in `casefile_io.py` added (M4), wrong enum name in task description corrected (L2), stale RED-phase docstrings updated (L3). Status advanced to `done`.
