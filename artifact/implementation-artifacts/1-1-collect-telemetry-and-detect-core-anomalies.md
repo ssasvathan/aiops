@@ -1,6 +1,6 @@
 # Story 1.1: Collect Telemetry and Detect Core Anomalies
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -26,29 +26,36 @@ so that incident signals are detected early with explicit degraded evidence hand
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Run Stage 1 collection on scheduler cadence using contract-driven metric queries (AC: 1)
-  - [ ] Use `collect_prometheus_samples_with_diagnostics(...)` through `run_evidence_stage_cycle(...)`.
-  - [ ] Keep metric identity and scope-key behavior aligned with `prometheus-metrics-contract-v1.yaml`.
-  - [ ] Preserve async-safe collection (`asyncio.to_thread`) to avoid blocking the event loop.
+- [x] Task 1: Run Stage 1 collection on scheduler cadence using contract-driven metric queries (AC: 1)
+  - [x] Use `collect_prometheus_samples_with_diagnostics(...)` through `run_evidence_stage_cycle(...)`.
+  - [x] Keep metric identity and scope-key behavior aligned with `prometheus-metrics-contract-v1.yaml`.
+  - [x] Preserve async-safe collection (`asyncio.to_thread`) to avoid blocking the event loop.
 
-- [ ] Task 2: Detect core anomaly families from normalized evidence rows (AC: 1)
-  - [ ] Ensure detector coverage for `CONSUMER_LAG`, `THROUGHPUT_CONSTRAINED_PROXY`, and `VOLUME_DROP`.
-  - [ ] Keep finding payloads compatible with downstream gate assembly (`Finding`, `evidence_required`, reason codes).
-  - [ ] Preserve deterministic scope grouping and ordering.
+- [x] Task 2: Detect core anomaly families from normalized evidence rows (AC: 1)
+  - [x] Ensure detector coverage for `CONSUMER_LAG`, `THROUGHPUT_CONSTRAINED_PROXY`, and `VOLUME_DROP`.
+  - [x] Keep finding payloads compatible with downstream gate assembly (`Finding`, `evidence_required`, reason codes).
+  - [x] Preserve deterministic scope grouping and ordering.
 
-- [ ] Task 3: Implement degraded telemetry handling with strict UNKNOWN semantics (AC: 2)
-  - [ ] On full outage, set `telemetry_degraded_active=True`, emit one pending `TelemetryDegradedEvent`, and cap `max_safe_action=NOTIFY`.
-  - [ ] On recovery, emit resolved event and clear cap.
-  - [ ] Never map missing series to numeric zero; maintain `EvidenceStatus.UNKNOWN`.
+- [x] Task 3: Implement degraded telemetry handling with strict UNKNOWN semantics (AC: 2)
+  - [x] On full outage, set `telemetry_degraded_active=True`, emit one pending `TelemetryDegradedEvent`, and cap `max_safe_action=NOTIFY`.
+  - [x] On recovery, emit resolved event and clear cap.
+  - [x] Never map missing series to numeric zero; maintain `EvidenceStatus.UNKNOWN`.
 
-- [ ] Task 4: Preserve operational signals and health transitions (AC: 1, 2)
-  - [ ] Update Prometheus component health status transitions (`HEALTHY`/`UNAVAILABLE`).
-  - [ ] Emit degraded-active and transition metrics plus latency/alert hooks.
+- [x] Task 4: Preserve operational signals and health transitions (AC: 1, 2)
+  - [x] Update Prometheus component health status transitions (`HEALTHY`/`UNAVAILABLE`).
+  - [x] Emit degraded-active and transition metrics plus latency/alert hooks.
 
-- [ ] Task 5: Add and/or update focused tests and run quality gates (AC: 1, 2)
-  - [ ] Evidence-stage unit tests for outage detection, pending/resolved event emission, and UNKNOWN map behavior.
-  - [ ] Scheduler wiring tests for Stage 1 execution path and degraded transitions.
-  - [ ] Run full suite with zero skips and lint checks.
+- [x] Task 5: Add and/or update focused tests and run quality gates (AC: 1, 2)
+  - [x] Evidence-stage unit tests for outage detection, pending/resolved event emission, and UNKNOWN map behavior.
+  - [x] Scheduler wiring tests for Stage 1 execution path and degraded transitions.
+  - [x] Run full suite with zero skips and lint checks.
+
+### Review Follow-ups (AI)
+
+- [x] [AI-Review][MEDIUM] Replaced substring-based fallback gating with robust exception classification for connectivity failures. [tests/integration/integrations/test_prometheus_local.py]
+- [x] [AI-Review][MEDIUM] Strengthened smoke assertions by validating full sample shape and requiring non-empty fallback self-series (`up`) when contract metric is empty. [tests/integration/integrations/test_prometheus_local.py]
+- [x] [AI-Review][LOW] Added offline CI guardrails for fallback image startup with configurable image override (`AIOPS_PROMETHEUS_TEST_IMAGE`) and actionable failure guidance. [tests/integration/integrations/test_prometheus_local.py]
+- [x] [AI-Review][LOW] Tightened completion-note traceability to match the actual scope of modified files in this implementation pass. [artifact/implementation-artifacts/1-1-collect-telemetry-and-detect-core-anomalies.md]
 
 ## Dev Notes
 
@@ -190,22 +197,66 @@ GPT-5 Codex
 ### Debug Log References
 
 - Story context generated from planning artifacts, architecture shards, current codebase, and latest-version checks.
+- Full regression gate run after Docker Desktop startup: `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs` -> `827 passed`, `0 skipped`.
+- Quality gate lint run: `uv run ruff check` -> passed after import/order and line-wrap cleanup.
 
 ### Completion Notes List
 
 - Story document created in `ready-for-dev` state with implementation guardrails, architecture constraints, testing requirements, and latest tech notes.
-- Sprint status update required: set `epic-1` to `in-progress` and `1-1-collect-telemetry-and-detect-core-anomalies` to `ready-for-dev`.
+- Verified this implementation pass is focused on Story artifact updates plus integration smoke hardening (no functional Stage 1 pipeline code changes in this diff).
+- Updated integration smoke coverage to use robust connectivity-failure classification instead of fragile message matching.
+- Strengthened integration smoke validation with full sample-shape assertions and fallback self-metric liveness checks when contract series is empty.
+- Added fallback container guardrails for offline/air-gapped environments with configurable image override and explicit pre-pull guidance.
+- Story moved back to `review` after resolving all medium/low review findings.
 
 ### File List
 
 - artifact/implementation-artifacts/1-1-collect-telemetry-and-detect-core-anomalies.md
 - artifact/implementation-artifacts/sprint-status.yaml
+- src/aiops_triage_pipeline/__main__.py
+- tests/integration/integrations/test_prometheus_local.py
+
+## Senior Developer Review (AI)
+
+### Reviewer
+
+- Reviewer: Sas
+- Date: 2026-03-22
+- Outcome: Changes Requested
+
+### Git vs Story Validation
+
+- Story file list entries: 4
+- Git changed files: 4
+- Discrepancies: 0
+
+### AC Validation Summary
+
+- AC1: IMPLEMENTED (verified in scheduler/evidence/anomaly path and unit coverage).
+- AC2: IMPLEMENTED (verified outage detection, pending/resolved event transitions, UNKNOWN semantics, and cap behavior).
+
+### Findings
+
+1. [MEDIUM] Fallback trigger logic is brittle because it depends on exception message substrings rather than stable exception semantics. [tests/integration/integrations/test_prometheus_local.py:39]
+2. [MEDIUM] Integration smoke test assertions are too weak and can pass on empty vectors, which limits defect-detection value for query-path regressions. [tests/integration/integrations/test_prometheus_local.py:51]
+3. [LOW] Containerized fallback path adds a runtime image-pull dependency that can fail in offline/air-gapped CI without a preloaded image strategy. [tests/integration/integrations/test_prometheus_local.py:41]
+4. [LOW] Story traceability is ambiguous: completion notes imply broad implementation work while recorded changed files reflect limited/new behavior scope. [artifact/implementation-artifacts/1-1-collect-telemetry-and-detect-core-anomalies.md:198]
+
+### Resolution (2026-03-22)
+
+- [x] Finding 1 resolved in integration smoke fallback exception handling.
+- [x] Finding 2 resolved with stronger assertions and fallback self-series liveness verification.
+- [x] Finding 3 resolved with fallback image override + explicit pre-pull/offline guidance in test failure path.
+- [x] Finding 4 resolved by rewriting completion notes for accurate scope traceability.
 
 ## Change Log
 
 - 2026-03-22: Story created via create-story workflow with exhaustive artifact analysis and ready-for-dev context.
+- 2026-03-22: Dev-story implementation completed; enforced zero-skip regression gate, added non-skipping Prometheus integration fallback, and advanced story to review.
+- 2026-03-22: Senior developer adversarial review completed; 2 MEDIUM and 2 LOW findings recorded, follow-up action items added, story moved to in-progress.
+- 2026-03-22: Resolved all medium/low review findings; hardened integration smoke fallback behavior/assertions and clarified implementation traceability.
 
 ## Story Completion Status
 
-- Story status: `ready-for-dev`
-- Completion note: Ultimate context engine analysis completed - comprehensive developer guide created.
+- Story status: `review`
+- Completion note: Medium/low review findings resolved and follow-up checklist completed; ready for re-review.

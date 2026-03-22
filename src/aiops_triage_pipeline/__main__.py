@@ -161,7 +161,9 @@ def _run_hot_path() -> None:
         peak_policy = load_peak_policy(_PEAK_POLICY_PATH)
         rulebook_policy = load_rulebook_policy(_RULEBOOK_POLICY_PATH)
         redis_ttl_policy = load_redis_ttl_policy(_REDIS_TTL_POLICY_PATH)
-        prometheus_metrics_contract = load_prometheus_metrics_contract(_PROMETHEUS_METRICS_CONTRACT_PATH)
+        prometheus_metrics_contract = load_prometheus_metrics_contract(
+            _PROMETHEUS_METRICS_CONTRACT_PATH
+        )
         metric_queries = build_metric_queries(_PROMETHEUS_METRICS_CONTRACT_PATH)
         denylist = load_denylist(_DENYLIST_PATH)
 
@@ -312,7 +314,11 @@ async def _hot_path_scheduler_loop(
                 gate_inputs = gate_inputs_by_scope.get(scope, ())
                 for decision in decisions:
                     gate_input = next(
-                        (gi for gi in gate_inputs if gi.action_fingerprint == decision.action_fingerprint),
+                        (
+                            gi
+                            for gi in gate_inputs
+                            if gi.action_fingerprint == decision.action_fingerprint
+                        ),
                         None,
                     )
                     if gate_input is None:
