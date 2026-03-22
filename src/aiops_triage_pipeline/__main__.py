@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import time
+from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -26,6 +27,10 @@ from aiops_triage_pipeline.denylist.loader import load_denylist
 from aiops_triage_pipeline.health.alerts import (
     OperationalAlertEvaluator,
     load_operational_alert_policy,
+)
+from aiops_triage_pipeline.health.metrics import (
+    record_pipeline_peak_history_evictions,
+    record_pipeline_peak_history_scope_count,
 )
 from aiops_triage_pipeline.health.otlp import configure_otlp_metrics
 from aiops_triage_pipeline.integrations.kafka import ConfluentKafkaCaseEventPublisher
@@ -84,6 +89,107 @@ _DENYLIST_PATH = Path(__file__).resolve().parents[2] / "config/denylist.yaml"
 _OPERATIONAL_ALERT_POLICY_PATH = (
     Path(__file__).resolve().parents[2] / "config/policies/operational-alert-policy-v1.yaml"
 )
+
+
+class _PeakHistoryRetention:
+    """Maintain bounded in-process peak baseline windows per topic scope."""
+
+    def __init__(
+        self,
+        *,
+        max_depth: int,
+        max_scopes: int,
+        max_idle_cycles: int,
+        logger: structlog.BoundLogger | None = None,
+    ) -> None:
+        if max_depth <= 0:
+            raise ValueError("max_depth must be > 0")
+        if max_scopes <= 0:
+            raise ValueError("max_scopes must be > 0")
+        if max_idle_cycles <= 0:
+            raise ValueError("max_idle_cycles must be > 0")
+        self._max_depth = max_depth
+        self._max_scopes = max_scopes
+        self._max_idle_cycles = max_idle_cycles
+        self._logger = logger
+        self._cycle = 0
+        self._history_by_scope: dict[tuple[str, str, str], deque[float]] = {}
+        self._last_seen_cycle_by_scope: dict[tuple[str, str, str], int] = {}
+
+    def update(
+        self,
+        *,
+        scopes: list[tuple[str, str, str]],
+        baseline_values_by_scope: dict[tuple[str, str, str], float],
+    ) -> dict[tuple[str, str, str], tuple[float, ...]]:
+        self._cycle += 1
+        active_scopes = sorted(set(scopes))
+        active_scope_set = set(active_scopes)
+        cap_evictions = 0
+
+        for scope in active_scopes:
+            history = self._history_by_scope.get(scope)
+            baseline_value = baseline_values_by_scope.get(scope)
+
+            if history is None and baseline_value is None:
+                continue
+            if history is None:
+                while len(self._history_by_scope) >= self._max_scopes:
+                    if self._evict_oldest_scope(protected_scopes=active_scope_set) is None:
+                        break
+                    cap_evictions += 1
+                history = deque(maxlen=self._max_depth)
+                self._history_by_scope[scope] = history
+
+            if baseline_value is not None:
+                history.append(float(baseline_value))
+            self._last_seen_cycle_by_scope[scope] = self._cycle
+
+        stale_evictions = self._evict_stale_scopes()
+        total_evictions = cap_evictions + stale_evictions
+        if cap_evictions > 0 and self._logger is not None:
+            self._logger.warning(
+                "peak_history_scope_cap_reached",
+                event_type="peak.history_retention_warning",
+                max_scopes=self._max_scopes,
+                evicted_scope_count=cap_evictions,
+            )
+
+        record_pipeline_peak_history_scope_count(scope_count=len(self._history_by_scope))
+        record_pipeline_peak_history_evictions(evicted_count=total_evictions)
+
+        return {
+            scope: tuple(self._history_by_scope[scope])
+            for scope in active_scopes
+            if scope in self._history_by_scope and self._history_by_scope[scope]
+        }
+
+    def _evict_oldest_scope(
+        self,
+        *,
+        protected_scopes: set[tuple[str, str, str]] | None = None,
+    ) -> tuple[str, str, str] | None:
+        if not self._last_seen_cycle_by_scope:
+            return None
+        protected = protected_scopes or set()
+        candidates = [scope for scope in self._last_seen_cycle_by_scope if scope not in protected]
+        if not candidates:
+            candidates = list(self._last_seen_cycle_by_scope)
+        scope = min(candidates, key=lambda s: (self._last_seen_cycle_by_scope[s], s))
+        self._history_by_scope.pop(scope, None)
+        self._last_seen_cycle_by_scope.pop(scope, None)
+        return scope
+
+    def _evict_stale_scopes(self) -> int:
+        stale_scopes = [
+            scope
+            for scope, last_seen in self._last_seen_cycle_by_scope.items()
+            if self._cycle - last_seen > self._max_idle_cycles
+        ]
+        for scope in stale_scopes:
+            self._history_by_scope.pop(scope, None)
+            self._last_seen_cycle_by_scope.pop(scope, None)
+        return len(stale_scopes)
 
 
 def main() -> None:
@@ -258,6 +364,12 @@ async def _hot_path_scheduler_loop(
     interval_seconds = settings.HOT_PATH_SCHEDULER_INTERVAL_SECONDS
     previous_boundary = None
     previous_sustained_identity_keys: set[tuple[str, str, str, str]] = set()
+    peak_history_retention = _PeakHistoryRetention(
+        max_depth=settings.STAGE2_PEAK_HISTORY_MAX_DEPTH,
+        max_scopes=settings.STAGE2_PEAK_HISTORY_MAX_SCOPES,
+        max_idle_cycles=settings.STAGE2_PEAK_HISTORY_MAX_IDLE_CYCLES,
+        logger=logger,
+    )
 
     while True:
         evaluation_time = datetime.now(UTC)
@@ -309,12 +421,16 @@ async def _hot_path_scheduler_loop(
                 historical_windows_by_scope=_load_peak_baseline_windows(
                     redis_client=redis_client,
                     scopes=peak_scopes,
+                    history_retention=peak_history_retention,
                 ),
                 prior_sustained_window_state_by_key=prior_sustained_window_state_by_key,
                 cached_peak_profiles_by_scope=cached_peak_profiles_by_scope,
                 evaluation_time=evaluation_time,
                 peak_policy=peak_policy,
                 rulebook_policy=rulebook_policy,
+                sustained_parallel_min_keys=settings.STAGE2_SUSTAINED_PARALLEL_MIN_KEYS,
+                sustained_parallel_workers=settings.STAGE2_SUSTAINED_PARALLEL_WORKERS,
+                sustained_parallel_chunk_size=settings.STAGE2_SUSTAINED_PARALLEL_CHUNK_SIZE,
                 alert_evaluator=alert_evaluator,
             )
             persist_sustained_window_states(
@@ -471,21 +587,27 @@ def _load_peak_baseline_windows(
     *,
     redis_client,
     scopes: list[tuple[str, str, str]],
+    history_retention: _PeakHistoryRetention | None = None,
 ) -> dict[tuple[str, str, str], tuple[float, ...]]:
     """Hydrate peak historical windows from persisted per-scope baselines."""
     if not scopes:
         return {}
-    baseline_values_by_scope = load_metric_baselines(
+    loaded_baselines_by_scope = load_metric_baselines(
         redis_client=redis_client,
         source="prometheus",
         scope_metric_pairs=[(scope, "topic_messages_in_per_sec") for scope in scopes],
     )
-    windows_by_scope: dict[tuple[str, str, str], tuple[float, ...]] = {}
+    baseline_values_by_scope: dict[tuple[str, str, str], float] = {}
     for scope in scopes:
-        baseline_value = baseline_values_by_scope.get(scope, {}).get("topic_messages_in_per_sec")
+        baseline_value = loaded_baselines_by_scope.get(scope, {}).get("topic_messages_in_per_sec")
         if baseline_value is not None:
-            windows_by_scope[scope] = (baseline_value,)
-    return windows_by_scope
+            baseline_values_by_scope[scope] = baseline_value
+    if history_retention is None:
+        return {scope: (value,) for scope, value in baseline_values_by_scope.items()}
+    return history_retention.update(
+        scopes=scopes,
+        baseline_values_by_scope=baseline_values_by_scope,
+    )
 
 
 def _run_cold_path() -> None:

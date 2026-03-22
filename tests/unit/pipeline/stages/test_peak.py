@@ -29,6 +29,7 @@ from aiops_triage_pipeline.models.peak import (
 from aiops_triage_pipeline.pipeline.stages.peak import (
     build_sustained_window_state_by_key,
     collect_peak_stage_output,
+    compute_sustained_status_by_key,
     load_peak_policy,
     load_redis_ttl_policy,
     load_rulebook_policy,
@@ -494,6 +495,87 @@ def test_collect_peak_stage_output_is_deterministic_for_identical_inputs() -> No
     # max(18.0, 17.0) = 18; p90([1..20]) = 18 (near_peak), p95([1..20]) = 19 (peak)
     # 18 >= near_peak(18) and 18 < peak(19) → NEAR_PEAK
     assert context.classification == "NEAR_PEAK"
+
+
+def test_collect_peak_stage_output_prefers_cached_profile_over_history_recompute() -> None:
+    policy = _peak_policy_for_tests()
+    scope = ("prod", "cluster-a", "orders")
+    rows = [_row(scope, "topic_messages_in_per_sec", 120.0)]
+    history = {scope: [float(x) for x in range(1, 101)]}
+    cached_profile = PeakProfile(
+        scope=scope,
+        source_metric=policy.metric,
+        peak_threshold_value=200.0,
+        near_peak_threshold_value=150.0,
+        history_samples_count=100,
+        has_sufficient_history=True,
+        recompute_frequency="weekly",
+        computed_at=datetime(2026, 3, 2, 12, 0, tzinfo=UTC),
+    )
+
+    output = collect_peak_stage_output(
+        rows=rows,
+        historical_windows_by_scope=history,
+        cached_profiles_by_scope={scope: cached_profile},
+        peak_policy=policy,
+        evaluation_time=datetime(2026, 3, 2, 12, 5, tzinfo=UTC),
+    )
+
+    classification = output.classifications_by_scope[scope]
+    # History would classify PEAK near 95th percentile, but cached profile should take precedence.
+    assert classification.state == "OFF_PEAK"
+    assert classification.peak_threshold_value == 200.0
+    assert classification.near_peak_threshold_value == 150.0
+
+
+def test_compute_sustained_status_by_key_parallel_matches_serial() -> None:
+    rulebook = _rulebook_policy_for_tests(required=5)
+    evaluation_time = datetime(2026, 3, 2, 12, 0, tzinfo=UTC)
+
+    findings = [
+        _finding(scope=("prod", "cluster-a", f"orders-{idx}"), anomaly_family="VOLUME_DROP")
+        for idx in range(120)
+    ]
+    evidence_status_map_by_scope = {
+        ("prod", "cluster-a", f"orders-{idx}"): {
+            "topic_messages_in_per_sec": EvidenceStatus.PRESENT,
+            "total_produce_requests_per_sec": EvidenceStatus.PRESENT,
+        }
+        for idx in range(120)
+    }
+
+    class _Logger:
+        def warning(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
+            return None
+
+    serial = compute_sustained_status_by_key(
+        anomaly_findings=findings,
+        prior_window_state_by_key={},
+        required_buckets=rulebook.sustained_intervals_required,
+        evaluation_interval_minutes=rulebook.evaluation_interval_minutes,
+        evaluation_time=evaluation_time,
+        evidence_status_map_by_scope=evidence_status_map_by_scope,
+        logger=_Logger(),
+        sustained_parallel_min_keys=10_000,
+        sustained_parallel_workers=1,
+        sustained_parallel_chunk_size=64,
+    )
+
+    parallel = compute_sustained_status_by_key(
+        anomaly_findings=findings,
+        prior_window_state_by_key={},
+        required_buckets=rulebook.sustained_intervals_required,
+        evaluation_interval_minutes=rulebook.evaluation_interval_minutes,
+        evaluation_time=evaluation_time,
+        evidence_status_map_by_scope=evidence_status_map_by_scope,
+        logger=_Logger(),
+        sustained_parallel_min_keys=10,
+        sustained_parallel_workers=4,
+        sustained_parallel_chunk_size=16,
+    )
+
+    assert parallel == serial
+    assert list(parallel.keys()) == sorted(parallel.keys())
 
 
 def _parse_logs(stream: io.StringIO) -> list[dict]:

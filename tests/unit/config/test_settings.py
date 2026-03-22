@@ -202,6 +202,41 @@ def test_otlp_deployment_environment_defaults_to_app_env() -> None:
     assert settings.OTLP_DEPLOYMENT_ENVIRONMENT == "uat"
 
 
+def test_stage2_parallel_and_retention_settings_have_safe_defaults() -> None:
+    settings = Settings(
+        _env_file=None,
+        KAFKA_BOOTSTRAP_SERVERS="localhost:9092",
+        DATABASE_URL="postgresql+psycopg://u:p@h/db",
+        REDIS_URL="redis://localhost:6379/0",
+        S3_ENDPOINT_URL="http://localhost:9000",
+        S3_ACCESS_KEY="key",
+        S3_SECRET_KEY="secret",
+        S3_BUCKET="bucket",
+    )
+
+    assert settings.STAGE2_SUSTAINED_PARALLEL_MIN_KEYS > 0
+    assert settings.STAGE2_SUSTAINED_PARALLEL_WORKERS > 0
+    assert settings.STAGE2_SUSTAINED_PARALLEL_CHUNK_SIZE > 0
+    assert settings.STAGE2_PEAK_HISTORY_MAX_DEPTH > 0
+    assert settings.STAGE2_PEAK_HISTORY_MAX_SCOPES > 0
+    assert settings.STAGE2_PEAK_HISTORY_MAX_IDLE_CYCLES > 0
+
+
+def test_stage2_parallel_and_retention_settings_reject_invalid_values() -> None:
+    with pytest.raises((ValueError, ValidationError)):
+        Settings(
+            _env_file=None,
+            KAFKA_BOOTSTRAP_SERVERS="localhost:9092",
+            DATABASE_URL="postgresql+psycopg://u:p@h/db",
+            REDIS_URL="redis://localhost:6379/0",
+            S3_ENDPOINT_URL="http://localhost:9000",
+            S3_ACCESS_KEY="key",
+            S3_SECRET_KEY="secret",
+            S3_BUCKET="bucket",
+            STAGE2_SUSTAINED_PARALLEL_WORKERS=0,
+        )
+
+
 def test_get_settings_returns_same_instance() -> None:
     """get_settings() caches and returns the same Settings instance."""
     get_settings.cache_clear()

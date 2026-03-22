@@ -257,6 +257,9 @@ def run_peak_stage_cycle(
     evaluation_time: datetime,
     peak_policy: PeakPolicyV1 | None = None,
     rulebook_policy: RulebookV1 | None = None,
+    sustained_parallel_min_keys: int = 64,
+    sustained_parallel_workers: int = 4,
+    sustained_parallel_chunk_size: int = 32,
     alert_evaluator: OperationalAlertEvaluator | None = None,
 ) -> PeakStageOutput:
     """Run Stage 2 peak classification from Stage 1 normalized rows.
@@ -276,6 +279,9 @@ def run_peak_stage_cycle(
             evaluation_time=evaluation_time,
             peak_policy=peak_policy,
             rulebook_policy=rulebook_policy,
+            sustained_parallel_min_keys=sustained_parallel_min_keys,
+            sustained_parallel_workers=sustained_parallel_workers,
+            sustained_parallel_chunk_size=sustained_parallel_chunk_size,
         )
     finally:
         elapsed_seconds = time.perf_counter() - started_at

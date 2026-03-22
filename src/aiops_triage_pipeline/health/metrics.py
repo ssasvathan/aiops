@@ -111,9 +111,29 @@ _pipeline_compute_latency_seconds = _meter.create_histogram(
     description="Pipeline compute latency by stage",
     unit="s",
 )
+_pipeline_sustained_compute_seconds = _meter.create_histogram(
+    name="aiops.pipeline.sustained_compute_seconds",
+    description="Sustained-status compute duration",
+    unit="s",
+)
+_pipeline_sustained_key_count = _meter.create_histogram(
+    name="aiops.pipeline.sustained_key_count",
+    description="Sustained identity keys evaluated per cycle",
+    unit="1",
+)
 _pipeline_cases_per_interval = _meter.create_histogram(
     name="aiops.pipeline.cases_per_interval",
     description="Cases produced per evaluation interval",
+    unit="1",
+)
+_pipeline_peak_history_scope_count = _meter.create_up_down_counter(
+    name="aiops.pipeline.peak_history_scope_count",
+    description="Current count of in-process peak-history scopes",
+    unit="1",
+)
+_pipeline_peak_history_evictions_total = _meter.create_counter(
+    name="aiops.pipeline.peak_history_evictions_total",
+    description="Total number of in-process peak-history scope evictions",
     unit="1",
 )
 _sn_correlation_tier_total = _meter.create_up_down_counter(
@@ -146,6 +166,7 @@ _prev_status_values: dict[str, int] = {}
 _prev_connection_values: dict[str, int] = {"redis": 1}
 _redis_dedupe_key_count_value = 0
 _prometheus_degraded_active_value = 0
+_pipeline_peak_history_scope_count_value = 0
 _sn_correlation_tier_counts: dict[str, int] = {
     "tier1": 0,
     "tier2": 0,
@@ -318,9 +339,34 @@ def record_pipeline_compute_latency(*, stage: str, seconds: float) -> None:
     )
 
 
+def record_pipeline_sustained_compute(*, seconds: float, key_count: int, mode: str) -> None:
+    attrs = {"component": "pipeline", "mode": mode}
+    _pipeline_sustained_compute_seconds.record(max(seconds, 0.0), attributes=attrs)
+    _pipeline_sustained_key_count.record(max(float(key_count), 0.0), attributes=attrs)
+
+
 def record_pipeline_case_throughput(*, case_count: int) -> None:
     _pipeline_cases_per_interval.record(
         max(float(case_count), 0.0),
+        attributes={"component": "pipeline"},
+    )
+
+
+def record_pipeline_peak_history_scope_count(*, scope_count: int) -> None:
+    with _state_lock:
+        global _pipeline_peak_history_scope_count_value
+        new_value = max(scope_count, 0)
+        delta = new_value - _pipeline_peak_history_scope_count_value
+        _pipeline_peak_history_scope_count_value = new_value
+    if delta != 0:
+        _pipeline_peak_history_scope_count.add(delta, attributes={"component": "pipeline"})
+
+
+def record_pipeline_peak_history_evictions(*, evicted_count: int) -> None:
+    if evicted_count <= 0:
+        return
+    _pipeline_peak_history_evictions_total.add(
+        evicted_count,
         attributes={"component": "pipeline"},
     )
 

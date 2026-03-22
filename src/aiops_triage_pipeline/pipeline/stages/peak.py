@@ -1,7 +1,9 @@
 """Stage 2 peak-classification helpers."""
 
 import math
+import time
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Mapping, Sequence
@@ -11,6 +13,7 @@ from aiops_triage_pipeline.contracts.enums import EvidenceStatus
 from aiops_triage_pipeline.contracts.peak_policy import PeakPolicyV1
 from aiops_triage_pipeline.contracts.redis_ttl_policy import RedisTtlPolicyV1
 from aiops_triage_pipeline.contracts.rulebook import RulebookV1
+from aiops_triage_pipeline.health.metrics import record_pipeline_sustained_compute
 from aiops_triage_pipeline.logging.setup import get_logger
 from aiops_triage_pipeline.models.anomaly import AnomalyFinding
 from aiops_triage_pipeline.models.evidence import EvidenceRow
@@ -76,6 +79,9 @@ def collect_peak_stage_output(
     peak_policy: PeakPolicyV1 | None = None,
     rulebook_policy: RulebookV1 | None = None,
     evaluation_time: datetime | None = None,
+    sustained_parallel_min_keys: int = 64,
+    sustained_parallel_workers: int = 4,
+    sustained_parallel_chunk_size: int = 32,
 ) -> PeakStageOutput:
     """Build Stage 2 peak classifications for normalized topic scopes."""
     logger = get_logger("pipeline.stages.peak")
@@ -154,6 +160,9 @@ def collect_peak_stage_output(
         evaluation_time=effective_time,
         evidence_status_map_by_scope=evidence_status_map_by_scope,
         logger=logger,
+        sustained_parallel_min_keys=sustained_parallel_min_keys,
+        sustained_parallel_workers=sustained_parallel_workers,
+        sustained_parallel_chunk_size=sustained_parallel_chunk_size,
     )
 
     return PeakStageOutput(
@@ -201,8 +210,12 @@ def compute_sustained_status_by_key(
     evaluation_time: datetime,
     evidence_status_map_by_scope: Mapping[tuple[str, ...], Mapping[str, EvidenceStatus]] | None,
     logger,
+    sustained_parallel_min_keys: int = 64,
+    sustained_parallel_workers: int = 4,
+    sustained_parallel_chunk_size: int = 32,
 ) -> dict[SustainedIdentityKey, SustainedStatus]:
     """Compute sustained streak state per (env, cluster, topic/group, anomaly_family)."""
+    started_at = time.perf_counter()
     current_anomalous_keys: set[SustainedIdentityKey] = set()
     for finding in anomaly_findings:
         key = _to_sustained_identity_key(finding=finding, logger=logger)
@@ -219,34 +232,167 @@ def compute_sustained_status_by_key(
             insufficient_evidence_by_key.add(key)
 
     sustained_by_key: dict[SustainedIdentityKey, SustainedStatus] = {}
+    execution_mode = "serial"
+    should_parallelize = (
+        len(keys_to_evaluate) >= sustained_parallel_min_keys
+        and sustained_parallel_workers > 1
+        and sustained_parallel_chunk_size > 0
+    )
+    if should_parallelize:
+        execution_mode = "parallel"
+        chunks = [
+            keys_to_evaluate[idx : idx + sustained_parallel_chunk_size]
+            for idx in range(0, len(keys_to_evaluate), sustained_parallel_chunk_size)
+        ]
+        try:
+            with ThreadPoolExecutor(max_workers=sustained_parallel_workers) as executor:
+                futures = [
+                    executor.submit(
+                        _compute_sustained_status_chunk,
+                        chunk,
+                        prior_window_state_by_key,
+                        insufficient_evidence_by_key,
+                        current_anomalous_keys,
+                        required_buckets,
+                        evaluation_interval_minutes,
+                        evaluation_time,
+                    )
+                    for chunk in chunks
+                ]
+                # Preserve deterministic insertion ordering by consuming futures in chunk order.
+                for future in futures:
+                    for key, status in future.result():
+                        sustained_by_key[key] = status
+        except Exception:
+            execution_mode = "parallel_fallback"
+            logger.warning(
+                "sustained_parallel_fallback_to_serial",
+                event_type="peak.sustained_parallel_warning",
+                key_count=len(keys_to_evaluate),
+                workers=sustained_parallel_workers,
+                chunk_size=sustained_parallel_chunk_size,
+            )
+            sustained_by_key = _compute_sustained_status_serial(
+                keys_to_evaluate=keys_to_evaluate,
+                prior_window_state_by_key=prior_window_state_by_key,
+                insufficient_evidence_by_key=insufficient_evidence_by_key,
+                current_anomalous_keys=current_anomalous_keys,
+                required_buckets=required_buckets,
+                evaluation_interval_minutes=evaluation_interval_minutes,
+                evaluation_time=evaluation_time,
+            )
+    else:
+        if len(keys_to_evaluate) >= sustained_parallel_min_keys and sustained_parallel_workers <= 1:
+            logger.warning(
+                "sustained_parallel_disabled_by_config",
+                event_type="peak.sustained_parallel_warning",
+                key_count=len(keys_to_evaluate),
+                workers=sustained_parallel_workers,
+            )
+        sustained_by_key = _compute_sustained_status_serial(
+            keys_to_evaluate=keys_to_evaluate,
+            prior_window_state_by_key=prior_window_state_by_key,
+            insufficient_evidence_by_key=insufficient_evidence_by_key,
+            current_anomalous_keys=current_anomalous_keys,
+            required_buckets=required_buckets,
+            evaluation_interval_minutes=evaluation_interval_minutes,
+            evaluation_time=evaluation_time,
+        )
+    elapsed_seconds = time.perf_counter() - started_at
+    record_pipeline_sustained_compute(
+        seconds=elapsed_seconds,
+        key_count=len(keys_to_evaluate),
+        mode=execution_mode,
+    )
+    return sustained_by_key
+
+
+def _compute_sustained_status_serial(
+    *,
+    keys_to_evaluate: Sequence[SustainedIdentityKey],
+    prior_window_state_by_key: Mapping[SustainedIdentityKey, SustainedWindowState],
+    insufficient_evidence_by_key: set[SustainedIdentityKey],
+    current_anomalous_keys: set[SustainedIdentityKey],
+    required_buckets: int,
+    evaluation_interval_minutes: int,
+    evaluation_time: datetime,
+) -> dict[SustainedIdentityKey, SustainedStatus]:
+    sustained_by_key: dict[SustainedIdentityKey, SustainedStatus] = {}
     for key in keys_to_evaluate:
-        prior_state = prior_window_state_by_key.get(key)
-        evidence_insufficient = key in insufficient_evidence_by_key
-        streak = _next_streak_count(
+        sustained_by_key[key] = _compute_sustained_status_for_key(
+            key=key,
+            prior_window_state_by_key=prior_window_state_by_key,
+            insufficient_evidence_by_key=insufficient_evidence_by_key,
+            current_anomalous_keys=current_anomalous_keys,
+            required_buckets=required_buckets,
+            evaluation_interval_minutes=evaluation_interval_minutes,
+            evaluation_time=evaluation_time,
+        )
+    return sustained_by_key
+
+
+def _compute_sustained_status_chunk(
+    keys: Sequence[SustainedIdentityKey],
+    prior_window_state_by_key: Mapping[SustainedIdentityKey, SustainedWindowState],
+    insufficient_evidence_by_key: set[SustainedIdentityKey],
+    current_anomalous_keys: set[SustainedIdentityKey],
+    required_buckets: int,
+    evaluation_interval_minutes: int,
+    evaluation_time: datetime,
+) -> list[tuple[SustainedIdentityKey, SustainedStatus]]:
+    return [
+        (
+            key,
+            _compute_sustained_status_for_key(
+                key=key,
+                prior_window_state_by_key=prior_window_state_by_key,
+                insufficient_evidence_by_key=insufficient_evidence_by_key,
+                current_anomalous_keys=current_anomalous_keys,
+                required_buckets=required_buckets,
+                evaluation_interval_minutes=evaluation_interval_minutes,
+                evaluation_time=evaluation_time,
+            ),
+        )
+        for key in keys
+    ]
+
+
+def _compute_sustained_status_for_key(
+    *,
+    key: SustainedIdentityKey,
+    prior_window_state_by_key: Mapping[SustainedIdentityKey, SustainedWindowState],
+    insufficient_evidence_by_key: set[SustainedIdentityKey],
+    current_anomalous_keys: set[SustainedIdentityKey],
+    required_buckets: int,
+    evaluation_interval_minutes: int,
+    evaluation_time: datetime,
+) -> SustainedStatus:
+    prior_state = prior_window_state_by_key.get(key)
+    evidence_insufficient = key in insufficient_evidence_by_key
+    streak = _next_streak_count(
+        prior_state=prior_state,
+        current_key_is_anomalous=key in current_anomalous_keys,
+        evidence_insufficient=evidence_insufficient,
+        evaluation_time=evaluation_time,
+        evaluation_interval_minutes=evaluation_interval_minutes,
+    )
+    is_sustained = streak >= required_buckets and not evidence_insufficient
+    return SustainedStatus(
+        identity_key=key,
+        is_sustained=is_sustained,
+        consecutive_anomalous_buckets=streak,
+        required_buckets=required_buckets,
+        last_evaluated_at=evaluation_time,
+        reason_codes=_reason_codes(
             prior_state=prior_state,
-            current_key_is_anomalous=key in current_anomalous_keys,
+            streak=streak,
+            is_sustained=is_sustained,
+            is_anomalous=key in current_anomalous_keys,
             evidence_insufficient=evidence_insufficient,
             evaluation_time=evaluation_time,
             evaluation_interval_minutes=evaluation_interval_minutes,
-        )
-        is_sustained = streak >= required_buckets and not evidence_insufficient
-        sustained_by_key[key] = SustainedStatus(
-            identity_key=key,
-            is_sustained=is_sustained,
-            consecutive_anomalous_buckets=streak,
-            required_buckets=required_buckets,
-            last_evaluated_at=evaluation_time,
-            reason_codes=_reason_codes(
-                prior_state=prior_state,
-                streak=streak,
-                is_sustained=is_sustained,
-                is_anomalous=key in current_anomalous_keys,
-                evidence_insufficient=evidence_insufficient,
-                evaluation_time=evaluation_time,
-                evaluation_interval_minutes=evaluation_interval_minutes,
-            ),
-        )
-    return sustained_by_key
+        ),
+    )
 
 
 def _required_metric_status_for_peak_scope(

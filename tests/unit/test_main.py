@@ -230,3 +230,39 @@ def test_load_peak_baseline_windows_uses_cached_topic_baseline(monkeypatch) -> N
     windows = __main__._load_peak_baseline_windows(redis_client=object(), scopes=[scope])
 
     assert windows == {scope: (123.0,)}
+
+
+def test_peak_history_retention_bounds_depth_and_evicts_stale_scopes() -> None:
+    retention = __main__._PeakHistoryRetention(
+        max_depth=2,
+        max_scopes=2,
+        max_idle_cycles=1,
+    )
+
+    cycle1 = retention.update(
+        scopes=[("prod", "cluster-a", "orders"), ("prod", "cluster-a", "payments")],
+        baseline_values_by_scope={
+            ("prod", "cluster-a", "orders"): 100.0,
+            ("prod", "cluster-a", "payments"): 200.0,
+        },
+    )
+    assert cycle1[("prod", "cluster-a", "orders")] == (100.0,)
+    assert cycle1[("prod", "cluster-a", "payments")] == (200.0,)
+
+    cycle2 = retention.update(
+        scopes=[("prod", "cluster-a", "orders"), ("prod", "cluster-a", "inventory")],
+        baseline_values_by_scope={
+            ("prod", "cluster-a", "orders"): 110.0,
+            ("prod", "cluster-a", "inventory"): 300.0,
+        },
+    )
+    assert cycle2[("prod", "cluster-a", "orders")] == (100.0, 110.0)
+    assert cycle2[("prod", "cluster-a", "inventory")] == (300.0,)
+    assert ("prod", "cluster-a", "payments") not in cycle2
+
+    cycle3 = retention.update(
+        scopes=[("prod", "cluster-a", "inventory")],
+        baseline_values_by_scope={("prod", "cluster-a", "inventory"): 305.0},
+    )
+    assert cycle3[("prod", "cluster-a", "inventory")] == (300.0, 305.0)
+    assert ("prod", "cluster-a", "orders") not in cycle3

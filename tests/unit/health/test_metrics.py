@@ -142,6 +142,48 @@ def test_record_evidence_unknown_rate_skips_emission_when_total_count_is_zero(mo
     assert unknown_rate.calls == []
 
 
+def test_record_sustained_compute_metrics_emit_duration_and_key_count(monkeypatch) -> None:
+    from aiops_triage_pipeline.health import metrics
+
+    sustained_duration = _RecordingInstrument()
+    sustained_key_count = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_pipeline_sustained_compute_seconds", sustained_duration)
+    monkeypatch.setattr(metrics, "_pipeline_sustained_key_count", sustained_key_count)
+
+    metrics.record_pipeline_sustained_compute(
+        seconds=0.125,
+        key_count=42,
+        mode="parallel",
+    )
+
+    assert sustained_duration.calls == [
+        (0.125, {"component": "pipeline", "mode": "parallel"}),
+    ]
+    assert sustained_key_count.calls == [
+        (42.0, {"component": "pipeline", "mode": "parallel"}),
+    ]
+
+
+def test_record_peak_history_metrics_track_scope_count_and_evictions(monkeypatch) -> None:
+    from aiops_triage_pipeline.health import metrics
+
+    scope_count = _RecordingInstrument()
+    evictions = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_pipeline_peak_history_scope_count", scope_count)
+    monkeypatch.setattr(metrics, "_pipeline_peak_history_evictions_total", evictions)
+    monkeypatch.setattr(metrics, "_pipeline_peak_history_scope_count_value", 0)
+
+    metrics.record_pipeline_peak_history_scope_count(scope_count=3)
+    metrics.record_pipeline_peak_history_scope_count(scope_count=1)
+    metrics.record_pipeline_peak_history_evictions(evicted_count=2)
+
+    assert scope_count.calls == [
+        (3, {"component": "pipeline"}),
+        (-2, {"component": "pipeline"}),
+    ]
+    assert evictions.calls == [(2, {"component": "pipeline"})]
+
+
 def test_record_sn_correlation_tier_tracks_tier_counts_and_fallback_rate(monkeypatch) -> None:
     from aiops_triage_pipeline.health import metrics
 

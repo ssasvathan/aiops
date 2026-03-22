@@ -1,6 +1,6 @@
 # Story 1.3: Classify Peak and Sustained Conditions with Bounded Memory
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -26,35 +26,35 @@ so that severity decisions reflect real conditions without memory or latency reg
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Finalize deterministic peak classification from cached/computed profiles (AC: 1)
-  - [ ] Ensure `run_peak_stage_cycle` and `collect_peak_stage_output` classify to `PEAK|NEAR_PEAK|OFF_PEAK` whenever required evidence is present.
-  - [ ] Keep `UNKNOWN` only for evidence-insufficient or profile-missing cases and preserve reason-code semantics.
-  - [ ] Confirm cached profile reuse has precedence over recompute when valid cached data exists.
+- [x] Task 1: Finalize deterministic peak classification from cached/computed profiles (AC: 1)
+  - [x] Ensure `run_peak_stage_cycle` and `collect_peak_stage_output` classify to `PEAK|NEAR_PEAK|OFF_PEAK` whenever required evidence is present.
+  - [x] Keep `UNKNOWN` only for evidence-insufficient or profile-missing cases and preserve reason-code semantics.
+  - [x] Confirm cached profile reuse has precedence over recompute when valid cached data exists.
 
-- [ ] Task 2: Parallelize sustained-status computation for large key sets (AC: 2)
-  - [ ] Introduce bounded parallel execution for sustained key evaluation (deterministic ordering preserved for output maps).
-  - [ ] Add explicit configuration knobs for sustained parallelism (for example worker count/chunk size) with safe defaults.
-  - [ ] Keep behavior equivalent to current serial logic for small input sizes and degraded modes.
+- [x] Task 2: Parallelize sustained-status computation for large key sets (AC: 2)
+  - [x] Introduce bounded parallel execution for sustained key evaluation (deterministic ordering preserved for output maps).
+  - [x] Add explicit configuration knobs for sustained parallelism (for example worker count/chunk size) with safe defaults.
+  - [x] Keep behavior equivalent to current serial logic for small input sizes and degraded modes.
 
-- [ ] Task 3: Implement bounded in-process peak history retention (AC: 2)
-  - [ ] Maintain per-scope bounded history windows (fixed max depth) instead of unbounded growth.
-  - [ ] Evict stale scopes predictably to cap process memory footprint.
-  - [ ] Ensure bounded-history settings are configurable and validated at startup.
+- [x] Task 3: Implement bounded in-process peak history retention (AC: 2)
+  - [x] Maintain per-scope bounded history windows (fixed max depth) instead of unbounded growth.
+  - [x] Evict stale scopes predictably to cap process memory footprint.
+  - [x] Ensure bounded-history settings are configurable and validated at startup.
 
-- [ ] Task 4: Preserve Redis-backed sustained continuity and degradation rules (AC: 1, 2)
-  - [ ] Keep sustained state source-of-truth in Redis with best-effort load/persist behavior.
-  - [ ] Preserve D3 degradation posture: sustained fallback to `None`, peak fallback to `UNKNOWN`, no hot-path halt for cache consumer failures.
-  - [ ] Maintain D1 key conventions and existing legacy-fallback read behavior for rolling compatibility.
+- [x] Task 4: Preserve Redis-backed sustained continuity and degradation rules (AC: 1, 2)
+  - [x] Keep sustained state source-of-truth in Redis with best-effort load/persist behavior.
+  - [x] Preserve D3 degradation posture: sustained fallback to `None`, peak fallback to `UNKNOWN`, no hot-path halt for cache consumer failures.
+  - [x] Maintain D1 key conventions and existing legacy-fallback read behavior for rolling compatibility.
 
-- [ ] Task 5: Add observability for performance and memory guardrails (AC: 2)
-  - [ ] Add metrics for sustained compute duration, key count processed, and bounded-history size/eviction signals.
-  - [ ] Emit structured warnings when retention caps are hit or parallel execution falls back to serial mode.
+- [x] Task 5: Add observability for performance and memory guardrails (AC: 2)
+  - [x] Add metrics for sustained compute duration, key count processed, and bounded-history size/eviction signals.
+  - [x] Emit structured warnings when retention caps are hit or parallel execution falls back to serial mode.
 
-- [ ] Task 6: Expand tests and execute full quality gates (AC: 1, 2)
-  - [ ] Add/extend unit tests for peak classification boundaries, unknown-evidence behavior, and deterministic outcomes.
-  - [ ] Add/extend unit tests for sustained parallel execution equivalence vs serial baseline.
-  - [ ] Add/extend tests for bounded-memory retention limits and eviction semantics.
-  - [ ] Run lint and full regression with zero skipped tests.
+- [x] Task 6: Expand tests and execute full quality gates (AC: 1, 2)
+  - [x] Add/extend unit tests for peak classification boundaries, unknown-evidence behavior, and deterministic outcomes.
+  - [x] Add/extend unit tests for sustained parallel execution equivalence vs serial baseline.
+  - [x] Add/extend tests for bounded-memory retention limits and eviction semantics.
+  - [x] Run lint and full regression with zero skipped tests.
 
 ## Dev Notes
 
@@ -220,24 +220,45 @@ GPT-5 Codex
 
 ### Debug Log References
 
-- Story context generated from planning artifacts, architecture shards, current codebase, prior story, and recent commit history.
-- Validation checklist reviewed manually (workflow validator task file not present in `_bmad/core/tasks`).
+- Implemented bounded sustained-status parallelization controls in Stage 2 with deterministic chunked execution and serial fallback warnings.
+- Added bounded in-process peak-history retention in hot-path scheduler loop with scope-cap/staleness eviction and metric emissions.
+- Added Stage 2 parallel/retention settings with validation and startup logging.
+- Added telemetry for sustained compute duration/key count and peak-history scope/evictions.
+- Validation executed:
+  - `uv run ruff check`
+  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
 
 ### Completion Notes List
 
-- Story context created for FR8/FR9/FR10/FR11 with explicit implementation guardrails.
-- Story status prepared for handoff to `dev-story`.
+- Completed deterministic cached-profile precedence validation for Stage 2 classification and kept UNKNOWN semantics constrained to missing evidence/profile cases.
+- Parallelized sustained-status evaluation with bounded worker/chunk controls and deterministic output ordering.
+- Added bounded in-process peak-history retention (depth/scopes/idle-cycle limits) with predictable eviction behavior.
+- Preserved Redis sustained continuity and degraded-mode handling while keeping existing D1 key behaviors unchanged.
+- Added observability for sustained compute and retention memory guardrails, including fallback/cap warning events.
+- Full lint and regression gates passed with zero skipped tests (`845 passed`, `0 skipped`).
 
 ### File List
 
 - artifact/implementation-artifacts/1-3-classify-peak-and-sustained-conditions-with-bounded-memory.md
 - artifact/implementation-artifacts/sprint-status.yaml
+- src/aiops_triage_pipeline/__main__.py
+- src/aiops_triage_pipeline/config/settings.py
+- src/aiops_triage_pipeline/health/metrics.py
+- src/aiops_triage_pipeline/pipeline/scheduler.py
+- src/aiops_triage_pipeline/pipeline/stages/peak.py
+- tests/unit/config/test_settings.py
+- tests/unit/health/test_metrics.py
+- tests/unit/pipeline/stages/test_peak.py
+- tests/unit/test_main.py
 
 ## Story Completion Status
 
-- Story status: `ready-for-dev`
-- Completion note: Ultimate context engine analysis completed - comprehensive developer guide created.
+- Story status: `review`
+- Completion note: Story 1.3 implementation complete with bounded sustained parallelism, bounded peak-history retention, and full quality-gate validation.
 
 ## Change Log
 
 - 2026-03-22: Story created via create-story workflow with exhaustive artifact and code-context analysis; status set to ready-for-dev.
+- 2026-03-22: Implemented Story 1.3 changes for Stage 2 sustained parallelization controls, bounded peak-history retention, and observability updates.
+- 2026-03-22: Added/updated unit tests for parallel sustained equivalence, cached-profile precedence, retention bounds, settings validation, and metrics instrumentation.
+- 2026-03-22: Ran lint and full Docker-enabled regression suite; all tests passed with zero skipped and story moved to review.
