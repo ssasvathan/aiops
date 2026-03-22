@@ -1,24 +1,28 @@
 ---
 validationTarget: 'artifact/planning-artifacts/prd.md'
-validationDate: '2026-02-24'
+validationDate: '2026-03-21'
 inputDocuments:
-  - _bmad/input/BMAD-READY-INPUT-v1.0.md
-  - _bmad/input/feed-pack/bmad-feed-pack-v1.7.md
-  - _bmad/input/feed-pack/rulebook-v1.yaml
-  - _bmad/input/feed-pack/gateinput-v1.contract.yaml
-  - _bmad/input/feed-pack/redis-ttl-policy-v1.md
-  - _bmad/input/feed-pack/outbox-policy-v1.md
-  - _bmad/input/feed-pack/peak-policy-v1.md
-  - _bmad/input/feed-pack/prometheus-metrics-contract-v1.yaml
-  - _bmad/input/feed-pack/topology-registry.instances-v2.ownership-v1.clusters.yaml
-  - _bmad/input/feed-pack/topology-registry.yaml
-  - _bmad/input/feed-pack/topology-registry-loader-rules-v1.md
-  - _bmad/input/feed-pack/servicenow-linkage-contract-v1.md
-  - _bmad/input/feed-pack/local-dev-no-external-integrations-contract-v1.md
-  - _bmad/input/feed-pack/phase-2-dod-v1.md
-  - _bmad/input/feed-pack/phase-3-dod-v1.md
-  - _bmad/input/feed-pack/diagnosis-policy.yaml
-  - _bmad/input/feed-pack/claude_aiops_mvp_architecture_v6.md
+  - artifact/planning-artifacts/product-brief-aiOps-2026-03-21.md
+  - archive/project-context.md
+  - artifact/revision-phase-1/baseline-summary.md
+  - artifact/revision-phase-1/implementation-summary.md
+  - artifact/revision-phase-1/bmad-revision-list.md
+  - docs/index.md
+  - docs/project-overview.md
+  - docs/architecture.md
+  - docs/architecture-patterns.md
+  - docs/technology-stack.md
+  - docs/component-inventory.md
+  - docs/contracts.md
+  - docs/runtime-modes.md
+  - docs/api-contracts.md
+  - docs/data-models.md
+  - docs/schema-evolution-strategy.md
+  - docs/development-guide.md
+  - docs/deployment-guide.md
+  - docs/local-development.md
+  - docs/contribution-guide.md
+  - docs/project-structure.md
 validationStepsCompleted:
   - step-v-01-discovery
   - step-v-02-format-detection
@@ -32,40 +36,28 @@ validationStepsCompleted:
   - step-v-10-smart-validation
   - step-v-11-holistic-quality-validation
   - step-v-12-completeness-validation
+  - step-v-13-report-complete
 validationStatus: COMPLETE
-holisticQualityRating: '5/5 - Excellent'
+holisticQualityRating: '5/5'
 overallStatus: Pass
 ---
 
 # PRD Validation Report
 
 **PRD Being Validated:** artifact/planning-artifacts/prd.md
-**Validation Date:** 2026-02-24
+**Validation Date:** 2026-03-21
 
 ## Input Documents
 
-- **Product Brief:** BMAD-READY-INPUT-v1.0.md
-- **Feed Pack:** bmad-feed-pack-v1.7.md
-- **Frozen Contracts:**
-  - rulebook-v1.yaml
-  - gateinput-v1.contract.yaml
-  - redis-ttl-policy-v1.md
-  - outbox-policy-v1.md
-  - peak-policy-v1.md
-  - prometheus-metrics-contract-v1.yaml
-  - topology-registry.instances-v2.ownership-v1.clusters.yaml
-  - topology-registry-loader-rules-v1.md
-  - servicenow-linkage-contract-v1.md
-  - local-dev-no-external-integrations-contract-v1.md
-  - phase-2-dod-v1.md
-  - phase-3-dod-v1.md
-- **Draft Documents:** diagnosis-policy.yaml
-- **Optional Cues:** claude_aiops_mvp_architecture_v6.md
-- **Topology Reference:** topology-registry.yaml
+- **PRD:** prd.md
+- **Product Brief:** product-brief-aiOps-2026-03-21.md
+- **Project Context:** project-context.md (archive)
+- **Revision Documents:** baseline-summary.md, implementation-summary.md, bmad-revision-list.md
+- **Project Documentation (16 files):** index.md, project-overview.md, architecture.md, architecture-patterns.md, technology-stack.md, component-inventory.md, contracts.md, runtime-modes.md, api-contracts.md, data-models.md, schema-evolution-strategy.md, development-guide.md, deployment-guide.md, local-development.md, contribution-guide.md, project-structure.md
 
 ## Validation Findings
 
-## Format Detection
+### Format Detection
 
 **PRD Structure (Level 2 Headers):**
 1. Executive Summary
@@ -74,11 +66,10 @@ overallStatus: Pass
 4. Product Scope
 5. User Journeys
 6. Domain-Specific Requirements
-7. Innovation & Novel Patterns
-8. Event-Driven AIOps Platform — Specific Requirements
-9. Project Scoping & Phased Development
-10. Functional Requirements
-11. Non-Functional Requirements
+7. Event-Driven Pipeline Specific Requirements
+8. Project Scoping & Phased Development
+9. Functional Requirements
+10. Non-Functional Requirements
 
 **BMAD Core Sections Present:**
 - Executive Summary: Present
@@ -91,9 +82,7 @@ overallStatus: Pass
 **Format Classification:** BMAD Standard
 **Core Sections Present:** 6/6
 
-**Additional BMAD Sections Found:** Project Classification, Domain-Specific Requirements, Innovation & Novel Patterns, Event-Driven AIOps Platform — Specific Requirements, Project Scoping & Phased Development
-
-## Information Density Validation
+### Information Density Validation
 
 **Anti-Pattern Violations:**
 
@@ -107,364 +96,465 @@ overallStatus: Pass
 
 **Severity Assessment:** Pass
 
-**Recommendation:** PRD demonstrates excellent information density with zero violations. Writing is direct, specification-grade, and uses compressed technical notation throughout. No conversational filler, wordy phrases, or redundant expressions detected.
+**Recommendation:** PRD demonstrates good information density with minimal violations. The writing is direct, precise, and avoids conversational filler throughout.
 
-## Product Brief Coverage
+### Product Brief Coverage
 
-**Product Brief:** BMAD-READY-INPUT-v1.0.md
+**Product Brief:** product-brief-aiOps-2026-03-21.md
 
-### Coverage Map
+#### Coverage Map
 
-**Vision Statement:** Fully Covered — Executive Summary faithfully reproduces and expands the brief's vision ("bank-grade AIOps triage for shared Kafka streaming infrastructure").
+**Vision Statement:** Fully Covered
+- Brief's core vision (event-driven AIOps triage, telemetry-source-agnostic architecture, deterministic evidence-driven pipeline) is thoroughly covered in the PRD Executive Summary and "What Makes This Special" subsection.
 
-**Target Users:** Fully Covered — Brief's implied users (Kafka ops, data stewards, auditors) expanded to 6 named personas with 7 detailed user journeys.
+**Target Users:** Partially Covered
+- On-Call Engineer ("The Responder"): Fully Covered — dedicated PRD journeys 1 and 2
+- SRE / Platform Engineer ("The Operator"): Fully Covered — dedicated PRD journey 3
+- Application Team Engineer ("The Maintainer"): Fully Covered — dedicated PRD journey 4
+- Kafka Consumer/Producer Stakeholders ("The Recipients"): Fully Covered — dedicated PRD journey 5
+- Senior Management ("The KPI Consumers"): Not Found as an explicit persona — the brief defines this as a secondary user with dashboard tooling as future scope, but the PRD only references "KPI dashboards for senior management" in the Vision section without a persona definition or journey
 
-**Problem Statement:** Fully Covered — Executive Summary and MVP Strategy articulate the core problem clearly.
+**Problem Statement:** Fully Covered
+- All four failure modes (threshold rot, blast radius blindness, page storms, decision opacity) appear verbatim in PRD Executive Summary paragraph 3.
 
-**Key Features (14 assessed):** Fully Covered — Evidence Builder, Peak Profile, Topology+Ownership, CaseFile, Outbox, Rulebook Gating, Action Executor, LLM Diagnosis, SN Linkage, SOFT Postmortem, Storm Control, Degraded Mode, Hot-path Contract, Local Dev — all present with formal requirements.
+**Key Features/Capabilities:** Fully Covered
+- All 11 CRs from brief's scope table appear identically in PRD Product Scope.
+- FR1-FR60 in PRD Functional Requirements provide granular capability coverage far exceeding the brief.
 
-**Goals/Objectives:** Fully Covered — PRD provides extensive quantified success criteria (User, Business, Technical) with Measurable Outcomes table spanning all phases.
+**Goals/Objectives:** Fully Covered
+- Brief's activation metrics (binary pass/fail per CR), operational metrics (3-month baseline), and pipeline health metrics are all present in PRD Success Criteria with matching tables and targets.
 
-**Differentiators:** Fully Covered — "What Makes This Special" (11 items) and Innovation & Novel Patterns (11 areas) expand the brief's 5 differentiators.
+**Differentiators:** Fully Covered
+- All five key differentiators from the brief (zero false pages, instant ownership resolution, 25-month reproducibility, LLM structural safety, telemetry-source-agnostic) appear in PRD Executive Summary "What Makes This Special."
 
-**Constraints (Locked Design Decisions):** Fully Covered — All 20 locked decisions across 6 categories (Telemetry, Storage, Gating, Topology, Notification/SN, Local Dev) present in PRD with formal requirements.
+**Scope/Constraints:** Fully Covered
+- Brief's all-or-nothing 11 CRs scope, operational setup items, out-of-scope items, and future vision all map to PRD Product Scope (MVP, Growth, Vision phases).
 
-**Key Contracts/Artifacts (16):** Fully Covered — All 16 contracts from brief cataloged in PRD frontmatter with correct categorization (frozen, draft, optional).
+**Metrics Infrastructure:** Fully Covered
+- Brief's metrics infrastructure table (OTLP, structured logs, case audit trails, casefile artifacts) is covered across PRD sections FR54-FR58, NFR-A1 through NFR-A6, and Success Criteria.
 
-**Phase Plan (5 phases):** Fully Covered — All phases (0, 1A, 1B, 2, 3) with sub-items, dependencies, and cross-phase data dependencies.
+#### Coverage Summary
 
-**Open Items:** Partially Covered (Informational) — Two open items from brief (Edge Fact schema, sink-to-stream mapping policy) are incorporated into Phase 3 descriptions but not explicitly flagged as unresolved placeholders.
-
-### Coverage Summary
-
-**Overall Coverage:** ~97% — Excellent
+**Overall Coverage:** 95% — comprehensive coverage with one minor gap
 **Critical Gaps:** 0
 **Moderate Gaps:** 0
-**Informational Gaps:** 1 — Open items from brief absorbed into Phase 3 descriptions rather than explicitly flagged as placeholders. Consider adding an "Open Items" or "Known Gaps" section.
+**Informational Gaps:** 1 — Senior Management ("The KPI Consumers") persona from the brief is not explicitly defined in the PRD. The associated capability (KPI dashboards) is correctly scoped as future vision, but the persona itself is absent from the PRD's user definitions. This is defensible since KPI dashboards are explicitly out of scope for this phase, but noting for completeness.
 
-**Recommendation:** PRD provides comprehensive, faithful coverage of Product Brief content with appropriate expansion into formal requirements. The single informational gap (open items not explicitly flagged) is a presentation concern, not a content omission.
+**Recommendation:** PRD provides excellent coverage of Product Brief content. The single informational gap (Senior Management persona omission) is reasonable given the persona's capabilities are deferred to future phases.
 
-## Measurability Validation
+### Measurability Validation
 
-### Functional Requirements
+#### Functional Requirements
 
-**Total FRs Analyzed:** 67
+**Total FRs Analyzed:** 60
 
-**Format Violations:** 0 (2 fixed)
-- ~~FR38: Used "must" instead of "can"~~ — **Fixed:** Rephrased to "[Actor] can" capability pattern
-- ~~FR66: Declarative statement with no "[Actor] can" pattern~~ — **Fixed:** Rephrased to "[Actor] can" capability pattern
+**Format Violations:** 2
+- FR59 (line 534): "Each CR must update affected documentation..." — process constraint, not "[Actor] can [capability]" pattern
+- FR60 (line 535): "All documentation must reference only project-native concepts..." — governance constraint, not "[Actor] can [capability]" pattern
 
 **Subjective Adjectives Found:** 0
+- FR11's "efficiently" is qualified by measurable bounds ("bounded retention to control per-process memory footprint") — acceptable
 
 **Vague Quantifiers Found:** 0
 
 **Implementation Leakage:** 0
+- Technology references (Redis, Prometheus, Kafka, S3, YAML, SET NX EX, MGET/pipeline, SHA-256) are domain-appropriate for this infrastructure backend project type — they name actual integration interfaces, not arbitrary implementation choices
 
 **FR Violations Total:** 2
 
-### Non-Functional Requirements
+#### Non-Functional Requirements
 
-**Total NFRs Analyzed:** 24
+**Total NFRs Analyzed:** 29
 
-**Missing Metrics:** 0 — All 24 NFRs have specific, measurable criteria (percentile SLOs, enumerated controls, specific failure scenarios).
+**Missing Metrics:** 0
 
-**Incomplete Template:** 0 — All NFRs include criterion, metric/measure, method, and context.
+**Incomplete Template:** 2
+- NFR-P6 (line 546): "Sustained status computation supports parallelization... without blocking the scheduler interval" — no measurement method specified, no scale threshold defined. Suggest: "completes within 50% of the scheduler interval duration as measured by OTLP histogram"
+- NFR-P7 (line 547): "Peak profile historical window memory footprint grows proportionally with scope count, bounded by configurable retention depth" — no specific acceptable ratio or ceiling. Suggest: add maximum memory budget per scope or total ceiling
 
-**Missing Context:** 0 — All NFRs explain scope and rationale.
+**Missing Context:** 0
 
-**NFR Violations Total:** 0
+**NFR Violations Total:** 2
 
-### Overall Assessment
+#### Overall Assessment
 
-**Total Requirements:** 91 (67 FRs + 24 NFRs)
-**Total Violations:** 0 (2 fixed during validation)
-
-**Severity:** Pass
-
-**Recommendation:** Requirements demonstrate excellent measurability. Two minor FR format violations (FR38, FR66) were fixed during validation. Zero subjective adjectives, zero vague quantifiers, zero implementation leakage. All 24 NFRs are fully measurable with specific metrics, methods, and context.
-
-## Traceability Validation
-
-### Chain Validation
-
-**Executive Summary → Success Criteria:** Intact — All 14 vision elements in the Executive Summary have direct, specific success criteria. Measurable Outcomes table provides phase-by-phase quantitative targets for every major vision element.
-
-**Success Criteria → User Journeys:** Intact (1 minor gap) — All user, business, and technical success criteria are demonstrated by at least one user journey. Minor gap: `TelemetryDegradedEvent` (Prometheus failure) has no dedicated journey narrative (FR67 and Phase 0 scope back it, but no user-perspective story exists — Journey 6 covers Redis failure only).
-
-**User Journeys → Functional Requirements:** Intact for MVP (expected Phase 3 gaps) — Journeys 1-6 are fully covered by FRs (all capabilities revealed in each journey map to specific FRs). Journey 7 (Phase 3 Sink Health) has 4 of 5 capabilities without FRs — expected because FRs are scoped to MVP critical path.
-
-**Scope → FR Alignment:** Intact — Every MVP scope item (Phase 0 + 1A + 1B) has supporting FRs. No FRs fall outside defined scope. Phase 2/3 scope items without FRs are expected and explicitly noted.
-
-### Orphan Elements
-
-**Orphan Functional Requirements:** 0 — All 67 FRs trace to at least one user journey capability AND at least one success criterion.
-
-**Unsupported Success Criteria:** 1 (minor) — TelemetryDegradedEvent measurable outcome has FR + scope backing but no user journey narrative.
-
-**User Journeys Without FRs:** 1 (expected) — Journey 7 has 4 Phase 3 capabilities without FRs (Sink Health Evidence Track, hybrid topology, diagnosis attribution, edge facts). This is by design — FRs are scoped to MVP.
-
-### Specific Issues Found
-
-1. **TelemetryDegradedEvent lacks journey narrative** (minor) — Consider adding a Prometheus-failure sub-scenario to Journey 6 showing: Prometheus unavailable → TelemetryDegradedEvent → cap to OBSERVE/NOTIFY → no all-UNKNOWN cases → recovery.
-2. **Journey 7 Sink Health Evidence Track — no FR** (expected, Phase 3)
-3. **Journey 7 Hybrid topology — no FR** (expected, Phase 3)
-4. **Journey 7 Diagnosis attribution — no FR** (expected, Phase 3)
-5. **Journey 7 Edge-fact coverage — no FR** (expected, Phase 3)
-6. ~~**MI-1 posture lacks explicit negative FR**~~ — **Fixed:** Added FR67 as explicit negative FR for MI-1 posture (system guarantees no automated MI creation in ServiceNow).
-
-### Traceability Summary
-
-| Metric | Value |
-|---|---|
-| Total FRs analyzed | 68 |
-| Orphan FRs | 0 |
-| MVP scope items without FRs | 0 |
-| FRs outside scope | 0 |
-| Critical traceability issues | 0 |
-| Expected Phase 3 gaps | 4 |
-| Minor issues | 2 |
-
-**Total Traceability Issues:** 5 (0 critical, 4 expected Phase 3, 1 minor — 1 fixed)
+**Total Requirements:** 89 (60 FRs + 29 NFRs)
+**Total Violations:** 4
 
 **Severity:** Pass
 
-**Recommendation:** Traceability chain is intact for the MVP delivery scope. All 67 FRs trace to user needs and business objectives with zero orphans. The 4 Phase 3 gaps are structural (FRs intentionally scoped to MVP). Two minor improvements recommended: (1) add a Prometheus-failure sub-scenario to Journey 6, (2) add an explicit negative FR for MI-1 posture.
+**Recommendation:** Requirements demonstrate strong measurability overall. Two FRs (FR59, FR60) are governance/process constraints that could be relocated to a "Documentation & Process Requirements" section rather than Functional Requirements. Two NFRs (NFR-P6, NFR-P7) would benefit from specific measurement methods and thresholds.
 
-## Implementation Leakage Validation
+### Traceability Validation
 
-### Leakage by Category
+#### Chain Validation
+
+**Executive Summary → Success Criteria:** Intact
+- Vision (deterministic evidence-driven triage, operational readiness via 11 CRs, four failure modes) maps directly to User Success (pre-triaged actions, YAML tuning, config testability), Business Success (prove architecture, build UAT confidence, establish baseline), and Technical Success (per-CR activation signals, pipeline health targets).
+
+**Success Criteria → User Journeys:** Intact
+- On-call success criteria → Journeys 1, 2
+- Operator success criteria → Journey 3
+- Maintainer success criteria → Journey 4
+- Activation metrics → covered implicitly across all journeys
+- The Journey Requirements Summary table provides explicit mapping.
+
+**User Journeys → Functional Requirements:** Intact
+- Journey 1 (Responder success): FR1-FR7, FR13-FR16, FR17-FR25, FR26, FR31-FR32, FR36-FR43
+- Journey 2 (Responder degraded): FR5, FR7, FR9, FR18, FR20
+- Journey 3 (Operator): FR44-FR45, FR49, FR52, FR55-FR58
+- Journey 4 (Maintainer): FR12, FR15, FR35, FR50, FR52-FR53
+- Journey 5 (Recipients): FR14, FR16, FR23, FR32-FR33
+
+**Scope → FR Alignment:** Intact
+- CR-01 → FR4, FR5, FR6; CR-02 → FR17; CR-03 → FR3, FR8; CR-04 → FR46, FR47; CR-05 → FR44, FR45, FR48; CR-06 → FR38; CR-07 → FR36, FR37; CR-08 → FR39; CR-09 → FR40; CR-10 → FR6, FR10, FR11; CR-11 → FR12
+
+#### Orphan Elements
+
+**Orphan Functional Requirements:** 0 true orphans
+- FR59, FR60 are process/governance constraints not traceable to user journeys but traceable to the business objective of deployment readiness (Product Scope operational setup). Consistent with the format violation noted in Measurability Validation — these are process requirements, not system capabilities.
+
+**Unsupported Success Criteria:** 0
+
+**User Journeys Without FRs:** 0
+
+#### Traceability Matrix Summary
+
+| Chain Link | Status | Gaps |
+|---|---|---|
+| Executive Summary → Success Criteria | Intact | 0 |
+| Success Criteria → User Journeys | Intact | 0 |
+| User Journeys → FRs | Intact | 0 |
+| Scope → FR Alignment | Intact | 0 |
+| Orphan FRs | 0 true orphans | FR59/FR60 are process constraints (noted) |
+
+**Total Traceability Issues:** 0
+
+**Severity:** Pass
+
+**Recommendation:** Traceability chain is intact — all requirements trace to user needs or business objectives. FR59 and FR60 are consistently flagged as process requirements (see Measurability Validation) and could be relocated to a dedicated section.
+
+### Implementation Leakage Validation
+
+#### Capability-Relevant Technology References (Acceptable)
+
+This PRD describes an infrastructure backend service with explicit integration targets. The following technology references name WHAT the system integrates with, not HOW it is built — these are capability-relevant and acceptable:
+
+- **Prometheus** (FR1, FR3, FR7): Telemetry source — querying Prometheus IS the capability
+- **Redis** (FR4, FR5, FR8, FR9, NFR-SC4): Shared state layer — externalizing state to Redis IS the capability
+- **Kafka** (FR28, FR36, NFR-I4): Event transport — producing/consuming Kafka IS the capability
+- **S3** (FR37, FR43): Object storage — writing casefiles to S3 IS the capability
+- **PagerDuty, Slack, ServiceNow** (FR32-FR34): Dispatch targets — integration IS the capability
+- **YAML** (FR12, FR17, FR49, FR52): Configuration format — YAML-driven policy IS the capability
+- **SHA-256** (FR26, FR43, NFR-A1): Integrity mechanism — hash chain integrity IS a standing audit requirement
+- **Elastic** (FR57, NFR-A4): Log query target — field-level querying IS the capability
+- **SASL_SSL, keytab, krb5** (FR51, NFR-S3): Integration-boundary security protocol — validating these at startup IS the security requirement
+
+#### Leakage Violations Found
 
 **Frontend Frameworks:** 0 violations
 **Backend Frameworks:** 0 violations
-**Programming Languages:** 0 violations
-**Libraries:** 0 violations
-**Cloud Platforms:** 0 violations — Storage consistently abstracted as "object storage" (not AWS S3/GCP/Azure)
-**Infrastructure Tools:** 0 violations — docker-compose scoped to local dev Mode A (capability-relevant)
-**Prescriptive Architecture Patterns:** 0 violations — Outbox, state machines, and invariants describe required behavior, not prescribed patterns
-**Data Structures Beyond Capability:** 0 violations — Domain models (CaseFile, GateInput.v1, etc.) are behavioral contracts, not code artifacts
+**Cloud Platforms:** 0 violations
 
-### Summary
+**Database/Infrastructure Command-Level Details:** 3 violations
 
-**Total Implementation Leakage Violations:** 0
+- FR6 (line 451): "MGET/pipeline" — specific Redis command names. The WHAT is "batch Redis key loading operations"; the HOW is "using MGET/pipeline." Suggest: "batch Redis key loading operations to reduce per-key round-trips"
+- FR23 (line 477): "Redis SET NX EX" — specific Redis command with flags. The WHAT is "atomic action deduplication as a single authoritative check"; the HOW is "SET NX EX." Suggest: "atomic set-if-not-exists with TTL"
+- FR27 (line 484): "source-state-guarded SQL" — SQL technique name. The WHAT is "enforce state transitions with source-state guards"; referencing SQL is HOW. Suggest: "source-state-guarded transitions"
 
-**Severity:** Pass
+**Function/Variable Name References:** 2 violations
 
-**Recommendation:** No implementation leakage found. Requirements properly specify WHAT without HOW. All technology references (Prometheus, Redis, Kafka, Postgres, PagerDuty, ServiceNow, Slack) are named integration points from frozen contracts — capability constraints, not internal implementation choices. No programming languages, frameworks, or libraries prescribed.
+- NFR-S2 (line 552): "`apply_denylist()`" — specific function name in an NFR. NFRs should not reference code-level identifiers. Suggest: "shared denylist enforcement function"
+- FR50 (line 519): "APP_ENV" — specific environment variable name. Suggest: "environment identifier"
 
-## Domain Compliance Validation
+#### Summary
 
-**Domain:** Fintech / Banking Operations (AIOps for Kafka)
-**Complexity:** High (regulated)
-**Context:** Internal AIOps operations tooling — processes Kafka infrastructure telemetry, NOT customer financial transactions, PII, or payment data.
+**Total Implementation Leakage Violations:** 5
 
-### Compliance Matrix
+**Severity:** Warning (2-5 violations)
 
-| Requirement | Status | Notes |
+**Recommendation:** Minor implementation leakage detected — 3 Redis command-level details and 2 code-level identifier references. For this project type (infrastructure backend with specific integration targets), most technology references are capability-relevant and acceptable. The 5 violations are cases where the PRD crosses from WHAT into HOW at the command/function level. These are low-impact and defensible given the single-developer context, but could be cleaned up for stricter PRD standards.
+
+**Note:** The bulk of technology references in this PRD (Prometheus, Redis, Kafka, S3, YAML, SHA-256, etc.) are correctly used as capability descriptions, not implementation leakage. The project classification as "Python backend service" with explicit integration targets makes these references appropriate.
+
+### Domain Compliance Validation
+
+**Domain:** IT Operations / AIOps
+**Complexity:** High (technical), but not a regulated industry (not healthcare, fintech, govtech, etc.)
+
+**Assessment:** The domain "IT Operations / AIOps" does not appear in the BMAD regulated-industry domain list. No mandatory regulatory compliance sections (HIPAA, PCI-DSS, FedRAMP, SOX, etc.) are required.
+
+However, the PRD proactively includes a comprehensive "Domain-Specific Requirements" section (lines 252-300) covering six domain-appropriate areas:
+
+| Domain Requirement Area | Status | Adequacy |
 |---|---|---|
-| Regulatory compliance documentation | Adequate | Banking examination windows referenced; 25-month retention aligned; deterministic decisions framed as regulatory posture |
-| Audit trail completeness | Adequate (Strong) | Full decision traceability, policy version stamping, SHA-256 tamper-evidence, auditor persona tests, 25-month retention |
-| Security architecture | Adequate | TLS 1.2+, SSE at rest, access control (pipeline/audit/lifecycle), credential management via secrets manager, exposure denylist at every output boundary |
-| Audit requirements | Adequate (Strong) | Write-once CaseFiles, decision reproducibility, auditable purge, policy change governance, dedicated auditor journey and tests |
-| Fraud prevention | N/A | Correctly absent — system handles infrastructure telemetry, not financial transactions or customer data |
-| KYC/AML, PCI DSS | N/A | Correctly absent — no customer identity data, cardholder data, or payment processing |
-| Data protection (PII) | Adequate | Proactive PII exclusion, data minimization, sensitive field redaction, LLM exposure caps |
-| Data classification taxonomy | Partially Present | Implicit classification via denylist (operational vs sensitive data) but no formal bank data classification framework referenced |
-| Cross-border data handling | Not Addressed | Likely not applicable for single-region deployment; should be confirmed |
+| Audit & Decision Reproducibility | Present | Thorough — 25-month retention, hash chains, policy stamps, schema versioning |
+| Operational Safety Invariants | Present | Thorough — PAGE structural impossibility, monotonic reduction, env caps, hot/cold separation |
+| Degraded Mode Handling | Present | Thorough — UNKNOWN propagation, degradable vs critical failures, Redis fallback |
+| Integration Safety | Present | Thorough — OFF\|LOG\|MOCK\|LIVE modes, default-safe, denylist enforcement |
+| Multi-Replica Coordination Safety | Present | Thorough — distributed lock, atomic dedupe, outbox locking, pod identity, feature flag |
+| Data Integrity | Present | Thorough — write-once stages, state-guarded transitions, hash chain, DEAD=0, put_if_absent |
 
-### Summary
-
-**Required Sections Present:** 4/4 applicable (compliance, security, audit, data protection)
-**Compliance Gaps:** 2 minor (formal data classification taxonomy, cross-border data statement)
+**Required Regulatory Sections:** N/A — domain not in regulated industries list
+**Domain-Specific Sections Present:** 6/6 (self-defined, appropriate for AIOps context)
 
 **Severity:** Pass
 
-**Recommendation:** All materially relevant Fintech compliance areas are covered with specific, testable requirements. Audit trail coverage is exceptional. Fraud prevention/KYC/AML/PCI DSS correctly identified as not applicable. Two minor improvements: (1) reference formal bank data classification taxonomy, (2) confirm cross-border data handling is not applicable.
+**Recommendation:** No regulatory compliance gaps. The PRD's self-defined domain requirements are comprehensive and well-suited to the AIOps domain. The "high" complexity classification is justified by technical complexity (audit trails, safety invariants, distributed coordination), not regulatory burden.
 
-## Project-Type Compliance Validation
+### Project-Type Compliance Validation
 
-**Project Type:** Event-driven AIOps triage platform (internal operations tooling)
-**Evaluated Against:** Event-driven data pipeline / infrastructure hybrid pattern (no exact CSV match)
+**Project Type:** api_backend
+**Project Type Detail:** "Python backend service, single-image multi-process architecture with mode-based pod deployment (hot-path, cold-path, outbox-publisher, casefile-lifecycle)"
 
-### Required Sections
+**Note:** This system is classified as api_backend but is actually an event-driven pipeline with integration adapters — not a traditional REST API. The generic project-type requirements from the CSV are applied with domain-appropriate interpretation.
 
-| Required Section | Status | Location |
-|---|---|---|
-| Pipeline Architecture | Present | Lines 528-557 — Hot path (7 stages) and cold path (5 stages) with inputs, outputs, latency |
-| Data Sources | Present | Lines 600, 534 — Prometheus (primary), Dynatrace (Phase 3), with mode support |
-| Data Sinks/Outputs | Present | Lines 596-608 — Kafka, Object storage, PagerDuty, Slack, ServiceNow |
-| Error Handling / Failure Modes | Present | Lines 552, 604, 624 + NFR-R1 through NFR-R5 — Component-by-component failure and recovery |
-| Integration Points | Present | Lines 596-608 — 9 integrations with direction, pattern, mode support |
-| Storage Architecture | Present | Lines 581-588 — 4 stores with role, durability, retention |
-| Deployment Topology | Present | Lines 610-617 — 4 environments with per-component infrastructure posture |
-| Monitoring/Observability | Present | Line 623 + NFR-O1 through NFR-O6 — Meta-operability, component health metrics, alerting |
+#### Required Sections (per api_backend CSV)
 
-### Excluded Sections (Should Not Be Present)
+**Endpoint Specs:** Present (adapted)
+- Not traditional REST endpoint specs. The PRD's "Event-Driven Pipeline Specific Requirements" section (lines 302-379) covers inbound interfaces (health endpoint, Prometheus query, Kafka consumer) and outbound interfaces (Kafka publication, PagerDuty, Slack, ServiceNow) with runtime mode pod topology table.
 
-| Excluded Section | Status |
-|---|---|
-| UX/UI sections | Absent |
-| Visual design sections | Absent |
-| Mobile-specific sections | Absent |
-| Browser compatibility | Absent |
-| SEO sections | Absent |
+**Auth Model:** Present
+- "Authentication and Security" subsection (lines 339-343): No end-user auth boundary, integration-driven auth (ServiceNow bearer token, Slack webhook URL, PagerDuty routing key), Kafka SASL_SSL with Kerberos. FR51, NFR-S3.
 
-### Compliance Summary
+**Data Schemas:** Present
+- "Contract and Data Format Strategy" subsection (lines 333-336): Frozen Pydantic v1 contracts, schema envelope pattern, JSON serialization. Named contracts throughout: GateInputV1, ActionDecisionV1, CaseHeaderEventV1, TriageExcerptV1, DiagnosisReportV1, CaseFileTriageV1, OutboxRecordV1.
 
-**Required Sections:** 8/8 present
-**Excluded Sections Present:** 0 (correct)
-**Compliance Score:** 100%
+**Error Codes:** Partial
+- Error taxonomy in "Implementation Considerations" (line 375): critical invariant → halt-class exceptions, degradable → degradable exceptions + caps. Reason codes in ActionDecisionV1 (FR25). No dedicated error code catalog section.
+
+**Rate Limits:** N/A
+- Not a public API. Internal scheduling on configurable intervals. No rate limiting applicable.
+
+**API Docs:** N/A (adapted)
+- Documentation governance (FR59-FR60) covers doc requirements. No external API documentation needed — consumers are internal pipeline stages and integration adapters.
+
+#### Excluded Sections (per api_backend CSV)
+
+**UX/UI:** Absent ✓
+**Visual Design:** Absent ✓
+**User Journeys:** Present — but defensible. The CSV assumes api_backend means a programmatically-consumed API. This system has human operators (on-call engineers, SREs, maintainers) as primary users. The journeys describe operational workflows, not UX interaction flows. Appropriate for this system type.
+
+#### Compliance Summary
+
+**Required Sections:** 3/4 applicable present (1 partial — error codes)
+**Excluded Section Violations:** 0 true violations (User Journeys presence is defensible)
+**N/A Sections:** 2 (rate_limits, api_docs — not applicable for this system type)
 
 **Severity:** Pass
 
-**Recommendation:** All required sections for an event-driven pipeline/infrastructure project are present and adequately documented. No inappropriate sections found. The Pipeline Architecture section is particularly strong with detailed hot-path/cold-path stage tables.
+**Recommendation:** The PRD adapts api_backend requirements appropriately for an event-driven pipeline. The "Event-Driven Pipeline Specific Requirements" section effectively replaces traditional endpoint specs. The partial gap in error codes is minor — the error taxonomy and reason code approach is documented but not in a dedicated catalog format. User Journeys are appropriately included given the human-operator user base.
 
-## SMART Requirements Validation
+### SMART Requirements Validation
 
-**Total Functional Requirements:** 67
+**Total Functional Requirements:** 60
 
-### Scoring Summary
+#### Scoring Summary
 
-**All scores >= 3:** 100.0% (67/67)
-**All scores >= 4:** 80.6% (54/67)
-**All scores = 5 (perfect):** 77.6% (52/67)
-**FRs flagged (any score < 3):** 0.0% (0/67)
-**Overall Average Score:** 4.91/5.0
+**All scores >= 3:** 100% (60/60)
+**All scores >= 4:** 92% (55/60)
+**Overall Average Score:** 4.5/5.0
 
-### Per-Dimension Averages
+#### FRs Scoring Below 4 in Any Category
 
-| Dimension | Average | Min | # at 5 |
-|---|---|---|---|
-| Specific | 4.90 | 4 | 62 |
-| Measurable | 4.75 | 3 | 54 |
-| Attainable | 4.91 | 4 | 63 |
-| Relevant | 5.00 | 5 | 67 |
-| Traceable | 5.00 | 5 | 67 |
+| FR # | S | M | A | R | T | Avg | Notes |
+|---|---|---|---|---|---|---|---|
+| FR10 | 3 | 3 | 5 | 5 | 5 | 4.2 | "at scale" undefined; "parallelize" lacks threshold |
+| FR11 | 3 | 3 | 5 | 5 | 5 | 4.2 | "efficiently" qualified but still subjective; no memory ceiling |
+| FR58 | 3 | 4 | 5 | 5 | 4 | 4.2 | Which alert thresholds? What evaluation outcome? |
+| FR59 | 4 | 3 | 5 | 5 | 3 | 4.0 | Process constraint, not system capability; traceability indirect |
+| FR60 | 4 | 3 | 5 | 5 | 3 | 4.0 | Governance constraint; measurability is binary but enforcement unclear |
 
-### Borderline FRs (score = 3, recommended tightening)
+**Legend:** S=Specific, M=Measurable, A=Attainable, R=Relevant, T=Traceable. 1=Poor, 3=Acceptable, 5=Excellent.
 
-~~**FR16** (M=3)~~ — **Fixed:** Added explicit backward-compatibility definition (identical values, types, no breaking changes).
-~~**FR42** (M=3)~~ — **Fixed:** Replaced "e.g." with exhaustive criteria; added token budget reference.
-~~**FR50** (M=3)~~ — **Fixed:** Specified Prometheus metrics exposure on /metrics endpoint with configurable alert threshold.
-~~**FR62** (M=3)~~ — **Fixed:** Specified PR review with designated approver, audit log entry with author/reviewer/timestamp/diff.
+All remaining 55 FRs score 4+ across all categories. The FRs are notably strong in:
+- **Specificity:** Named actors (hot-path, cold-path, outbox-publisher, system), named contracts (GateInputV1, ActionDecisionV1, etc.), named behaviors
+- **Attainability:** All describe capabilities that exist in the baseline or are controlled deltas
+- **Relevance:** All map to CRs and user journeys
+- **Traceability:** Clear chain to journeys and business objectives (validated in step 6)
 
-### Overall Assessment
+#### Improvement Suggestions
 
-**Severity:** Pass (0% flagged)
+- **FR10:** Add scale threshold — e.g., "parallelize across scope key sets exceeding 100 keys" or "complete within 50% of scheduler interval"
+- **FR11:** Add memory ceiling — e.g., "bounded by configurable retention depth not exceeding N MB per 1000 scopes"
+- **FR58:** Specify which thresholds and what happens on breach — e.g., "evaluate outbox age and DEAD count thresholds, updating HealthRegistry status on breach"
+- **FR59/FR60:** Consider relocating to a "Process & Governance Requirements" section to preserve "[Actor] can [capability]" pattern consistency
 
-**Recommendation:** Functional Requirements demonstrate exceptional SMART quality overall (4.91/5.0 average). Perfect Relevance and Traceability scores across all 67 FRs. The 4 FRs scoring 3 in Measurability share a common pattern: governance/process requirements using directional language without quantified acceptance criteria. These are easily tightened.
+#### Overall Assessment
 
-## Holistic Quality Assessment
+**Severity:** Pass
 
-### Document Flow & Coherence
+**Recommendation:** Functional Requirements demonstrate excellent SMART quality overall. Only 5 of 60 FRs have any score below 4, and none score below 3. The minor suggestions above would bring these to full 4+ across all categories.
+
+### Holistic Quality Assessment
+
+#### Document Flow & Coherence
 
 **Assessment:** Excellent
 
 **Strengths:**
-- Cohesive narrative arc from vision to requirements — each section builds on the prior one
-- Consistent terminology throughout (Invariant A/B2, AG0-AG6, UNKNOWN-not-zero, etc.)
-- The 7 user journeys follow a tight narrative-then-capabilities structure
-- The measurable outcomes table maps targets to phases with explicit thresholds
-- Excellent use of tables for structured data (pipeline stages, event contracts, storage, integration patterns, deployment topology, risk mitigations)
+- Logical narrative arc: problem statement → architecture vision → success criteria → user journeys → domain constraints → implementation scope → requirements contract
+- Executive Summary efficiently establishes the revision phase context without re-explaining the entire baseline — reads as a confident continuation, not a restart
+- User journeys use compelling narrative format (Opening Scene → Rising Action → Climax → Resolution) that brings abstract infrastructure concepts to life
+- Journey Requirements Summary table provides a clean bridge from narrative journeys to capability requirements
+- The "What Makes This Special" subsection clearly isolates differentiators from the broader description
+- Implementation ordering table with dependency rationale makes the 11-CR scope feel manageable rather than overwhelming
+- Risk mitigation is specific and actionable (names exact test counts, specific handlers, feature flags)
 
 **Areas for Improvement:**
-- No formal glossary for ~40+ domain-specific terms and acronyms
-- Phase 0/1A/1B acceptance criteria scattered rather than consolidated in "done" checklists
-- No visual diagram for the pipeline architecture (text tables are clear but a diagram would aid comprehension)
+- The Product Scope and Project Scoping sections have overlapping content (both discuss the 11 CRs, implementation ordering, and documentation requirements). Consider consolidating
+- The Event-Driven Pipeline Specific Requirements section title is long and could be shortened (e.g., "Pipeline Architecture Requirements")
 
-### Dual Audience Effectiveness
+#### Dual Audience Effectiveness
 
 **For Humans:**
-- Executive-friendly: Excellent — Executive Summary + "What Makes This Special" section conveys vision in under 2 pages
-- Developer clarity: Excellent — Pipeline stage tables, FR1-FR67, NFRs, deployment topology provide complete specifications
-- Stakeholder decision-making: Excellent — Explicit cut-line rationale, risk tables with severity, phase dependencies, "if constrained" contingencies
+- Executive-friendly: Strong — clear vision, problem impact, and differentiators in the first page
+- Developer clarity: Excellent — named contracts, named components, specific behavior descriptions
+- Designer clarity: N/A (no UX surface in this system)
+- Stakeholder decision-making: Strong — success criteria tables, risk matrix, and phased scope enable informed go/no-go
 
 **For LLMs:**
-- Machine-readable structure: Excellent — Consistent ## headers, YAML frontmatter, tables, code-style identifiers (CaseHeaderEvent.v1, etc.)
-- Architecture readiness: Excellent — Hot/cold path tables, storage architecture, event contracts, invariants provide architecture skeleton
-- Epic/Story readiness: Excellent — FR numbering maps to stories, capability groupings map to epics, phase scoping provides release boundaries
+- Machine-readable structure: Excellent — consistent ## headers, numbered FR/NFR identifiers, tables for structured data, classification metadata in frontmatter
+- UX readiness: N/A (no UX surface)
+- Architecture readiness: Excellent — contracts named, runtime modes defined, integration boundaries explicit, safety invariants stated
+- Epic/Story readiness: Excellent — CRs map directly to implementation units, dependency ordering provided, documentation requirements per CR specified
 
 **Dual Audience Score:** 5/5
 
-### BMAD PRD Principles Compliance
+#### BMAD PRD Principles Compliance
 
 | Principle | Status | Notes |
 |---|---|---|
-| Information Density | Met | Zero filler phrases, every sentence carries weight |
-| Measurability | Met | 91 requirements with specific testable criteria; 4.91/5.0 SMART average |
-| Traceability | Met | Zero orphan FRs; contract references throughout; Journey Requirements Summary table |
-| Domain Awareness | Met | Banking regulatory retention, MI-1 posture, tamper-evidence, exposure controls, LLM data handling |
-| Zero Anti-Patterns | Met | No conversational filler, wordy phrases, or redundant expressions |
-| Dual Audience | Met | Works for executives, developers, stakeholders, auditors, and LLMs |
-| Markdown Format | Met | Proper YAML frontmatter, consistent header hierarchy, tables, code-style backticks |
+| Information Density | Met | 0 filler violations; direct, precise language throughout |
+| Measurability | Met | 4 minor issues out of 89 requirements (95.5% clean) |
+| Traceability | Met | Complete chain; 0 orphan FRs; all CRs mapped to FRs |
+| Domain Awareness | Met | 6 comprehensive domain-specific requirement areas |
+| Zero Anti-Patterns | Met | No subjective adjectives, no vague quantifiers in FRs/NFRs |
+| Dual Audience | Met | Human-readable narratives + LLM-consumable structure |
+| Markdown Format | Met | Proper ## headers, tables, consistent formatting |
 
 **Principles Met:** 7/7
 
-### Overall Quality Rating
+#### Overall Quality Rating
 
-**Rating:** 5/5 - Excellent: Exemplary, ready for production use
+**Rating:** 5/5 - Excellent
 
-### Top 3 Improvements
+This is an exemplary PRD for a complex infrastructure system. The information density is exceptionally high — nearly every sentence carries technical weight. The traceability chain is complete from vision through success criteria through journeys to individual FRs. The dual-audience optimization works: a stakeholder can read the executive summary and user journeys to understand the value proposition, while an LLM can consume the structured FRs, NFRs, and contract names to generate architecture and epic breakdowns.
 
-1. **Add a Glossary/Terminology Section**
-   ~40+ domain-specific terms (AG0-AG6, GateInput.v1, PM_PEAK_SUSTAINED, etc.) are introduced in context but never formally defined in one place. A glossary would serve as quick-reference for onboarding, auditors, and LLM downstream consumption.
+#### Top 3 Improvements
 
-2. **Add Explicit Phase Acceptance Criteria**
-   Consolidate each phase's "Definition of Done" into concise checklists (3-5 items per phase). Currently scattered across scope, success criteria, and measurable outcomes. Phase 2/3 DoD documents exist externally but aren't summarized in the PRD.
+1. **Consolidate Product Scope and Project Scoping sections**
+   Both sections discuss the 11 CRs, implementation ordering, documentation requirements, and risk mitigation. Merging them would eliminate redundancy and tighten the document. The CR table appears in Product Scope; the ordering/dependency table appears in Project Scoping — these naturally belong together.
 
-3. **Add a Pipeline Architecture Diagram**
-   A Mermaid or ASCII diagram showing the data flow (including CaseFile write-before-publish, outbox, hot/cold path fork) would accelerate comprehension and complement the detailed tables.
+2. **Add measurement methods to NFR-P6 and NFR-P7**
+   These two performance NFRs lack specific measurement methods and thresholds. NFR-P6 ("without blocking the scheduler interval") needs a quantified target. NFR-P7 ("grows proportionally") needs an acceptable ratio or memory ceiling. All other performance NFRs have specific metrics.
 
-### Summary
+3. **Add database provisioning to operational setup scope**
+   The operational setup items (Dynatrace dashboard, Kibana searches, OpenShift manifests, OTLP config) should include database provisioning: a standalone DDL script for the outbox Postgres schema. The current approach (programmatic creation at app startup) may not align with enterprise deployment practices.
 
-**This PRD is:** An exemplary, production-ready document that demonstrates mastery of BMAD PRD standards across all dimensions — information density, measurability, traceability, domain awareness, and dual-audience optimization.
+#### Summary
 
-## Completeness Validation
+**This PRD is:** A high-quality, production-ready document that demonstrates excellent BMAD standards compliance with dense, precise requirements, complete traceability, and effective dual-audience optimization for a complex infrastructure system.
 
-### Template Completeness
+**To make it great:** Consolidate the two scoping sections, add measurement methods to 2 NFRs, and include database provisioning in operational setup.
+
+### Completeness Validation
+
+#### Template Completeness
 
 **Template Variables Found:** 0
-No template variables remaining ✓
+No template variables, placeholders, TBDs, or TODOs remaining.
 
-### Content Completeness by Section
+#### Content Completeness by Section
 
-**Executive Summary:** Complete
-**Success Criteria:** Complete
-**Product Scope:** Complete
-**User Journeys:** Complete
-**Functional Requirements:** Complete
-**Non-Functional Requirements:** Complete
-**Project Classification:** Complete
-**Domain-Specific Requirements:** Complete
-**Innovation & Novel Patterns:** Complete
-**Event-Driven AIOps Platform — Specific Requirements:** Complete
-**Project Scoping & Phased Development:** Complete
+| Section | Status | Notes |
+|---|---|---|
+| Executive Summary | Complete | Vision, problem statement, 4 failure modes, differentiators, revision context |
+| Project Classification | Complete | Type, domain, complexity, project context |
+| Success Criteria | Complete | User, Business, Technical dimensions with tables |
+| Product Scope | Complete | MVP (11 CRs), Growth, Vision phases |
+| User Journeys | Complete | 5 journeys with narrative format + summary table |
+| Domain-Specific Requirements | Complete | 6 domain areas |
+| Event-Driven Pipeline Requirements | Complete | Runtime modes, interfaces, contracts, implementation considerations |
+| Project Scoping & Phased Development | Complete | Ordering, dependencies, risk mitigation, documentation governance |
+| Functional Requirements | Complete | 60 FRs across 10 subsections |
+| Non-Functional Requirements | Complete | 29 NFRs across 6 categories |
 
-### Section-Specific Completeness
+**Content Completeness:** 10/10 sections complete
 
-**Success Criteria Measurability:** All measurable — Every success criterion has specific quantified targets with measurement methods and phase-tagged timelines in the Measurable Outcomes table.
+#### Section-Specific Completeness
 
-**User Journeys Coverage:** Yes — covers all user types. All 6 personas (Kafka Operations Engineer, Data Steward, Auditor/Compliance Reviewer, Incident Commander, Platform SRE, Sink Team Engineer) have dedicated journeys.
+**Success Criteria Measurability:** All measurable — activation metrics (binary pass/fail per CR), pipeline health targets (specific SLOs), operational metrics (3-month baseline with OTLP measurement methods)
 
-**FRs Cover MVP Scope:** Yes — All Phase 0, 1A, and 1B scope items have supporting FRs. FR1-FR67 span the complete MVP critical path.
+**User Journeys Coverage:** Yes — covers all user types (On-Call Engineer x2, SRE/Operator, App Team Maintainer, Recipients)
 
-**NFRs Have Specific Criteria:** All — Every NFR includes specific quantified criteria (percentile SLOs, enumerated controls, failure scenarios, retention periods).
+**FRs Cover MVP Scope:** Yes — all 11 CRs mapped to FRs (verified in Traceability Validation)
 
-### Frontmatter Completeness
+**NFRs Have Specific Criteria:** Most — 27/29 have specific measurable criteria. NFR-P6 and NFR-P7 lack measurement methods (noted in Measurability Validation)
 
-**stepsCompleted:** Present (11 steps listed)
-**classification:** Present (domain: Fintech/Banking Operations, projectType: Event-Driven AIOps Platform, complexity: high)
-**inputDocuments:** Present (16 documents tracked with categorization)
-**date:** Present (2026-02-21)
+#### Frontmatter Completeness
 
-**Frontmatter Completeness:** 4/4
+| Field | Status |
+|---|---|
+| stepsCompleted | Present (12 steps) |
+| classification | Present (projectType, domain, complexity, projectContext, detail fields) |
+| inputDocuments | Present (20 documents) |
+| documentCounts | Present (briefs, research, projectDocs, revisionDocs) |
+| workflowType | Present |
 
-### Completeness Summary
+**Frontmatter Completeness:** 5/4 (exceeds minimum — includes optional documentCounts and workflowType)
 
-**Overall Completeness:** 100% (11/11 sections complete)
+#### Completeness Summary
+
+**Overall Completeness:** 100% (10/10 sections complete)
 
 **Critical Gaps:** 0
-**Minor Gaps:** 0
+**Minor Gaps:** 0 (NFR-P6/P7 measurement methods already captured in Measurability Validation)
 
 **Severity:** Pass
 
-**Recommendation:** PRD is complete with all required sections and content present. Zero template variables, all sections substantive, all criteria measurable, all personas covered, full MVP scope addressed, and frontmatter fully populated.
+**Recommendation:** PRD is complete with all required sections and content present. No template variables, no missing sections, frontmatter fully populated with classification metadata and input document tracking.
+
+### Addendum: Deployment Readiness — Outbox Postgres DDL Gap
+
+**Source:** User observation during validation
+
+**Finding:** The PRD thoroughly covers the outbox state machine (FR26-FR29, NFR-R1 through NFR-R3) and the operational setup scope mentions "OpenShift deployment manifests" — but there is no requirement for deployment-ready database DDL scripts or a schema migration strategy.
+
+**Codebase Evidence:** The outbox schema is defined programmatically in `outbox/schema.py` using SQLAlchemy Core and created at application startup via `ensure_schema()` with `checkfirst=True`. There are no standalone `.sql` files, no Alembic migrations, and no Flyway scripts anywhere in the project.
+
+**Impact:** For operational deployment to OpenShift, DBAs and platform teams typically require reviewable DDL scripts for database provisioning — not implicit schema creation at app startup. Without a migration strategy, schema evolution over time has no managed path. The deployment guide does not address database provisioning steps.
+
+**Recommendation:** Add to the PRD's operational setup scope (Product Scope > MVP): a requirement for a standalone DDL script (e.g., `db/migrations/` or `sql/`) that can be reviewed, version-controlled, and executed independently of application startup. Consider whether Alembic or an equivalent migration framework should be scoped for future phases to support schema evolution.
+
+**Severity:** Moderate — does not block implementation but creates a deployment readiness gap for the target dev OpenShift deployment.
+
+---
+
+## Validation Summary
+
+### Quick Results
+
+| Check | Result |
+|---|---|
+| Format Detection | BMAD Standard (6/6 core sections) |
+| Information Density | Pass (0 violations) |
+| Product Brief Coverage | 95% (1 informational gap) |
+| Measurability | Pass (4 minor violations / 89 requirements) |
+| Traceability | Pass (0 broken chains, 0 orphans) |
+| Implementation Leakage | Warning (5 violations — 3 Redis commands, 2 code identifiers) |
+| Domain Compliance | Pass (N/A for regulatory; 6/6 self-defined domain areas) |
+| Project-Type Compliance | Pass (adapted appropriately for event-driven pipeline) |
+| SMART Quality | Pass (100% acceptable, 92% excellent) |
+| Holistic Quality | 5/5 Excellent |
+| Completeness | 100% (10/10 sections, 0 template variables) |
+
+### Overall Status: PASS
+
+**Critical Issues:** 0
+**Warnings:** 1 (Implementation Leakage — 5 minor command/function-level references)
+**Addenda:** 1 (Outbox Postgres DDL gap — user-identified deployment readiness concern)
+
+### Verdict
+
+This PRD is production-ready and exemplary for a complex infrastructure system. It demonstrates the highest level of BMAD standards compliance across all validation dimensions. The single warning (implementation leakage) involves defensible technology-specific references in a system where integration details ARE the capability.

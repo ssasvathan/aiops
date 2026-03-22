@@ -1,101 +1,89 @@
 # Functional Requirements
 
-**Environment enum (frozen):** `local | dev | uat | prod`
+## Evidence Collection & Anomaly Detection
 
-## Evidence Collection & Processing
+- FR1: The hot-path can query Prometheus for infrastructure telemetry metrics on a configurable scheduler interval
+- FR2: The hot-path can detect consumer lag anomalies, throughput constrained anomalies, and volume drop anomalies across all monitored scopes
+- FR3: The hot-path can evaluate anomaly detection thresholds against per-scope statistical baselines computed from historical metric data, falling back to configured defaults when baseline history is insufficient
+- FR4: The hot-path can compute and persist per-scope metric baselines to Redis with environment-specific TTLs
+- FR5: The hot-path can load sustained window state from Redis before evidence evaluation and persist updated state after, enabling sustained anomaly tracking across cycles and pod restarts
+- FR6: The hot-path can batch Redis key loading operations instead of sequential per-key round-trips for sustained window state and peak profile retrieval
+- FR7: The hot-path can emit a TelemetryDegradedEvent when Prometheus is unavailable, propagating UNKNOWN evidence status through downstream stages
 
-- **FR1:** The system can collect Prometheus metrics at 5-minute evaluation intervals using canonical metric names from prometheus-metrics-contract-v1
-- **FR2:** The system can detect three anomaly patterns: consumer lag buildup, throughput-constrained proxy, and volume drop
-- **FR3:** The system can compute peak/near-peak classification per (env, cluster_id, topic) against historical baselines (p90/p95 of messages-in rate)
-- **FR4:** The system can compute sustained status (5 consecutive anomalous buckets) for each anomaly
-- **FR5:** The system can map missing Prometheus series to `EvidenceStatus=UNKNOWN` (never treated as zero) and propagate UNKNOWN through peak, sustained, and confidence computations
-- **FR6:** The system can produce an evidence_status_map for each case mapping evidence primitives to PRESENT/UNKNOWN/ABSENT/STALE
-- **FR7:** The system can cache evidence windows, peak profiles, and per-interval findings in Redis with environment-specific TTLs per redis-ttl-policy-v1
-- **FR8:** Each Finding can declare its own `evidence_required[]` list (no central required-evidence registry)
+## Peak & Sustained Classification
 
-## Topology & Ownership
+- FR8: The hot-path can classify anomaly patterns as PEAK, NEAR_PEAK, or OFF_PEAK using cached peak profiles from Redis, replacing the previous always-UNKNOWN behavior
+- FR9: The hot-path can compute sustained anomaly status per scope using externalized Redis state shared across all hot-path replicas
+- FR10: The hot-path can parallelize sustained status computation across large scope key sets for performance at scale
+- FR11: The hot-path can manage peak profile historical window memory efficiently with bounded retention to control per-process memory footprint
 
-- **FR9:** The system can load topology registry in both v0 (legacy) and v1 (instances-based) formats and canonicalize to a single in-memory model
-- **FR10:** The system can resolve `stream_id`, `topic_role`, `criticality_tier`, and `source_system` from topology registry given an anomaly key (env, cluster_id, topic/group)
-- **FR11:** The system can compute blast radius classification (LOCAL_SOURCE_INGESTION vs SHARED_KAFKA_INGESTION) based on topic_role
-- **FR12:** The system can identify downstream components as AT_RISK with exposure_type (DOWNSTREAM_DATA_FRESHNESS_RISK, DIRECT_COMPONENT_RISK, VISIBILITY_ONLY)
-- **FR13:** The system can route cases to the correct owning team using multi-level ownership lookup: consumer_group_owner → topic_owner → stream_default_owner → platform_default
-- **FR14:** The system can scope topic_index by (env, cluster_id) to prevent cross-cluster collisions
-- **FR15:** The system can validate registry on load: fail-fast on duplicate topic_index keys, duplicate consumer-group ownership keys, or missing routing_key references
-- **FR16:** The system can provide backward-compatible compat views for legacy consumers during v0→v1 migration — backward-compatible means existing consumers reading v0 schema fields receive identical values and types with no breaking changes to field names, types, or semantics
+## Topology Resolution & Ownership Routing
 
-## CaseFile Management
+- FR12: The hot-path can load topology registry from a single YAML format (instances-based) located in `config/`
+- FR13: The hot-path can resolve stream identity, topic role (SOURCE_TOPIC/SHARED_TOPIC/SINK_TOPIC), and blast radius classification for each anomaly scope
+- FR14: The hot-path can route ownership through multi-level lookup: consumer group > topic > stream > platform default, with confidence scoring
+- FR15: The hot-path can reload the topology registry on file change without requiring process restart
+- FR16: The hot-path can identify downstream consumer impact for blast radius assessment
 
-- **FR17:** The system can assemble a CaseFile triage stage (`triage.json`) containing: evidence snapshot, gating inputs (GateInput.v1 fields), ActionDecision.v1, policy version stamps (rulebook, peak, prometheus metrics, exposure denylist, diagnosis policy versions), and SHA-256 content hash
-- **FR18:** The system can write CaseFile `triage.json` to object storage as a write-once artifact before any Kafka header publish (Invariant A)
-- **FR19:** The system can write additional CaseFile stage files (diagnosis, linkage, labels) to the same case directory without mutating prior stage files, preserving hash integrity chain across stages
-- **FR20:** The system can enforce data minimization: no PII, credentials, or secrets in CaseFiles; sensitive fields redacted per exposure denylist
-- **FR21:** The system can enforce CaseFile retention (25 months prod) via automated lifecycle policies with auditable purge operations
+## Deterministic Gating & Action Decisions
 
-## Event Publishing & Durability
+- FR17: The hot-path can evaluate gates AG0 through AG6 sequentially, driven by YAML-defined check types and predicates dispatched through a handler registry
+- FR18: The hot-path can enforce environment-based action caps (local=OBSERVE, dev=NOTIFY, uat=TICKET, prod=PAGE) through AG1, with actions only capping downward, never escalating
+- FR19: The hot-path can enforce that PAGE is structurally impossible outside PROD+TIER_0 via post-condition safety assertions independent of YAML correctness
+- FR20: The hot-path can evaluate evidence sufficiency (AG2) with UNKNOWN evidence propagation — never collapsing missing evidence to PRESENT or zero
+- FR21: The hot-path can validate source topic classification (AG3) against topology-resolved topic roles
+- FR22: The hot-path can evaluate sustained threshold and confidence floor (AG4) using externalized sustained state
+- FR23: The hot-path can perform atomic action deduplication (AG5) using atomic set-if-not-exists with TTL as a single authoritative check, eliminating the two-step race condition
+- FR24: The hot-path can evaluate postmortem predicates (AG6) for qualifying cases during peak windows, now that peak classification produces real PEAK/NEAR_PEAK/OFF_PEAK states
+- FR25: The hot-path can produce an ActionDecisionV1 with full reason codes and gate evaluation trail for every triage decision
 
-- **FR22:** The system can publish `CaseHeaderEvent.v1` + `TriageExcerpt.v1` to Kafka via Postgres durable outbox after CaseFile `triage.json` write is confirmed
-- **FR23:** The outbox can manage state transitions: PENDING_OBJECT → READY → SENT (+ RETRY, DEAD) with publish-after-crash guarantee (Invariant B2)
-- **FR24:** The system can enforce that hot-path consumers receive only header/excerpt — no object-store reads required for routing/paging decisions
-- **FR25:** The system can enforce exposure denylist on TriageExcerpt: no sensitive sink endpoints, credentials, restricted hostnames, or Ranger access groups
-- **FR26:** The system can retain outbox records per outbox-policy-v1: SENT (14d prod), DEAD (90d prod), PENDING/READY/RETRY until resolved
+## Case Management & Persistence
 
-## Action Gating & Safety
+- FR26: The hot-path can assemble a write-once CaseFileTriageV1 in object storage with SHA-256 hash chain, ensuring triage.json exists before any downstream event is published (Invariant A)
+- FR27: The hot-path can insert outbox rows with PENDING_OBJECT > READY state transitions, enforced by source-state-guarded transitions
+- FR28: The outbox-publisher can drain READY rows and publish CaseHeaderEventV1 and TriageExcerptV1 to Kafka with at-least-once delivery (Invariant B2)
+- FR29: The outbox-publisher can lock rows during selection to prevent concurrent publisher instances from publishing the same batch
+- FR30: The casefile-lifecycle runner can scan object storage and purge expired casefiles according to the retention policy
+- FR31: The system can stamp policy versions (rulebook, peak policy, denylist, anomaly detection policy) in every casefile for 25-month decision replay
 
-- **FR27:** The system can evaluate GateInput.v1 through Rulebook gates AG0–AG6 sequentially and produce an ActionDecision.v1 with: final_action, env_cap_applied, gate_rule_ids, gate_reason_codes, action_fingerprint, postmortem_required, postmortem_mode, postmortem_reason_codes
-- **FR28:** The system can cap actions by environment per AG1: local=OBSERVE, dev=NOTIFY, uat=TICKET, prod=PAGE eligible (only when TIER_0 and all other gates pass; otherwise capped per tier/gates)
-- **FR29:** The system can cap actions by criticality tier in prod per AG1: TIER_0=PAGE eligible (if all other gates pass), TIER_1=TICKET, TIER_2/UNKNOWN=NOTIFY
-- **FR30:** The system can deny PAGE for SOURCE_TOPIC anomalies per AG3; final_action caps to TICKET or lower depending on env/tier/remaining gates (not always TICKET)
-- **FR31:** The system can evaluate finding-declared `evidence_required[]` per AG2; evidence with status UNKNOWN/ABSENT/STALE is treated as insufficient unless a finding explicitly allows it; insufficient evidence downgrades action (never assumes PRESENT)
-- **FR32:** The system can require sustained=true and confidence≥0.6 for PAGE/TICKET actions per AG4
-- **FR33:** The system can deduplicate actions by action_fingerprint with TTLs per action type (PAGE 120m, TICKET 240m, NOTIFY 60m) per AG5
-- **FR34:** The system can detect dedupe store (Redis) unavailability and cap to NOTIFY-only per AG5 degraded mode
-- **FR35:** The system can evaluate `PM_PEAK_SUSTAINED` predicate (peak && sustained && TIER_0 in PROD) for selective postmortem obligation per AG6
+## Action Dispatch
 
-## Diagnosis & Intelligence
+- FR32: The hot-path can trigger PagerDuty pages via Events V2 API for PAGE action decisions with action fingerprint as dedup key
+- FR33: The hot-path can send Slack notifications for NOTIFY actions, degraded-mode alerts, and postmortem candidacy notifications
+- FR34: The hot-path can fall back to structured log output when Slack is unavailable
+- FR35: The system can enforce denylist at all outbound boundaries before any external payload is dispatched
 
-- **FR36:** The system can invoke LLM diagnosis on the cold path (non-blocking) consuming TriageExcerpt + structured evidence summary to produce DiagnosisReport.v1
-- **FR37:** The LLM can produce structured DiagnosisReport output: verdict, fault_domain, confidence, evidence_pack (facts, missing_evidence, matched_rules), next_checks, gaps
-- **FR38:** The LLM can cite evidence IDs/references and explicitly propagate UNKNOWN for missing evidence — the system rejects any output that invents metric values or fabricates findings
-- **FR39:** The system can fall back to a schema-valid DiagnosisReport when LLM is unavailable/timeout/error: verdict=UNKNOWN, confidence=LOW, reason_codes=[LLM_TIMEOUT | LLM_UNAVAILABLE | LLM_ERROR]
-- **FR40:** The system can validate LLM output against DiagnosisReport schema; invalid/unparseable output triggers deterministic fallback with a gap recorded
-- **FR41:** The system can run in LLM stub/failure-injection mode for local and test use, producing deterministic schema-valid DiagnosisReport fallback without external LLM API calls; LLM must run LIVE in prod — stub mode is not permitted in prod
-- **FR42:** The system can conditionally invoke LLM based on case criteria (environment=PROD, tier=TIER_0, state=sustained) with bounded token input (TriageExcerpt only, not raw logs; max input token budget defined per deployment configuration)
-- **FR66:** The system can execute CaseFile triage write, outbox header/excerpt publish, Rulebook gating, and action execution without waiting on LLM diagnosis completion (LLM diagnosis is cold-path and non-blocking)
+## LLM Diagnosis (Cold Path)
 
-## Notification & Action Execution
+- FR36: The cold-path can consume CaseHeaderEventV1 from Kafka as an independent consumer pod
+- FR37: The cold-path can retrieve full case context from S3, reconstruct triage excerpt and evidence summary from persisted casefile data
+- FR38: The cold-path can produce a deterministic text evidence summary rendering a case's evidence state for LLM consumption, distinguishing PRESENT/UNKNOWN/ABSENT/STALE evidence and including anomaly findings, temporal context, and topic role
+- FR39: The cold-path can invoke LLM diagnosis for every case regardless of environment, criticality tier, or sustained status
+- FR40: The cold-path can submit an enriched prompt including full Finding fields (severity, reason_codes, evidence_required, is_primary), topic_role, routing_key, anomaly family domain descriptions, confidence calibration guidance, fault domain examples, and a few-shot example
+- FR41: The cold-path can produce a schema-validated DiagnosisReportV1 with structured evidence citations, verdict, fault domain, confidence, next checks, and evidence gaps
+- FR42: The cold-path can produce a deterministic fallback report when LLM invocation fails (timeout, unavailability, schema validation failure)
+- FR43: The cold-path can write diagnosis.json to object storage with SHA-256 hash chain linking to triage.json
 
-- **FR43:** The system can send PAGE triggers to PagerDuty with stable `pd_incident_id` for downstream SN correlation
-- **FR44:** The system can send SOFT postmortem enforcement notifications to Slack/log when `PM_PEAK_SUSTAINED` fires (Phase 1A)
-- **FR45:** The system can emit structured `NotificationEvent` to logs (JSON) when Slack is not configured, containing case_id, final_action, routing_key, support_channel, postmortem_required, reason_codes
-- **FR46:** The system can search for PD-created SN Incidents using tiered correlation: Tier 1 (PD field) → Tier 2 (keyword) → Tier 3 (time-window + routing heuristic) (Phase 1B)
-- **FR47:** The system can create/update SN Problem + PIR tasks idempotently via external_id keying (Phase 1B)
-- **FR48:** The system can retry SN linkage with exponential backoff + jitter over 2-hour window, transitioning to FAILED_FINAL with Slack escalation if unresolved (Phase 1B)
-- **FR49:** The system can track SN linkage state: PENDING → SEARCHING → LINKED or SEARCHING → FAILED_TEMP → SEARCHING or SEARCHING → FAILED_FINAL (Phase 1B)
-- **FR50:** The system can track Tier 1 vs Tier 2/3 SN correlation fallback rates as Prometheus metrics (gauge per tier), exposed on the /metrics endpoint with alerting threshold configurable per deployment (Phase 1B)
+## Distributed Operations
 
-## Operability & Monitoring
+- FR44: The hot-path can acquire a distributed cycle lock so only one pod executes per scheduler interval, with losers yielding and retrying next interval
+- FR45: The hot-path can fail open on Redis unavailability for cycle lock (preserving availability, worst case equals single-instance behavior)
+- FR46: The hot-path can assign scope-level shards to pods for findings cache coordination, with batch checkpoint per shard per interval replacing per-scope writes
+- FR47: The hot-path can recover shards from a failed pod via lease expiry, allowing another pod to safely resume
+- FR48: The system can enable distributed coordination incrementally via feature flag (DISTRIBUTED_CYCLE_LOCK_ENABLED, default false)
 
-- **FR51:** The system can emit `DegradedModeEvent` to logs and Slack (if configured) when Redis is unavailable, containing: affected scope, reason, capped action level, estimated impact window
-- **FR67:** The system can emit `TelemetryDegradedEvent` when Prometheus is unavailable (total source failure, not individual missing series), containing: affected scope, reason, recovery status; pipeline caps actions to OBSERVE/NOTIFY and does NOT emit normal cases with all-UNKNOWN evidence until Prometheus recovers
-- **FR52:** The system can monitor and alert on outbox health: PENDING_OBJECT age (>5m warn, >15m crit), READY age (>2m warn, >10m crit), RETRY age (>30m crit), DEAD count (>0 crit in prod)
-- **FR53:** The system can measure outbox delivery SLO: p95 ≤ 1 min, p99 ≤ 5 min (CaseFile write → Kafka publish)
-- **FR54:** The system can enforce DEAD=0 prod posture as a standing operational requirement
+## Configuration & Policy Management
 
-## Local Development & Testing
+- FR49: The system can load all policies from YAML at startup (rulebook, peak policy, anomaly detection policy, Redis TTL policy, Prometheus metrics contract, outbox policy, retention policy, denylist, topology registry)
+- FR50: The system can resolve environment configuration through environment-identifier-driven env file selection with environment variable override precedence
+- FR51: The system can validate Kafka SASL_SSL configuration at startup with fail-fast behavior for missing keytab or krb5 config paths
+- FR52: Operators can tune anomaly detection sensitivity, rulebook thresholds, peak policy, and denylist through versioned YAML changes without code modifications
+- FR53: Application teams can edit topology registry and denylist YAML, deploy to lower environments, verify behavior through casefile inspection, and promote to production
 
-- **FR55:** The system can run end-to-end locally via docker-compose (Mode A) with Kafka, Postgres, Redis, MinIO, Prometheus — zero external integration calls
-- **FR56:** The system can optionally connect to a dedicated remote environment's infrastructure (Mode B) when endpoints and credentials are explicitly configured, restricted to approved non-prod endpoints — no accidental prod calls
-- **FR57:** Every outbound integration can be configured in OFF/LOG/MOCK/LIVE modes with LOG as default; LIVE requires explicit endpoint+credential configuration
-- **FR58:** The system can generate harness traffic (Phase 0) producing real Prometheus signals for lag, constrained proxy, and volume drop patterns with harness-specific stream naming
-- **FR59:** The system can validate all durability invariants (Invariant A, Invariant B2) locally using MinIO + Postgres
+## Observability & Health
 
-## Governance & Audit
-
-- **FR60:** Every CaseFile can record the exact policy versions used to make its decisions (rulebook_version, peak_policy_version, prometheus_metrics_contract_version, exposure_denylist_version, diagnosis_policy_version)
-- **FR61:** Auditors can reproduce any historical gating decision given the same evidence + same policy versions and verify identical outcomes
-- **FR62:** The exposure denylist can be maintained as a versioned, reviewable artifact with controlled change management — changes require pull request review by at least one designated approver, with an audit log entry recording author, reviewer, timestamp, and diff summary
-- **FR63:** Operators can label cases with: owner_confirmed, resolution_category, false_positive, missing_evidence_reason (Phase 2 capture workflow; CaseFile schema supports from Phase 1A)
-- **FR64:** The system can validate label data quality: completion rate ≥ 70% for eligible cases, consistency checks for key labels before ML consumption (Phase 2)
-- **FR65:** The system can enforce that LLM-generated narrative in any surfaced output (excerpt, Slack, SN) complies with the exposure denylist
-- **FR67:** The system can guarantee that no automated process creates Major Incident (MI) objects in ServiceNow — MI creation is a human decision boundary; the system supports postmortem automation (Problem + PIR tasks) but never escalates into the bank's MI process autonomously (MI-1 posture)
+- FR54: Each runtime mode pod can expose a health endpoint reporting component health registry status
+- FR55: The hot-path health endpoint can report distributed coordination state (lock holder status, lock expiry time, last cycle execution) as informational data that does not affect K8s probe health status
+- FR56: The system can export OTLP metrics for pipeline health (cycle completion, outbox delivery, gate evaluation latency, deduplication, coordination lock stats)
+- FR57: The system can emit structured logs with correlation IDs (case_id), pod identity (POD_NAME, POD_NAMESPACE), and consistent field naming for field-level querying in Elastic
+- FR58: The system can evaluate operational alert thresholds at runtime against live metric state

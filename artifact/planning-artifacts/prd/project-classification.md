@@ -1,6 +1,6 @@
 # Project Classification
 
-- **Project Type:** Event-driven AIOps triage platform (internal operations tooling)
-- **Domain:** Fintech / Banking Operations (AIOps for Kafka streaming infrastructure)
-- **Complexity:** High — regulated industry, 12 frozen contracts as constraints, multi-phase delivery (Phase 0–3), deterministic auditability requirements
-- **Project Context:** Greenfield AIOps layer on brownfield Kafka infrastructure
+- **Project Type:** Python backend service — single-image multi-process architecture with mode-based pod deployment (hot-path, cold-path, outbox-publisher, casefile-lifecycle)
+- **Domain:** IT Operations / AIOps — infrastructure anomaly detection and incident automation
+- **Complexity:** High — 25-month regulatory audit trail, deterministic safety invariants, distributed multi-replica coordination, durable outbox state machine, write-once casefile integrity with hash chains, environment-based action caps, multiple external integration boundaries
+- **Project Context:** Brownfield — all 8 epics delivered; this is a post-implementation revision cycle of 11 controlled changes targeting operational readiness for dev OpenShift deployment
