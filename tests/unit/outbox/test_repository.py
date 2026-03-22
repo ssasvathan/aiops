@@ -222,6 +222,276 @@ def test_transition_to_ready_raises_when_source_status_is_not_pending_object() -
         repository.transition_to_ready(case_id="case-guard", now=now)
 
 
+def test_select_publishable_returns_ready_rows_ordered_by_updated_at() -> None:
+    """AC1: select_publishable returns READY rows ordered oldest-first by updated_at."""
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    create_outbox_table(engine)
+    repository = OutboxSqlRepository(engine=engine)
+    early = datetime(2026, 3, 22, 10, 0, tzinfo=UTC)
+    later = datetime(2026, 3, 22, 10, 5, tzinfo=UTC)
+
+    repository.insert_pending_object(confirmed_casefile=_ready_casefile("case-older"), now=early)
+    repository.transition_to_ready(case_id="case-older", now=early)
+    repository.insert_pending_object(confirmed_casefile=_ready_casefile("case-newer"), now=later)
+    repository.transition_to_ready(case_id="case-newer", now=later)
+
+    rows = repository.select_publishable(now=datetime(2026, 3, 22, 11, 0, tzinfo=UTC))
+
+    assert len(rows) == 2
+    assert rows[0].case_id == "case-older"
+    assert rows[1].case_id == "case-newer"
+
+
+def test_select_publishable_returns_retry_rows_when_next_attempt_at_is_none() -> None:
+    """AC1: RETRY rows with next_attempt_at=None are immediately eligible for publishing."""
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    create_outbox_table(engine)
+    repository = OutboxSqlRepository(engine=engine)
+    now = datetime(2026, 3, 22, 10, 0, tzinfo=UTC)
+    policy = _policy_for_tests()
+
+    repository.insert_pending_object(
+        confirmed_casefile=_ready_casefile("case-retry-no-delay"), now=now
+    )
+    repository.transition_to_ready(case_id="case-retry-no-delay", now=now)
+    repository.transition_publish_failure(
+        case_id="case-retry-no-delay",
+        policy=policy,
+        app_env="local",
+        error_message="kafka unavailable",
+        now=now,
+    )
+    # Manually clear next_attempt_at to simulate None-delay retry path
+    with engine.begin() as conn:
+        conn.execute(
+            update(outbox_table)
+            .where(outbox_table.c.case_id == "case-retry-no-delay")
+            .values(next_attempt_at=None)
+        )
+
+    rows = repository.select_publishable(now=now)
+
+    assert len(rows) == 1
+    assert rows[0].case_id == "case-retry-no-delay"
+    assert rows[0].status == "RETRY"
+
+
+def test_select_publishable_returns_retry_rows_when_next_attempt_at_is_past() -> None:
+    """AC1: RETRY rows whose next_attempt_at is <= now are eligible for publishing."""
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    create_outbox_table(engine)
+    repository = OutboxSqlRepository(engine=engine)
+    insert_time = datetime(2026, 3, 22, 9, 0, tzinfo=UTC)
+    policy = _policy_for_tests()
+
+    repository.insert_pending_object(
+        confirmed_casefile=_ready_casefile("case-retry-past"), now=insert_time
+    )
+    repository.transition_to_ready(case_id="case-retry-past", now=insert_time)
+    repository.transition_publish_failure(
+        case_id="case-retry-past",
+        policy=policy,
+        app_env="local",
+        error_message="kafka unavailable",
+        now=insert_time,
+    )
+
+    # Select at a time well after the retry delay — row should be eligible
+    future_now = datetime(2026, 3, 22, 10, 0, tzinfo=UTC)
+    rows = repository.select_publishable(now=future_now)
+
+    assert len(rows) == 1
+    assert rows[0].case_id == "case-retry-past"
+    assert rows[0].status == "RETRY"
+    assert rows[0].next_attempt_at is not None
+    assert rows[0].next_attempt_at <= future_now
+
+
+def test_select_publishable_excludes_retry_rows_when_next_attempt_at_is_future() -> None:
+    """AC1: RETRY rows whose next_attempt_at is in the future are gated out of the batch."""
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    create_outbox_table(engine)
+    repository = OutboxSqlRepository(engine=engine)
+    insert_time = datetime(2026, 3, 22, 10, 0, tzinfo=UTC)
+    policy = _policy_for_tests()
+
+    repository.insert_pending_object(
+        confirmed_casefile=_ready_casefile("case-retry-future"), now=insert_time
+    )
+    repository.transition_to_ready(case_id="case-retry-future", now=insert_time)
+    repository.transition_publish_failure(
+        case_id="case-retry-future",
+        policy=policy,
+        app_env="local",
+        error_message="kafka unavailable",
+        now=insert_time,
+    )
+
+    retried = repository.get_by_case_id("case-retry-future")
+    assert retried is not None and retried.next_attempt_at is not None
+
+    # Use insert_time itself which is before any computed retry delay
+    rows = repository.select_publishable(now=insert_time)
+
+    assert all(row.case_id != "case-retry-future" for row in rows)
+
+
+def test_select_publishable_respects_limit_parameter() -> None:
+    """AC1: select_publishable returns at most `limit` rows per batch."""
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    create_outbox_table(engine)
+    repository = OutboxSqlRepository(engine=engine)
+    now = datetime(2026, 3, 22, 10, 0, tzinfo=UTC)
+
+    for i in range(5):
+        repository.insert_pending_object(
+            confirmed_casefile=_ready_casefile(f"case-limit-{i}"), now=now
+        )
+        repository.transition_to_ready(case_id=f"case-limit-{i}", now=now)
+
+    rows = repository.select_publishable(now=now, limit=3)
+
+    assert len(rows) == 3
+
+
+def test_transition_to_sent_succeeds_from_ready() -> None:
+    """AC2: transition_to_sent succeeds when the row is in READY status."""
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    create_outbox_table(engine)
+    repository = OutboxSqlRepository(engine=engine)
+    now = datetime(2026, 3, 22, 10, 0, tzinfo=UTC)
+    repository.insert_pending_object(
+        confirmed_casefile=_ready_casefile("case-sent-from-ready"), now=now
+    )
+    repository.transition_to_ready(case_id="case-sent-from-ready", now=now)
+
+    sent_at = datetime(2026, 3, 22, 10, 1, tzinfo=UTC)
+    record = repository.transition_to_sent(case_id="case-sent-from-ready", now=sent_at)
+
+    assert record.status == "SENT"
+    assert record.delivery_attempts == 1
+    assert record.updated_at == sent_at
+    assert record.next_attempt_at is None
+
+
+def test_transition_to_sent_succeeds_from_retry() -> None:
+    """AC2: transition_to_sent succeeds when the row is in RETRY status (retry recovery path)."""
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    create_outbox_table(engine)
+    repository = OutboxSqlRepository(engine=engine)
+    policy = _policy_for_tests()
+    now = datetime(2026, 3, 22, 10, 0, tzinfo=UTC)
+    repository.insert_pending_object(
+        confirmed_casefile=_ready_casefile("case-sent-from-retry"), now=now
+    )
+    repository.transition_to_ready(case_id="case-sent-from-retry", now=now)
+    repository.transition_publish_failure(
+        case_id="case-sent-from-retry",
+        policy=policy,
+        app_env="local",
+        error_message="transient kafka error",
+        now=now,
+    )
+    retried = repository.get_by_case_id("case-sent-from-retry")
+    assert retried is not None
+    assert retried.status == "RETRY"
+
+    sent_at = datetime(2026, 3, 22, 11, 0, tzinfo=UTC)
+    record = repository.transition_to_sent(case_id="case-sent-from-retry", now=sent_at)
+
+    assert record.status == "SENT"
+    assert record.delivery_attempts == 2
+    assert record.updated_at == sent_at
+
+
+def test_transition_to_sent_is_idempotent_when_already_sent() -> None:
+    """AC2: transition_to_sent is idempotent — calling it on a SENT row returns it unchanged."""
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    create_outbox_table(engine)
+    repository = OutboxSqlRepository(engine=engine)
+    now = datetime(2026, 3, 22, 10, 0, tzinfo=UTC)
+    repository.insert_pending_object(
+        confirmed_casefile=_ready_casefile("case-idempotent-sent"), now=now
+    )
+    repository.transition_to_ready(case_id="case-idempotent-sent", now=now)
+    sent_at = datetime(2026, 3, 22, 10, 1, tzinfo=UTC)
+    first = repository.transition_to_sent(case_id="case-idempotent-sent", now=sent_at)
+    assert first.status == "SENT"
+
+    second = repository.transition_to_sent(case_id="case-idempotent-sent", now=sent_at)
+
+    assert second.status == "SENT"
+    assert second.delivery_attempts == first.delivery_attempts
+    assert second.updated_at == first.updated_at
+
+
+def test_transition_publish_failure_transitions_ready_to_retry_on_first_failure() -> None:
+    """AC2: transition_publish_failure moves a READY row to RETRY and sets next_attempt_at."""
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    create_outbox_table(engine)
+    repository = OutboxSqlRepository(engine=engine)
+    policy = _policy_for_tests()
+    now = datetime(2026, 3, 22, 10, 0, tzinfo=UTC)
+    repository.insert_pending_object(
+        confirmed_casefile=_ready_casefile("case-ready-to-retry"), now=now
+    )
+    repository.transition_to_ready(case_id="case-ready-to-retry", now=now)
+
+    record = repository.transition_publish_failure(
+        case_id="case-ready-to-retry",
+        policy=policy,
+        app_env="local",
+        error_message="kafka partition leader unavailable",
+        now=now,
+    )
+
+    assert record.status == "RETRY"
+    assert record.delivery_attempts == 1
+    assert record.next_attempt_at is not None
+    assert record.next_attempt_at > now
+    assert record.last_error_message == "kafka partition leader unavailable"
+
+
+def test_transition_publish_failure_transitions_retry_to_dead_when_attempts_exhausted() -> None:
+    """AC2: RETRY → DEAD after max_retry_attempts is exhausted per OutboxPolicyV1."""
+    engine = create_engine("sqlite+pysqlite:///:memory:")
+    create_outbox_table(engine)
+    repository = OutboxSqlRepository(engine=engine)
+    # max_retry_attempts=1: first failure → RETRY, second failure → DEAD
+    policy = _policy_for_tests()
+    now = datetime(2026, 3, 22, 10, 0, tzinfo=UTC)
+    repository.insert_pending_object(
+        confirmed_casefile=_ready_casefile("case-retry-to-dead"), now=now
+    )
+    repository.transition_to_ready(case_id="case-retry-to-dead", now=now)
+
+    # First failure — should go to RETRY (delivery_attempts=1, max=1)
+    retried = repository.transition_publish_failure(
+        case_id="case-retry-to-dead",
+        policy=policy,
+        app_env="local",
+        error_message="kafka down",
+        now=now,
+    )
+    assert retried.status == "RETRY"
+    assert retried.delivery_attempts == 1
+
+    # Second failure — exceeds max_retry_attempts=1, should go to DEAD
+    retry_time = retried.next_attempt_at or datetime(2026, 3, 22, 11, 0, tzinfo=UTC)
+    dead = repository.transition_publish_failure(
+        case_id="case-retry-to-dead",
+        policy=policy,
+        app_env="local",
+        error_message="kafka still down",
+        now=retry_time,
+    )
+
+    assert dead.status == "DEAD"
+    assert dead.delivery_attempts == 2
+    assert dead.next_attempt_at is None
+    assert dead.last_error_message == "kafka still down"
+
+
 def test_write_transition_raises_when_concurrent_race_leaves_row_in_non_target_status() -> None:
     """SQL-level source-state guard: _write_transition raises InvariantViolation when
     rows_affected == 0 and the current row status is not the target status (concurrent race)."""

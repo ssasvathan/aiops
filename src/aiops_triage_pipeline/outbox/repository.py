@@ -199,10 +199,13 @@ class OutboxSqlRepository:
                     )
                     .order_by(outbox_table.c.updated_at.asc())
                     .limit(limit)
+                    .with_for_update(skip_locked=True)
                 )
                 rows = conn.execute(stmt).mappings().all()
                 return [_row_to_record(row) for row in rows]
         except CriticalDependencyError:
+            raise
+        except InvariantViolation:
             raise
         except Exception as exc:  # noqa: BLE001
             raise self._wrap_repo_exc(exc) from exc
