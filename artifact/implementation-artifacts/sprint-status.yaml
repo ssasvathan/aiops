@@ -49,7 +49,7 @@ development_status:
   1-6-complete-ag4-ag6-atomic-deduplication-and-decision-trail-output: done
   epic-1-retrospective: done
   epic-2: in-progress
-  2-1-write-triage-casefiles-with-hash-chain-and-policy-stamps: backlog
+  2-1-write-triage-casefiles-with-hash-chain-and-policy-stamps: review
   2-2-enforce-outbox-source-state-transitions: backlog
   2-3-publish-ready-outbox-rows-with-concurrency-safety: backlog
   2-4-dispatch-pagerduty-and-slack-actions-with-denylist-safety: backlog

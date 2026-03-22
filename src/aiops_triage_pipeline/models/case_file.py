@@ -28,6 +28,7 @@ class CaseFilePolicyVersions(BaseModel, frozen=True):
     prometheus_metrics_contract_version: str = Field(min_length=1)
     exposure_denylist_version: str = Field(min_length=1)
     diagnosis_policy_version: str = Field(min_length=1)
+    anomaly_detection_policy_version: str = Field(default="v1", min_length=1)
 
 
 class CaseFileDownstreamImpact(BaseModel, frozen=True):

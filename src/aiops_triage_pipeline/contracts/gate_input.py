@@ -1,15 +1,22 @@
 """GateInputV1 — deterministic input to Rulebook AG0–AG6 evaluation (Stage 6)."""
 
+import re
 from types import MappingProxyType
 from typing import Annotated, Any, Literal, Mapping
 
-from pydantic import BaseModel, Field, field_serializer, model_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator, model_validator
 
 from aiops_triage_pipeline.contracts.enums import (
     Action,
     CriticalityTier,
     Environment,
     EvidenceStatus,
+)
+
+# NFR-S1: Bearer token pattern used to strip sensitive credential values from decision_basis
+# at model construction time, ensuring they never appear in the canonical hash payload baseline.
+_BEARER_TOKEN_PATTERN: re.Pattern[str] = re.compile(
+    r"(?i)bearer\s+[A-Za-z0-9._+/=\-]{10,}"
 )
 
 _ALLOWED_AG2_NON_PRESENT_STATUSES: frozenset[EvidenceStatus] = frozenset(
@@ -101,3 +108,37 @@ class GateInputV1(BaseModel, frozen=True):
     peak: bool | None = None  # If computed; used for postmortem selector (AG6)
     case_id: str | None = None  # Stable case identifier (for audit)
     decision_basis: dict[str, Any] | None = None  # Optional deterministic linkage
+
+    @field_validator("decision_basis", mode="before")
+    @classmethod
+    def _sanitize_decision_basis(
+        cls, value: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
+        """Strip bearer token values from decision_basis at model construction time.
+
+        NFR-S1: Ensures raw credential values never appear in the canonical hash payload
+        baseline, regardless of how the casefile was constructed. This is a defence-in-depth
+        guard complementing the denylist-based sanitization in assemble_casefile_triage_stage.
+        """
+        if value is None:
+            return None
+        return _sanitize_decision_basis_recursive(value)
+
+
+def _sanitize_decision_basis_recursive(mapping: dict[str, Any]) -> dict[str, Any]:
+    """Recursively remove mapping entries whose string values match the bearer token pattern."""
+    result: dict[str, Any] = {}
+    for key, val in mapping.items():
+        if isinstance(val, str) and _BEARER_TOKEN_PATTERN.search(val):
+            continue
+        if isinstance(val, dict):
+            result[key] = _sanitize_decision_basis_recursive(val)
+        elif isinstance(val, list):
+            result[key] = [
+                item
+                for item in val
+                if not (isinstance(item, str) and _BEARER_TOKEN_PATTERN.search(item))
+            ]
+        else:
+            result[key] = val
+    return result

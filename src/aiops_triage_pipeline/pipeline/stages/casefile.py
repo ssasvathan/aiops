@@ -68,6 +68,7 @@ def assemble_casefile_triage_stage(
     prometheus_metrics_contract: PrometheusMetricsContractV1,
     denylist: DenylistV1,
     diagnosis_policy_version: str,
+    anomaly_detection_policy_version: str = "v1",
     triage_timestamp: datetime | None = None,
     case_id: str | None = None,
 ) -> CaseFileTriageV1:
@@ -81,6 +82,9 @@ def assemble_casefile_triage_stage(
 
     if not diagnosis_policy_version.strip():
         raise ValueError("diagnosis_policy_version must not be empty")
+
+    if not anomaly_detection_policy_version.strip():
+        raise ValueError("anomaly_detection_policy_version must not be empty")
 
     resolved_timestamp = triage_timestamp or datetime.now(tz=UTC)
     if resolved_timestamp.tzinfo is None:
@@ -102,6 +106,7 @@ def assemble_casefile_triage_stage(
         prometheus_metrics_contract_version=prometheus_metrics_contract.version,
         exposure_denylist_version=denylist.denylist_version,
         diagnosis_policy_version=diagnosis_policy_version,
+        anomaly_detection_policy_version=anomaly_detection_policy_version,
     )
     resolved_case_id = case_id or gate_input.case_id or _derive_case_id(gate_input=gate_input)
 
