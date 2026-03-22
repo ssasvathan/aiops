@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Sequence
 
 from aiops_triage_pipeline.cache.evidence_window import (
     build_legacy_sustained_window_cache_key,
@@ -17,9 +18,14 @@ class _FakeRedis:
     def __init__(self) -> None:
         self.store: dict[str, str] = {}
         self.ttl_by_key: dict[str, int] = {}
+        self.mget_calls: list[tuple[str, ...]] = []
 
     def get(self, key: str) -> str | None:
         return self.store.get(key)
+
+    def mget(self, keys: Sequence[str]) -> list[str | None]:
+        self.mget_calls.append(tuple(keys))
+        return [self.store.get(key) for key in keys]
 
     def set(self, key: str, value: str, *, ex: int | None = None) -> bool:
         self.store[key] = value
@@ -38,6 +44,9 @@ class _BytesRedis:
         val = self._store.get(key)
         return val.encode("utf-8") if val is not None else None
 
+    def mget(self, keys: Sequence[str]) -> list[bytes | None]:
+        return [self.get(key) for key in keys]
+
     def set(self, key: str, value: str, *, ex: int | None = None) -> bool:  # noqa: ARG002
         self._store[key] = value
         return True
@@ -45,6 +54,9 @@ class _BytesRedis:
 
 class _FailingReadRedis:
     def get(self, key: str) -> str | None:  # noqa: ARG002
+        raise RuntimeError("redis unavailable")
+
+    def mget(self, keys: Sequence[str]) -> list[str | None]:  # noqa: ARG002
         raise RuntimeError("redis unavailable")
 
     def set(self, key: str, value: str, *, ex: int | None = None) -> bool:  # noqa: ARG002
@@ -99,7 +111,7 @@ def _state() -> SustainedWindowState:
 def test_build_sustained_window_cache_key_uses_required_namespace() -> None:
     key = build_sustained_window_cache_key(_identity_key())
 
-    assert key == "evidence:prod|cluster-a|topic:orders|VOLUME_DROP"
+    assert key == "aiops:sustained:cluster-a:topic:orders:VOLUME_DROP"
 
 
 def test_evidence_window_ttl_seconds_selects_env_specific_policy_value() -> None:
@@ -132,7 +144,7 @@ def test_set_and_get_sustained_window_state_round_trip() -> None:
     )
 
     assert loaded == state
-    assert redis_client.ttl_by_key["evidence:prod|cluster-a|topic:orders|VOLUME_DROP"] == 3600
+    assert redis_client.ttl_by_key["aiops:sustained:cluster-a:topic:orders:VOLUME_DROP"] == 3600
 
 
 def test_set_sustained_window_state_serialization_is_deterministic() -> None:
@@ -147,7 +159,7 @@ def test_set_sustained_window_state_serialization_is_deterministic() -> None:
         state=state,
         redis_ttl_policy=policy,
     )
-    first_payload = redis_client.store["evidence:prod|cluster-a|topic:orders|VOLUME_DROP"]
+    first_payload = redis_client.store["aiops:sustained:cluster-a:topic:orders:VOLUME_DROP"]
 
     set_sustained_window_state(
         redis_client=redis_client,
@@ -156,7 +168,7 @@ def test_set_sustained_window_state_serialization_is_deterministic() -> None:
         state=state,
         redis_ttl_policy=policy,
     )
-    second_payload = redis_client.store["evidence:prod|cluster-a|topic:orders|VOLUME_DROP"]
+    second_payload = redis_client.store["aiops:sustained:cluster-a:topic:orders:VOLUME_DROP"]
 
     assert first_payload == second_payload
 
@@ -183,6 +195,35 @@ def test_load_sustained_window_states_returns_safe_empty_on_read_failure() -> No
     )
 
     assert loaded == {}
+
+
+def test_load_sustained_window_states_uses_batched_reads_with_stable_mapping() -> None:
+    redis_client = _FakeRedis()
+    first_key = ("prod", "cluster-a", "topic:orders", "VOLUME_DROP")
+    second_key = ("prod", "cluster-a", "topic:payments", "VOLUME_DROP")
+    first_state = SustainedWindowState(
+        identity_key=first_key,
+        consecutive_anomalous_buckets=2,
+        last_evaluated_at=datetime(2026, 3, 2, 12, 0, tzinfo=UTC),
+    )
+    second_state = SustainedWindowState(
+        identity_key=second_key,
+        consecutive_anomalous_buckets=4,
+        last_evaluated_at=datetime(2026, 3, 2, 12, 5, tzinfo=UTC),
+    )
+    redis_client.store[build_sustained_window_cache_key(first_key)] = first_state.model_dump_json()
+    redis_client.store[build_sustained_window_cache_key(second_key)] = (
+        second_state.model_dump_json()
+    )
+
+    loaded = load_sustained_window_states(
+        redis_client=redis_client,
+        identity_keys=[second_key, first_key],
+    )
+
+    assert len(redis_client.mget_calls) >= 1
+    assert loaded[first_key] == first_state
+    assert loaded[second_key] == second_state
 
 
 def test_get_sustained_window_state_handles_bytes_response() -> None:
@@ -222,7 +263,7 @@ def test_persist_sustained_window_states_derives_ttl_from_identity_key_env() -> 
         redis_ttl_policy=policy,
     )
 
-    assert redis_client.ttl_by_key["evidence:dev|cluster-a|topic:orders|VOLUME_DROP"] == 900
+    assert redis_client.ttl_by_key["aiops:sustained:cluster-a:topic:orders:VOLUME_DROP"] == 900
 
 
 def test_persist_sustained_window_states_ignores_write_failures() -> None:

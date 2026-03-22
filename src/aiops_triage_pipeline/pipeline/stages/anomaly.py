@@ -1,7 +1,9 @@
 """Anomaly detection stage based on normalized Stage 1 evidence rows."""
 
+import math
 from collections import defaultdict
 from datetime import datetime
+from typing import Mapping
 
 from aiops_triage_pipeline.cache.findings_cache import (
     FindingsCacheClientProtocol,
@@ -34,6 +36,7 @@ def detect_anomaly_findings(
     findings_cache_client: FindingsCacheClientProtocol | None = None,
     redis_ttl_policy: RedisTtlPolicyV1 | None = None,
     evaluation_time: datetime | None = None,
+    baseline_values_by_scope: Mapping[tuple[str, ...], Mapping[str, float]] | None = None,
 ) -> AnomalyDetectionResult:
     """Detect supported anomaly families from normalized evidence rows."""
     cache_args_complete = (
@@ -70,10 +73,18 @@ def detect_anomaly_findings(
                 scope=scope,
                 evaluation_time=evaluation_time,
                 redis_ttl_policy=redis_ttl_policy,
-                compute_findings=lambda: _compute_scope_findings(scope, scope_metrics),
+                compute_findings=lambda: _compute_scope_findings(
+                    scope,
+                    scope_metrics,
+                    baseline_values_by_scope.get(scope) if baseline_values_by_scope else None,
+                ),
             )
         else:
-            scope_findings = _compute_scope_findings(scope, scope_metrics)
+            scope_findings = _compute_scope_findings(
+                scope,
+                scope_metrics,
+                baseline_values_by_scope.get(scope) if baseline_values_by_scope else None,
+            )
         findings.extend(scope_findings)
 
     finding_tuple = tuple(findings)
@@ -84,6 +95,7 @@ def detect_anomaly_findings(
 def _compute_scope_findings(
     scope: tuple[str, ...],
     scope_metrics: dict[str, list[float]],
+    baseline_values_by_metric: Mapping[str, float] | None = None,
 ) -> tuple[AnomalyFinding, ...]:
     scope_findings: list[AnomalyFinding] = []
 
@@ -95,7 +107,15 @@ def _compute_scope_findings(
     if throughput_finding is not None:
         scope_findings.append(throughput_finding)
 
-    volume_drop_finding = _detect_volume_drop(scope, scope_metrics)
+    volume_drop_finding = _detect_volume_drop(
+        scope,
+        scope_metrics,
+        baseline_messages_in=(
+            baseline_values_by_metric.get("topic_messages_in_per_sec")
+            if baseline_values_by_metric
+            else None
+        ),
+    )
     if volume_drop_finding is not None:
         scope_findings.append(volume_drop_finding)
 
@@ -205,7 +225,10 @@ def _detect_throughput_constrained_proxy(
 
 
 def _detect_volume_drop(
-    scope: tuple[str, ...], scope_metrics: dict[str, list[float]]
+    scope: tuple[str, ...],
+    scope_metrics: dict[str, list[float]],
+    *,
+    baseline_messages_in: float | None = None,
 ) -> AnomalyFinding | None:
     messages_in_values = scope_metrics.get("topic_messages_in_per_sec")
     total_produce_values = scope_metrics.get("total_produce_requests_per_sec")
@@ -215,7 +238,16 @@ def _detect_volume_drop(
     # Use max as baseline and min as current to be independent of sample list ordering.
     # Detects: peak throughput is high but the lowest observed value for the scope is near zero,
     # indicating a drop regardless of whether samples are temporal or cross-broker.
-    baseline_messages_in = max(messages_in_values)
+    baseline_from_current = max(messages_in_values)
+    if (
+        baseline_messages_in is None
+        or not math.isfinite(baseline_messages_in)
+        or baseline_messages_in <= 0
+    ):
+        baseline_messages_in = baseline_from_current
+    else:
+        # Never let an unexpectedly low cached value reduce the in-cycle baseline.
+        baseline_messages_in = max(baseline_messages_in, baseline_from_current)
     current_messages_in = min(messages_in_values)
     expected_requests = max(total_produce_values)
     if baseline_messages_in < _VOLUME_DROP_MIN_BASELINE_MESSAGES_IN_PER_SEC:

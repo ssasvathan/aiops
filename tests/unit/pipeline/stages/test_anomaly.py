@@ -558,6 +558,36 @@ def test_detect_volume_drop_missing_series_is_unknown_not_zero() -> None:
     assert all(f.anomaly_family != "VOLUME_DROP" for f in result.findings)
 
 
+def test_detect_volume_drop_uses_persisted_baseline_when_available() -> None:
+    scope = ("prod", "cluster-a", "inventory")
+    rows = [
+        EvidenceRow(
+            metric_key="topic_messages_in_per_sec",
+            value=0.8,
+            labels={"env": "prod", "cluster_id": "cluster-a", "topic": "inventory"},
+            scope=scope,
+        ),
+        EvidenceRow(
+            metric_key="total_produce_requests_per_sec",
+            value=240.0,
+            labels={"env": "prod", "cluster_id": "cluster-a", "topic": "inventory"},
+            scope=scope,
+        ),
+    ]
+
+    result = detect_anomaly_findings(
+        rows,
+        baseline_values_by_scope={
+            scope: {
+                "topic_messages_in_per_sec": 180.0,
+            }
+        },
+    )
+
+    volume_findings = [f for f in result.findings if f.anomaly_family == "VOLUME_DROP"]
+    assert len(volume_findings) == 1
+
+
 def test_detect_anomaly_findings_reuses_cached_findings_on_interval_hit(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

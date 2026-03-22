@@ -15,12 +15,22 @@ class EvidenceWindowCacheClientProtocol(Protocol):
     def get(self, key: str) -> str | bytes | None:
         ...
 
+    def mget(self, keys: Sequence[str]) -> Sequence[str | bytes | None]:
+        ...
+
     def set(self, key: str, value: str, *, ex: int | None = None) -> bool | None:
         ...
 
 
 def build_sustained_window_cache_key(identity_key: SustainedIdentityKey) -> str:
     """Build deterministic cache key for one sustained identity."""
+    # D1 namespace alignment: aiops:{type}:{scope_key}
+    # env is omitted by design because Redis is deployed per environment.
+    return f"aiops:sustained:{identity_key[1]}:{identity_key[2]}:{identity_key[3]}"
+
+
+def build_previous_sustained_window_cache_key(identity_key: SustainedIdentityKey) -> str:
+    """Build previous-generation key used before D1 namespace alignment."""
     return f"evidence:{identity_key[0]}|{identity_key[1]}|{identity_key[2]}|{identity_key[3]}"
 
 
@@ -59,13 +69,12 @@ def get_sustained_window_state(
     """
     raw = redis_client.get(build_sustained_window_cache_key(identity_key))
     if raw is None:
+        raw = redis_client.get(build_previous_sustained_window_cache_key(identity_key))
+    if raw is None:
         raw = redis_client.get(build_legacy_sustained_window_cache_key(identity_key))
     if raw is None:
         return None
-    if isinstance(raw, bytes):
-        payload = raw.decode("utf-8")
-    else:
-        payload = raw
+    payload = _decode_payload(raw)
     return SustainedWindowState.model_validate_json(payload)
 
 
@@ -97,21 +106,100 @@ def load_sustained_window_states(
     """
     logger = get_logger("cache.evidence_window")
     loaded: dict[SustainedIdentityKey, SustainedWindowState] = {}
-    for identity_key in sorted(set(identity_keys)):
+    unique_keys = sorted(set(identity_keys))
+    if not unique_keys:
+        return loaded
+
+    try:
+        primary_values = _bulk_get_values(
+            redis_client=redis_client,
+            keys=[build_sustained_window_cache_key(identity_key) for identity_key in unique_keys],
+        )
+    except Exception:
+        logger.warning(
+            "evidence_window_cache_read_failed",
+            event_type="cache.evidence_window_read_warning",
+            identity_key="*",
+        )
+        return loaded
+
+    missing_identity_keys: list[SustainedIdentityKey] = []
+    for identity_key, raw in zip(unique_keys, primary_values, strict=True):
+        if raw is None:
+            missing_identity_keys.append(identity_key)
+            continue
         try:
-            state = get_sustained_window_state(
-                redis_client=redis_client,
-                identity_key=identity_key,
-            )
+            loaded[identity_key] = SustainedWindowState.model_validate_json(_decode_payload(raw))
         except Exception:
             logger.warning(
-                "evidence_window_cache_read_failed",
+                "evidence_window_cache_payload_invalid",
                 event_type="cache.evidence_window_read_warning",
                 identity_key=identity_key,
             )
+
+    if not missing_identity_keys:
+        return loaded
+
+    try:
+        previous_values = _bulk_get_values(
+            redis_client=redis_client,
+            keys=[
+                build_previous_sustained_window_cache_key(identity_key)
+                for identity_key in missing_identity_keys
+            ],
+        )
+    except Exception:
+        logger.warning(
+            "evidence_window_cache_read_failed",
+            event_type="cache.evidence_window_read_warning",
+            identity_key="*",
+        )
+        return loaded
+
+    legacy_fallback_keys: list[SustainedIdentityKey] = []
+    for identity_key, raw in zip(missing_identity_keys, previous_values, strict=True):
+        if raw is None:
+            legacy_fallback_keys.append(identity_key)
             continue
-        if state is not None:
-            loaded[identity_key] = state
+        try:
+            loaded[identity_key] = SustainedWindowState.model_validate_json(_decode_payload(raw))
+        except Exception:
+            logger.warning(
+                "evidence_window_cache_payload_invalid",
+                event_type="cache.evidence_window_read_warning",
+                identity_key=identity_key,
+            )
+
+    if not legacy_fallback_keys:
+        return loaded
+
+    try:
+        legacy_values = _bulk_get_values(
+            redis_client=redis_client,
+            keys=[
+                build_legacy_sustained_window_cache_key(identity_key)
+                for identity_key in legacy_fallback_keys
+            ],
+        )
+    except Exception:
+        logger.warning(
+            "evidence_window_cache_read_failed",
+            event_type="cache.evidence_window_read_warning",
+            identity_key="*",
+        )
+        return loaded
+
+    for identity_key, raw in zip(legacy_fallback_keys, legacy_values, strict=True):
+        if raw is None:
+            continue
+        try:
+            loaded[identity_key] = SustainedWindowState.model_validate_json(_decode_payload(raw))
+        except Exception:
+            logger.warning(
+                "evidence_window_cache_payload_invalid",
+                event_type="cache.evidence_window_read_warning",
+                identity_key=identity_key,
+            )
     return loaded
 
 
@@ -148,3 +236,20 @@ def persist_sustained_window_states(
 def _serialize_state(state: SustainedWindowState) -> str:
     """Serialize sustained-window state as deterministic JSON."""
     return json.dumps(state.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
+
+
+def _decode_payload(raw: str | bytes) -> str:
+    if isinstance(raw, bytes):
+        return raw.decode("utf-8")
+    return raw
+
+
+def _bulk_get_values(
+    *,
+    redis_client: EvidenceWindowCacheClientProtocol,
+    keys: Sequence[str],
+) -> Sequence[str | bytes | None]:
+    mget = getattr(redis_client, "mget", None)
+    if callable(mget):
+        return list(mget(keys))
+    return [redis_client.get(key) for key in keys]

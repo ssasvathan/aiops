@@ -1,6 +1,7 @@
 """Evidence-stage helpers for scope key construction and sample normalization."""
 
 import asyncio
+import math
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
@@ -22,6 +23,11 @@ from aiops_triage_pipeline.integrations.prometheus import (
 from aiops_triage_pipeline.logging.setup import get_logger
 from aiops_triage_pipeline.models.events import TelemetryDegradedEvent
 from aiops_triage_pipeline.models.evidence import EvidenceRow, EvidenceStageOutput
+from aiops_triage_pipeline.pipeline.baseline_store import (
+    BaselineStoreClientProtocol,
+    load_metric_baselines,
+    persist_metric_baselines,
+)
 from aiops_triage_pipeline.pipeline.stages.anomaly import (
     build_gate_findings_by_scope,
     detect_anomaly_findings,
@@ -135,6 +141,8 @@ def collect_evidence_stage_output(
     samples_by_metric: Mapping[str, list[Mapping[str, Any]]],
     *,
     findings_cache_client: FindingsCacheClientProtocol | None = None,
+    baseline_cache_client: BaselineStoreClientProtocol | None = None,
+    baseline_source: str = "prometheus",
     redis_ttl_policy: RedisTtlPolicyV1 | None = None,
     evaluation_time: datetime | None = None,
     telemetry_degraded_active: bool = False,
@@ -143,12 +151,28 @@ def collect_evidence_stage_output(
 ) -> EvidenceStageOutput:
     """Collect normalized evidence rows and derive anomaly findings for downstream stages."""
     rows = collect_evidence_rows(samples_by_metric)
+    baseline_values_by_scope: Mapping[tuple[str, ...], Mapping[str, float]] | None = None
+    if baseline_cache_client is not None and redis_ttl_policy is not None:
+        baseline_values_by_scope = load_metric_baselines(
+            redis_client=baseline_cache_client,
+            source=baseline_source,
+            scope_metric_pairs=_scope_metric_pairs_from_rows(rows),
+        )
     anomaly_result = detect_anomaly_findings(
         rows,
         findings_cache_client=findings_cache_client,
         redis_ttl_policy=redis_ttl_policy,
         evaluation_time=evaluation_time,
+        baseline_values_by_scope=baseline_values_by_scope,
     )
+    if baseline_cache_client is not None and redis_ttl_policy is not None:
+        persist_metric_baselines(
+            redis_client=baseline_cache_client,
+            source=baseline_source,
+            baselines_by_scope_metric=_compute_baselines_from_rows(rows),
+            redis_ttl_policy=redis_ttl_policy,
+            computed_at=evaluation_time,
+        )
     evidence_status_map_by_scope = build_evidence_status_map_by_scope(
         metric_keys=tuple(samples_by_metric.keys()),
         rows=rows,
@@ -277,3 +301,29 @@ async def collect_prometheus_samples_with_diagnostics(
 def _is_prometheus_non_success_api_error(exc: ValueError) -> bool:
     message = str(exc)
     return message.startswith("Prometheus query failed for ")
+
+
+def _scope_metric_pairs_from_rows(rows: Sequence[EvidenceRow]) -> list[tuple[tuple[str, ...], str]]:
+    return sorted({(row.scope, row.metric_key) for row in rows})
+
+
+def _compute_baselines_from_rows(
+    rows: Sequence[EvidenceRow],
+) -> dict[tuple[str, ...], dict[str, float]]:
+    values_by_scope_metric: dict[tuple[str, ...], dict[str, list[float]]] = defaultdict(
+        lambda: defaultdict(list)
+    )
+    for row in rows:
+        if math.isfinite(row.value):
+            values_by_scope_metric[row.scope][row.metric_key].append(row.value)
+
+    baselines_by_scope_metric: dict[tuple[str, ...], dict[str, float]] = {}
+    for scope, values_by_metric in sorted(values_by_scope_metric.items()):
+        baseline_by_metric: dict[str, float] = {}
+        for metric_key, values in sorted(values_by_metric.items()):
+            if not values:
+                continue
+            baseline_by_metric[metric_key] = max(values)
+        if baseline_by_metric:
+            baselines_by_scope_metric[scope] = baseline_by_metric
+    return baselines_by_scope_metric

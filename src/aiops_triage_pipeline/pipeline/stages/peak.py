@@ -65,6 +65,7 @@ def collect_peak_stage_output(
     *,
     rows: Sequence[EvidenceRow],
     historical_windows_by_scope: Mapping[PeakScope, Sequence[float]],
+    cached_profiles_by_scope: Mapping[PeakScope, PeakProfile] | None = None,
     evidence_status_map_by_scope: (
         Mapping[tuple[str, ...], Mapping[str, EvidenceStatus]] | None
     ) = None,
@@ -111,13 +112,15 @@ def collect_peak_stage_output(
     classifications_by_scope: dict[PeakScope, PeakClassification] = {}
     peak_context_by_scope: dict[PeakScope, PeakWindowContext] = {}
     for scope in sorted(known_scopes):
-        history_values = historical_windows_by_scope.get(scope, ())
-        profile = _build_peak_profile(
-            scope=scope,
-            history_values=history_values,
-            policy=policy,
-            evaluation_time=effective_time,
-        )
+        profile = cached_profiles_by_scope.get(scope) if cached_profiles_by_scope else None
+        if profile is None:
+            history_values = historical_windows_by_scope.get(scope, ())
+            profile = _build_peak_profile(
+                scope=scope,
+                history_values=history_values,
+                policy=policy,
+                evaluation_time=effective_time,
+            )
         if profile is not None:
             profiles_by_scope[scope] = profile
 
@@ -174,6 +177,19 @@ def build_sustained_window_state_by_key(
         )
         for key, status in sorted(sustained_by_key.items())
     }
+
+
+def build_sustained_identity_keys(
+    anomaly_findings: Sequence[AnomalyFinding],
+) -> list[SustainedIdentityKey]:
+    """Derive deterministic sustained identity keys from anomaly findings."""
+    logger = get_logger("pipeline.stages.peak")
+    keys: set[SustainedIdentityKey] = set()
+    for finding in anomaly_findings:
+        key = _to_sustained_identity_key(finding=finding, logger=logger)
+        if key is not None:
+            keys.add(key)
+    return sorted(keys)
 
 
 def compute_sustained_status_by_key(

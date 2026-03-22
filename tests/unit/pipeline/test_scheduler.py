@@ -20,6 +20,7 @@ from aiops_triage_pipeline.integrations.prometheus import MetricQueryDefinition
 from aiops_triage_pipeline.integrations.slack import SlackClient, SlackIntegrationMode
 from aiops_triage_pipeline.models.events import DegradedModeEvent
 from aiops_triage_pipeline.models.health import HealthStatus
+from aiops_triage_pipeline.models.peak import PeakProfile
 from aiops_triage_pipeline.pipeline.scheduler import (
     SchedulerTick,
     emit_redis_degraded_mode_events,
@@ -629,6 +630,40 @@ def test_run_peak_stage_cycle_wires_stage1_rows_to_peak_output() -> None:
     # value=18.0, history=[1..20]: near_peak_threshold=p90=18, peak_threshold=p95=19
     # 18 >= near_peak_threshold(18) and < peak_threshold(19) → NEAR_PEAK
     assert peak_output.peak_context_by_scope[scope].classification == "NEAR_PEAK"
+
+
+def test_run_peak_stage_cycle_uses_cached_profiles_when_history_is_unavailable() -> None:
+    samples = {
+        "topic_messages_in_per_sec": [
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 220.0,
+            }
+        ],
+        "total_produce_requests_per_sec": [],
+    }
+    evidence_output = collect_evidence_stage_output(samples)
+    scope = ("prod", "cluster-a", "orders")
+    cached_profile = PeakProfile(
+        scope=scope,
+        source_metric="kafka_server_brokertopicmetrics_messagesinpersec",
+        peak_threshold_value=200.0,
+        near_peak_threshold_value=150.0,
+        history_samples_count=40,
+        has_sufficient_history=True,
+        recompute_frequency="weekly",
+        computed_at=datetime(2026, 3, 2, 12, 0, tzinfo=UTC),
+    )
+
+    peak_output = run_peak_stage_cycle(
+        evidence_output=evidence_output,
+        historical_windows_by_scope={},
+        cached_peak_profiles_by_scope={scope: cached_profile},
+        evaluation_time=datetime(2026, 3, 2, 12, 5, tzinfo=UTC),
+        peak_policy=_peak_policy_for_tests(),
+    )
+
+    assert peak_output.classifications_by_scope[scope].state == "PEAK"
 
 
 def test_run_peak_stage_cycle_tracks_sustained_history_across_cycles() -> None:

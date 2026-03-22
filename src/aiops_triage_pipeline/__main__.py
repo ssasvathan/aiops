@@ -11,6 +11,14 @@ import structlog
 from sqlalchemy import create_engine
 
 from aiops_triage_pipeline.cache.dedupe import RedisActionDedupeStore
+from aiops_triage_pipeline.cache.evidence_window import (
+    load_sustained_window_states,
+    persist_sustained_window_states,
+)
+from aiops_triage_pipeline.cache.peak_cache import (
+    load_peak_profiles,
+    persist_peak_profiles,
+)
 from aiops_triage_pipeline.config.settings import Settings, get_settings, load_policy_yaml
 from aiops_triage_pipeline.contracts.casefile_retention_policy import CasefileRetentionPolicyV1
 from aiops_triage_pipeline.contracts.outbox_policy import OutboxPolicyV1
@@ -30,6 +38,7 @@ from aiops_triage_pipeline.integrations.prometheus import (
 )
 from aiops_triage_pipeline.integrations.slack import SlackClient, SlackIntegrationMode
 from aiops_triage_pipeline.logging.setup import configure_logging, get_logger
+from aiops_triage_pipeline.models.evidence import EvidenceRow
 from aiops_triage_pipeline.outbox.repository import OutboxSqlRepository
 from aiops_triage_pipeline.outbox.worker import OutboxPublisherWorker
 from aiops_triage_pipeline.pipeline.scheduler import (
@@ -48,6 +57,7 @@ from aiops_triage_pipeline.pipeline.stages.casefile import (
 )
 from aiops_triage_pipeline.pipeline.stages.dispatch import dispatch_action
 from aiops_triage_pipeline.pipeline.stages.peak import (
+    build_sustained_identity_keys,
     build_sustained_window_state_by_key,
     load_peak_policy,
     load_redis_ttl_policy,
@@ -246,7 +256,6 @@ async def _hot_path_scheduler_loop(
     """Async hot-path scheduler loop: evidence → peak → topology → gate → casefile → dispatch."""
     interval_seconds = settings.HOT_PATH_SCHEDULER_INTERVAL_SECONDS
     previous_boundary = None
-    prior_sustained_window_state_by_key = None
 
     while True:
         evaluation_time = datetime.now(UTC)
@@ -276,20 +285,37 @@ async def _hot_path_scheduler_loop(
                 metric_queries=metric_queries,
                 evaluation_time=evaluation_time,
                 findings_cache_client=redis_client,
+                baseline_cache_client=redis_client,
                 redis_ttl_policy=redis_ttl_policy,
                 alert_evaluator=alert_evaluator,
+            )
+            prior_sustained_window_state_by_key = load_sustained_window_states(
+                redis_client=redis_client,
+                identity_keys=build_sustained_identity_keys(evidence_output.anomaly_result.findings),
+            )
+            cached_peak_profiles_by_scope = load_peak_profiles(
+                redis_client=redis_client,
+                scopes=_peak_scopes_from_rows(evidence_output.rows),
             )
             peak_output = run_peak_stage_cycle(
                 evidence_output=evidence_output,
                 historical_windows_by_scope={},
                 prior_sustained_window_state_by_key=prior_sustained_window_state_by_key,
+                cached_peak_profiles_by_scope=cached_peak_profiles_by_scope,
                 evaluation_time=evaluation_time,
                 peak_policy=peak_policy,
                 rulebook_policy=rulebook_policy,
                 alert_evaluator=alert_evaluator,
             )
-            prior_sustained_window_state_by_key = build_sustained_window_state_by_key(
-                peak_output.sustained_by_key
+            persist_sustained_window_states(
+                redis_client=redis_client,
+                states_by_key=build_sustained_window_state_by_key(peak_output.sustained_by_key),
+                redis_ttl_policy=redis_ttl_policy,
+            )
+            persist_peak_profiles(
+                redis_client=redis_client,
+                profiles_by_scope=peak_output.profiles_by_scope,
+                redis_ttl_policy=redis_ttl_policy,
             )
             topology_output = run_topology_stage_cycle(
                 evidence_output=evidence_output,
@@ -396,6 +422,17 @@ async def _hot_path_scheduler_loop(
             sleep_seconds=round(sleep_seconds, 1),
         )
         await asyncio.sleep(sleep_seconds)
+
+
+def _peak_scopes_from_rows(rows: tuple[EvidenceRow, ...]) -> list[tuple[str, str, str]]:
+    scopes: set[tuple[str, str, str]] = set()
+    for row in rows:
+        if len(row.scope) == 3:
+            scopes.add((row.scope[0], row.scope[1], row.scope[2]))
+            continue
+        if len(row.scope) == 4:
+            scopes.add((row.scope[0], row.scope[1], row.scope[3]))
+    return sorted(scopes)
 
 
 def _run_cold_path() -> None:

@@ -36,11 +36,13 @@ from aiops_triage_pipeline.models.events import DegradedModeEvent, TelemetryDegr
 from aiops_triage_pipeline.models.evidence import EvidenceStageOutput
 from aiops_triage_pipeline.models.health import HealthStatus
 from aiops_triage_pipeline.models.peak import (
+    PeakProfile,
     PeakScope,
     PeakStageOutput,
     SustainedIdentityKey,
     SustainedWindowState,
 )
+from aiops_triage_pipeline.pipeline.baseline_store import BaselineStoreClientProtocol
 from aiops_triage_pipeline.pipeline.stages.evidence import (
     collect_evidence_stage_output,
     collect_prometheus_samples_with_diagnostics,
@@ -152,6 +154,8 @@ async def run_evidence_stage_cycle(
     metric_queries: Mapping[str, MetricQueryDefinition],
     evaluation_time: datetime,
     findings_cache_client: FindingsCacheClientProtocol | None = None,
+    baseline_cache_client: BaselineStoreClientProtocol | None = None,
+    baseline_source: str = "prometheus",
     redis_ttl_policy: RedisTtlPolicyV1 | None = None,
     health_registry: HealthRegistry | None = None,
     alert_evaluator: OperationalAlertEvaluator | None = None,
@@ -215,6 +219,8 @@ async def run_evidence_stage_cycle(
         return collect_evidence_stage_output(
             diagnostics.samples_by_metric,
             findings_cache_client=findings_cache_client,
+            baseline_cache_client=baseline_cache_client,
+            baseline_source=baseline_source,
             redis_ttl_policy=redis_ttl_policy,
             evaluation_time=evaluation_time,
             telemetry_degraded_active=diagnostics.is_total_outage,
@@ -247,6 +253,7 @@ def run_peak_stage_cycle(
     prior_sustained_window_state_by_key: (
         Mapping[SustainedIdentityKey, SustainedWindowState] | None
     ) = None,
+    cached_peak_profiles_by_scope: Mapping[PeakScope, PeakProfile] | None = None,
     evaluation_time: datetime,
     peak_policy: PeakPolicyV1 | None = None,
     rulebook_policy: RulebookV1 | None = None,
@@ -265,6 +272,7 @@ def run_peak_stage_cycle(
             evidence_status_map_by_scope=evidence_output.evidence_status_map_by_scope,
             anomaly_findings=evidence_output.anomaly_result.findings,
             prior_sustained_window_state_by_key=prior_sustained_window_state_by_key,
+            cached_profiles_by_scope=cached_peak_profiles_by_scope,
             evaluation_time=evaluation_time,
             peak_policy=peak_policy,
             rulebook_policy=rulebook_policy,
