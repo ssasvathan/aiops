@@ -72,14 +72,24 @@ def _build_test_rulebook(version: int = 1) -> RulebookV1:
         paging_denied_topic_roles=("SOURCE_TOPIC",),
     )
 
-    def _simple_gate(gate_id: str) -> GateSpec:
-        return GateSpec(
-            id=gate_id,
-            name=f"Gate {gate_id}",
-            intent="test",
-            effect=GateEffects(),
-            checks=(GateCheck(check_id=f"{gate_id}_CHECK", type="always_pass"),),
-        )
+    ag0 = GateSpec(
+        id="AG0",
+        name="Schema & invariants",
+        intent="test",
+        effect=GateEffects(
+            on_fail=GateEffect(
+                cap_action_to="OBSERVE",
+                set_reason_codes=("AG0_INVALID_INPUT",),
+            )
+        ),
+        checks=(
+            GateCheck(
+                check_id="AG0_REQUIRED_FIELDS_PRESENT",
+                type="required_fields_present",
+                fields_ref="inputs_contract.required_fields",
+            ),
+        ),
+    )
 
     ag1 = GateSpec(
         id="AG1",
@@ -88,7 +98,18 @@ def _build_test_rulebook(version: int = 1) -> RulebookV1:
         effect=GateEffects(
             on_cap_applied=GateEffect(set_reason_codes=("AG1_ENV_OR_TIER_CAP",)),
         ),
-        checks=(GateCheck(check_id="AG1_CHECK", type="always_pass"),),
+        checks=(
+            GateCheck(
+                check_id="AG1_ENV_CAP",
+                type="cap_by_env",
+                max_action_by_env_ref="caps.max_action_by_env",
+            ),
+            GateCheck(
+                check_id="AG1_TIER_CAP_PROD",
+                type="cap_by_tier_in_prod",
+                max_action_by_tier_ref="caps.max_action_by_tier_in_prod",
+            ),
+        ),
     )
 
     ag2 = GateSpec(
@@ -101,7 +122,25 @@ def _build_test_rulebook(version: int = 1) -> RulebookV1:
                 set_reason_codes=("AG2_INSUFFICIENT_EVIDENCE",),
             ),
         ),
-        checks=(GateCheck(check_id="AG2_CHECK", type="always_pass"),),
+        checks=(
+            GateCheck(
+                check_id="AG2_REQUIRED_EVIDENCE_PRESENT",
+                type="required_evidence_present",
+            ),
+        ),
+    )
+
+    ag3 = GateSpec(
+        id="AG3",
+        name="Paging denied for SOURCE_TOPIC",
+        intent="test",
+        effect=GateEffects(
+            on_fail=GateEffect(
+                cap_action_to="TICKET",
+                set_reason_codes=("AG3_PAGING_DENIED_SOURCE_TOPIC",),
+            ),
+        ),
+        checks=(GateCheck(check_id="AG3_DENY_PAGING_ON_SOURCE", type="always_fail"),),
     )
 
     ag4 = GateSpec(
@@ -160,10 +199,10 @@ def _build_test_rulebook(version: int = 1) -> RulebookV1:
         defaults=defaults,
         caps=caps,
         gates=(
-            _simple_gate("AG0"),
+            ag0,
             ag1,
             ag2,
-            _simple_gate("AG3"),
+            ag3,
             ag4,
             ag5,
             ag6,

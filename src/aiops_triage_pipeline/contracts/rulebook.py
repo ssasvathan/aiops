@@ -89,6 +89,14 @@ class GateCheck(BaseModel):
     check_id: str
     type: str
 
+    @field_validator("type")
+    @classmethod
+    def _validate_check_type(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Gate check type must be a non-empty string")
+        return normalized
+
 
 class GateSpec(BaseModel):
     model_config = ConfigDict(frozen=True, extra="allow")
@@ -112,7 +120,14 @@ class RulebookV1(BaseModel, frozen=True):
     @field_validator("gates")
     @classmethod
     def _require_all_gate_ids(cls, gates: tuple[GateSpec, ...]) -> tuple[GateSpec, ...]:
-        found = {gate.id for gate in gates}
+        counts: dict[str, int] = {}
+        for gate in gates:
+            counts[gate.id] = counts.get(gate.id, 0) + 1
+        duplicates = sorted(gate_id for gate_id, count in counts.items() if count > 1)
+        if duplicates:
+            raise ValueError(f"gates contains duplicate gate IDs: {duplicates}")
+
+        found = set(counts)
         missing = _REQUIRED_GATE_IDS - found
         if missing:
             raise ValueError(f"gates is missing required gate IDs: {sorted(missing)}")

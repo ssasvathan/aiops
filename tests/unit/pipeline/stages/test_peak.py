@@ -35,6 +35,7 @@ from aiops_triage_pipeline.pipeline.stages.peak import (
     load_redis_ttl_policy,
     load_rulebook_policy,
 )
+from aiops_triage_pipeline.rule_engine.protocol import UnknownCheckTypeStartupError
 
 
 def test_peak_profile_is_frozen() -> None:
@@ -109,6 +110,20 @@ def test_load_rulebook_policy_from_default_path() -> None:
 
     assert policy.schema_version == "v1"
     assert policy.sustained_intervals_required == 5
+
+
+def test_load_rulebook_policy_fails_fast_for_unknown_check_handler(tmp_path) -> None:
+    default_yaml = peak_stage.DEFAULT_RULEBOOK_POLICY_PATH.read_text()
+    bad_yaml = default_yaml.replace(
+        "type: required_fields_present",
+        "type: unsupported_handler",
+        1,
+    )
+    custom_rulebook_path = tmp_path / "rulebook-invalid-handler.yaml"
+    custom_rulebook_path.write_text(bad_yaml)
+
+    with pytest.raises(UnknownCheckTypeStartupError, match="unsupported_handler"):
+        load_rulebook_policy(custom_rulebook_path)
 
 
 def _peak_policy_for_tests() -> PeakPolicyV1:

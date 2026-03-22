@@ -14,6 +14,7 @@
 ## Pattern Rationale
 
 - `src/aiops_triage_pipeline/pipeline/stages/*` implements deterministic stage modules with explicit IO models.
+- `src/aiops_triage_pipeline/rule_engine/*` isolates AG0-AG3 YAML check dispatch behind a frozen handler registry with startup fail-fast validation.
 - `src/aiops_triage_pipeline/outbox/*` separates state transitions, persistence, and publisher loop concerns.
 - `src/aiops_triage_pipeline/linkage/*` uses durable SQL retry state with source-state guarded transitions.
 - `src/aiops_triage_pipeline/contracts/*` and `models/*` enforce immutable event/data contracts.

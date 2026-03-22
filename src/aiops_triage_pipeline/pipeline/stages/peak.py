@@ -27,6 +27,7 @@ from aiops_triage_pipeline.models.peak import (
     SustainedStatus,
     SustainedWindowState,
 )
+from aiops_triage_pipeline.rule_engine import validate_rulebook_handlers
 
 DEFAULT_PEAK_POLICY_PATH = (
     Path(__file__).resolve().parents[4] / "config/policies/peak-policy-v1.yaml"
@@ -61,7 +62,9 @@ def load_redis_ttl_policy(path: Path = DEFAULT_REDIS_TTL_POLICY_PATH) -> RedisTt
 
 def load_rulebook_policy(path: Path = DEFAULT_RULEBOOK_POLICY_PATH) -> RulebookV1:
     """Load and validate rulebook-v1 policy."""
-    return load_policy_yaml(path, RulebookV1)
+    policy = load_policy_yaml(path, RulebookV1)
+    validate_rulebook_handlers(policy)
+    return policy
 
 
 def collect_peak_stage_output(

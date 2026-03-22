@@ -10,13 +10,13 @@ from aiops_triage_pipeline.contracts.enums import (
     Action,
     CriticalityTier,
     Environment,
-    EvidenceStatus,
 )
 from aiops_triage_pipeline.contracts.gate_input import GateInputV1
 from aiops_triage_pipeline.contracts.rulebook import GateEffect, GateSpec, RulebookV1
 from aiops_triage_pipeline.logging.setup import get_logger
 from aiops_triage_pipeline.models.evidence import EvidenceStageOutput
 from aiops_triage_pipeline.models.peak import PeakStageOutput
+from aiops_triage_pipeline.rule_engine import evaluate_gates
 
 GateScope = tuple[str, ...]
 _EXPECTED_GATE_ORDER: tuple[str, ...] = ("AG0", "AG1", "AG2", "AG3", "AG4", "AG5", "AG6")
@@ -82,49 +82,18 @@ def evaluate_rulebook_gates(
 
     state = _EvaluationState(current_action=gate_input.proposed_action)
     gate_specs = {gate.id: gate for gate in rulebook.gates}
+    early_gate_result = evaluate_gates(
+        gate_input=gate_input,
+        rulebook=rulebook,
+        initial_action=state.current_action,
+    )
+    state.current_action = early_gate_result.current_action
+    state.input_valid = early_gate_result.input_valid
+    state.env_cap_applied = early_gate_result.env_cap_applied
+    state.gate_reason_codes.extend(early_gate_result.gate_reason_codes)
 
-    for gate_id in _EXPECTED_GATE_ORDER:
+    for gate_id in _EXPECTED_GATE_ORDER[4:]:
         gate_spec = gate_specs[gate_id]
-
-        if gate_id == "AG0":
-            if not _ag0_is_valid(gate_input):
-                state.input_valid = False
-                _apply_gate_effect(
-                    state=state,
-                    effect=gate_spec.effect.on_fail,
-                    gate_id=gate_id,
-                )
-            continue
-
-        if gate_id == "AG1":
-            _evaluate_ag1(
-                gate_input=gate_input,
-                rulebook=rulebook,
-                gate_spec=gate_spec,
-                state=state,
-            )
-            continue
-
-        if gate_id == "AG2":
-            if _ag2_has_insufficient_evidence(gate_input):
-                _apply_gate_effect(
-                    state=state,
-                    effect=gate_spec.effect.on_fail,
-                    gate_id=gate_id,
-                )
-            continue
-
-        if gate_id == "AG3":
-            if (
-                gate_input.topic_role in rulebook.caps.paging_denied_topic_roles
-                and state.current_action == Action.PAGE
-            ):
-                _apply_gate_effect(
-                    state=state,
-                    effect=gate_spec.effect.on_fail,
-                    gate_id=gate_id,
-                )
-            continue
 
         if gate_id == "AG4":
             if _ACTION_PRIORITY[state.current_action] < _ACTION_PRIORITY[Action.TICKET]:
@@ -356,75 +325,6 @@ def _validate_rulebook_gate_order(gates: tuple[GateSpec, ...]) -> None:
         )
 
 
-def _ag0_is_valid(gate_input: GateInputV1) -> bool:
-    if not gate_input.action_fingerprint.strip():
-        return False
-    if not gate_input.findings:
-        return False
-    return True
-
-
-def _evaluate_ag1(
-    *,
-    gate_input: GateInputV1,
-    rulebook: RulebookV1,
-    gate_spec: GateSpec,
-    state: _EvaluationState,
-) -> None:
-    env_cap = _lookup_action_policy_entry(
-        mapping=rulebook.caps.max_action_by_env,
-        key=gate_input.env.value,
-        context="caps.max_action_by_env",
-        fallback_keys=_env_policy_fallback_keys(gate_input.env.value),
-    )
-    env_capped_action = _reduce_action(state.current_action, env_cap)
-    env_cap_reduced_action = env_capped_action != state.current_action
-    capped_action = env_capped_action
-    if gate_input.env == Environment.PROD:
-        prod_tier_cap = _lookup_action_policy_entry(
-            mapping=rulebook.caps.max_action_by_tier_in_prod,
-            key=gate_input.criticality_tier.value,
-            context="caps.max_action_by_tier_in_prod",
-        )
-        capped_action = _reduce_action(capped_action, prod_tier_cap)
-
-    cap_reduced_action = capped_action != state.current_action
-    if cap_reduced_action:
-        state.current_action = capped_action
-        if env_cap_reduced_action:
-            state.env_cap_applied = True
-        _apply_gate_effect(
-            state=state,
-            effect=gate_spec.effect.on_cap_applied,
-            gate_id="AG1",
-            mark_env_cap_applied=env_cap_reduced_action,
-        )
-
-
-def _ag2_has_insufficient_evidence(gate_input: GateInputV1) -> bool:
-    anomalous_findings = [finding for finding in gate_input.findings if finding.is_anomalous]
-    if not anomalous_findings:
-        return False
-
-    findings_to_check = [finding for finding in anomalous_findings if finding.is_primary]
-    if not findings_to_check:
-        findings_to_check = anomalous_findings
-
-    for finding in findings_to_check:
-        for required_evidence in finding.evidence_required:
-            status = gate_input.evidence_status_map.get(required_evidence, EvidenceStatus.UNKNOWN)
-            if status == EvidenceStatus.PRESENT:
-                continue
-            allowed_non_present_statuses = finding.allowed_non_present_statuses_by_evidence.get(
-                required_evidence,
-                (),
-            )
-            if status in allowed_non_present_statuses:
-                continue
-            return True
-    return False
-
-
 def _ag4_failure_reason_codes(*, gate_spec: GateSpec, gate_input: GateInputV1) -> tuple[str, ...]:
     reason_codes: list[str] = []
     found_confidence_check = False
@@ -478,31 +378,6 @@ def _ag4_reason_code_from_check(*, model_extra: Mapping[str, Any], default_code:
         if normalized:
             return normalized
     return default_code
-
-
-def _lookup_action_policy_entry(
-    *,
-    mapping: Mapping[str, str],
-    key: str,
-    context: str,
-    fallback_keys: tuple[str, ...] = (),
-) -> Action:
-    candidate_keys = (key,) + fallback_keys
-    for candidate_key in candidate_keys:
-        policy_value = mapping.get(candidate_key)
-        if policy_value is None:
-            continue
-        return _action_from_policy_value(policy_value, context=f"{context}[{candidate_key!r}]")
-    raise ValueError(f"Missing policy mapping for {context}[{key!r}]")
-
-
-def _env_policy_fallback_keys(env_key: str) -> tuple[str, ...]:
-    # Backward compatibility while policy artifacts migrate from `stage` to `uat`.
-    if env_key == "uat":
-        return ("stage",)
-    if env_key == "stage":
-        return ("uat",)
-    return ()
 
 
 def _action_from_policy_value(value: str, *, context: str) -> Action:

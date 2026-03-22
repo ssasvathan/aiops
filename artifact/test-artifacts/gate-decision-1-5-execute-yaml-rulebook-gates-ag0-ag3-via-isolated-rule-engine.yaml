@@ -1,0 +1,38 @@
+target:
+  type: story
+  id: "1-5-execute-yaml-rulebook-gates-ag0-ag3-via-isolated-rule-engine"
+  title: "Execute YAML Rulebook Gates AG0-AG3 via Isolated Rule Engine"
+
+decision:
+  value: PASS
+  date: "2026-03-22T16:50:44Z"
+  mode: deterministic
+  rationale: >-
+    P0 coverage is 100% (required), P1 coverage is 100% (PASS target 90%), and
+    overall coverage is 100% (minimum 80%), with no uncovered P0/P1 criteria.
+
+criteria:
+  p0_coverage_required_pct: 100
+  p0_coverage_actual_pct: 100
+  p1_coverage_target_pass_pct: 90
+  p1_coverage_minimum_pct: 80
+  p1_coverage_actual_pct: 100
+  overall_coverage_minimum_pct: 80
+  overall_coverage_actual_pct: 100
+  critical_gaps: 0
+  high_gaps: 0
+
+evidence:
+  phase1_matrix: "/tmp/tea-trace-coverage-matrix-2026-03-22T16-49-21Z.json"
+  traceability_report: "artifact/test-artifacts/traceability-report.md"
+  test_results:
+    command: "uv run pytest -q -rs tests/atdd/test_story_1_5_rule_engine.py tests/unit/rule_engine tests/unit/pipeline/stages/test_gating.py tests/unit/pipeline/stages/test_peak.py"
+    passed: 94
+    failed: 0
+    skipped: 0
+    duration_seconds: 1.51
+
+next_actions:
+  - "Proceed with normal release flow for this story scope."
+  - "Retain story-focused gating/rulebook pytest slice as a regression signal."
+  - "Run /bmad:tea:test-review for deeper quality/style assessment when needed."
