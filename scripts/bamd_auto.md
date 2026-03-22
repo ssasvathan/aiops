@@ -33,6 +33,10 @@ Execution model:
 Worker lifecycle and stuck detection rules:
 - Never send `interrupt=true` to an active worker unless a human explicitly asks for an interrupt.
 - Assume BMAD steps can be long-running. Do not treat a short timeout as failure.
+- Close worker sessions aggressively to prevent thread exhaustion:
+  - As soon as a worker reaches any terminal state (`completed`, explicit failure, capacity/limit error), close that worker immediately after capturing its result.
+  - Do not leave completed workers open while launching later steps.
+  - Keep at most one active/open worker per current step.
 - Default wait policy per step:
   - Use `wait` with long timeout windows (10 minutes each).
   - Keep waiting/polling until success/failure/capacity error is explicit.
@@ -111,16 +115,21 @@ Successful completion behavior:
 - When no non-`done` stories remain in the target epic, stop intentionally and report that execution is waiting for human retrospective / epic advancement.
 
 Git commit requirements:
-- After each story workflow execution attempt (success or failure stop), create exactly one git commit for changes produced by that execution.
-- Stage only files changed by that story execution. Do not include unrelated pre-existing workspace changes.
-- If no files changed for that execution, do not create an empty commit; report `no-op commit`.
+- Only after a successful story workflow execution, create exactly one git commit for changes produced by that story execution.
+- Do not create a commit for failed story executions. On failure, stop and report that no commit was created due to failure.
+- Commit timing is mandatory:
+  - Perform the story commit immediately after that story reaches successful terminal outcome.
+  - Do not defer or batch commits across multiple stories.
+  - Do not start selecting or executing the next story until the current successful story's commit step is finished (or explicitly reported as `no-op commit`).
+- Stage only files changed by that successful story execution. Do not include unrelated pre-existing workspace changes.
+- If no files changed for that successful execution, do not create an empty commit; report `no-op commit`.
 - Commit message must be explicit and structured:
   - Success: `bmad(<epic>/<story-id>): complete workflow and quality gates`
-  - Failure: `bmad(<epic>/<story-id>): stop at <failed-step> - <short-cause>`
 - Include in the final report:
   - commit hash
   - commit message
-  - whether commit was created or `no-op commit`
+  - whether commit was created or `no-op commit` (successful stories only)
+  - if failure stop occurred, explicitly state `commit not created due to failure`
 - If commit creation fails, stop immediately and report the failure.
 
 Final reporting format:
