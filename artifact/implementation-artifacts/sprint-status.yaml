@@ -48,14 +48,14 @@ development_status:
   1-5-execute-yaml-rulebook-gates-ag0-ag3-via-isolated-rule-engine: done
   1-6-complete-ag4-ag6-atomic-deduplication-and-decision-trail-output: done
   epic-1-retrospective: done
-  epic-2: in-progress
+  epic-2: done
   2-1-write-triage-casefiles-with-hash-chain-and-policy-stamps: done
   2-2-enforce-outbox-source-state-transitions: done
   2-3-publish-ready-outbox-rows-with-concurrency-safety: done
   2-4-dispatch-pagerduty-and-slack-actions-with-denylist-safety: done
   2-5-run-casefile-lifecycle-retention-purge: done
-  epic-2-retrospective: optional
-  epic-3: backlog
+  epic-2-retrospective: done
+  epic-3: in-progress
   3-1-implement-cold-path-kafka-consumer-runtime-mode: backlog
   3-2-reconstruct-case-context-and-build-deterministic-evidence-summary: backlog
   3-3-invoke-llm-for-all-cases-with-enriched-prompt-and-schema-validation: backlog
