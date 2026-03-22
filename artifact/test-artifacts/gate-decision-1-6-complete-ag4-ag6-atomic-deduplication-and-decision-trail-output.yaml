@@ -1,0 +1,40 @@
+target:
+  type: story
+  id: "1-6-complete-ag4-ag6-atomic-deduplication-and-decision-trail-output"
+  title: "Complete AG4-AG6, Atomic Deduplication, and Decision Trail Output"
+
+decision:
+  value: PASS
+  date: "2026-03-22T17:41:56Z"
+  mode: deterministic
+  rationale: >-
+    P0 coverage is 100% (required), P1 coverage is 100% (PASS target 90%), and
+    overall coverage is 100% (minimum 80%), with no uncovered P0/P1 criteria
+    and story-focused execution passing with zero failures/skips.
+
+criteria:
+  p0_coverage_required_pct: 100
+  p0_coverage_actual_pct: 100
+  p1_coverage_target_pass_pct: 90
+  p1_coverage_minimum_pct: 80
+  p1_coverage_actual_pct: 100
+  overall_coverage_minimum_pct: 80
+  overall_coverage_actual_pct: 100
+  critical_gaps: 0
+  high_gaps: 0
+
+evidence:
+  phase1_matrix: "/tmp/tea-trace-coverage-matrix-2026-03-22T17-41-56Z.json"
+  traceability_report: "artifact/test-artifacts/traceability-report.md"
+  traceability_matrix: "artifact/test-artifacts/traceability-matrix.md"
+  test_results:
+    command: "TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs tests/atdd/test_story_1_6_atomic_dedupe_and_decision_trail.py tests/unit/pipeline/stages/test_gating.py tests/unit/cache/test_dedupe.py tests/unit/pipeline/test_scheduler.py tests/unit/audit/test_decision_reproducibility.py tests/integration/test_degraded_modes.py tests/integration/test_pipeline_e2e.py"
+    passed: 164
+    failed: 0
+    skipped: 0
+    duration_seconds: 56.05
+
+next_actions:
+  - "Proceed with normal release flow for this story scope."
+  - "Replace fixed sleep in Redis TTL integration test with deterministic polling."
+  - "Split oversized test modules and run /bmad:tea:test-review for maintainability follow-up."

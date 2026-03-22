@@ -46,9 +46,6 @@ class GateInputContext:
 class GateDedupeStoreProtocol(Protocol):
     """Narrow AG5 dedupe seam to keep Stage 6 deterministic and testable."""
 
-    def is_duplicate(self, fingerprint: str) -> bool:
-        """Return True when the fingerprint is already active in the dedupe window."""
-
     def remember(self, fingerprint: str, action: Action) -> bool:
         """Persist fingerprint in dedupe window with the per-action TTL.
 
@@ -122,14 +119,16 @@ def evaluate_rulebook_gates(
                 )
                 continue
             try:
-                if dedupe_store.is_duplicate(gate_input.action_fingerprint):
+                registered = dedupe_store.remember(
+                    gate_input.action_fingerprint,
+                    state.current_action,
+                )
+                if not registered:
                     _apply_gate_effect(
                         state=state,
                         effect=gate_spec.effect.on_duplicate,
                         gate_id=gate_id,
                     )
-                else:
-                    dedupe_store.remember(gate_input.action_fingerprint, state.current_action)
             except Exception as exc:
                 logger.warning(
                     "ag5_dedupe_store_error",

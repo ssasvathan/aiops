@@ -93,21 +93,32 @@ def _rulebook_policy_for_tests(required: int = 5) -> RulebookV1:
 
 
 class _DedupeStore:
-    def __init__(self, *, duplicate: bool = False, fail_on_check: bool = False) -> None:
-        self.duplicate = duplicate
+    def __init__(
+        self,
+        *,
+        remember_result: bool = True,
+        fail_on_check: bool = False,
+        fail_on_remember: bool = False,
+    ) -> None:
+        self.remember_result = remember_result
         self.fail_on_check = fail_on_check
+        self.fail_on_remember = fail_on_remember
+        self.is_duplicate_calls = 0
         self.remembered: list[str] = []
         self.remembered_actions: list[Action] = []
 
     def is_duplicate(self, fingerprint: str) -> bool:  # noqa: ARG002
+        self.is_duplicate_calls += 1
         if self.fail_on_check:
             raise RuntimeError("dedupe store unavailable")
-        return self.duplicate
+        return not self.remember_result
 
     def remember(self, fingerprint: str, action: Action) -> bool:
+        if self.fail_on_remember:
+            raise RuntimeError("dedupe store unavailable")
         self.remembered.append(fingerprint)
         self.remembered_actions.append(action)
-        return True
+        return self.remember_result
 
 
 def _gate_input_for_eval() -> GateInputV1:
@@ -327,7 +338,7 @@ def test_evaluate_rulebook_gates_emits_complete_decision_and_ordered_gate_ids() 
     decision = evaluate_rulebook_gates(
         gate_input=_gate_input_for_eval(),
         rulebook=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     assert decision.gate_rule_ids == ("AG0", "AG1", "AG2", "AG3", "AG4", "AG5", "AG6")
@@ -386,7 +397,7 @@ def test_evaluate_rulebook_gates_fails_when_gate_order_is_invalid() -> None:
 
 
 def test_evaluate_rulebook_gates_ag5_duplicate_suppresses_action() -> None:
-    dedupe_store = _DedupeStore(duplicate=True)
+    dedupe_store = _DedupeStore(remember_result=False)
     decision = evaluate_rulebook_gates(
         gate_input=_gate_input_for_eval(),
         rulebook=load_rulebook_policy(),
@@ -395,14 +406,15 @@ def test_evaluate_rulebook_gates_ag5_duplicate_suppresses_action() -> None:
 
     assert decision.final_action == Action.OBSERVE
     assert "AG5_DUPLICATE_SUPPRESSED" in decision.gate_reason_codes
-    assert dedupe_store.remembered == []
+    assert dedupe_store.remembered == [decision.action_fingerprint]
+    assert dedupe_store.is_duplicate_calls == 0
 
 
 def test_evaluate_rulebook_gates_ag5_store_error_applies_safe_cap() -> None:
     decision = evaluate_rulebook_gates(
         gate_input=_gate_input_for_eval(),
         rulebook=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(fail_on_check=True),
+        dedupe_store=_DedupeStore(fail_on_remember=True),
     )
 
     assert decision.final_action == Action.NOTIFY
@@ -421,7 +433,7 @@ def test_evaluate_rulebook_gates_ag5_missing_store_applies_safe_cap() -> None:
 
 
 def test_evaluate_rulebook_gates_ag5_non_duplicate_keeps_action_and_records_fingerprint() -> None:
-    dedupe_store = _DedupeStore(duplicate=False)
+    dedupe_store = _DedupeStore(remember_result=True)
     decision = evaluate_rulebook_gates(
         gate_input=_gate_input_for_eval(),
         rulebook=load_rulebook_policy(),
@@ -436,7 +448,7 @@ def test_evaluate_rulebook_gates_ag6_sets_postmortem_without_action_escalation()
     decision = evaluate_rulebook_gates(
         gate_input=_gate_input_for_eval().model_copy(update={"proposed_action": Action.OBSERVE}),
         rulebook=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     assert decision.final_action == Action.OBSERVE
@@ -448,7 +460,7 @@ def test_evaluate_rulebook_gates_ag0_invalid_input_prevents_postmortem_trigger()
     decision = evaluate_rulebook_gates(
         gate_input=_gate_input_for_eval().model_copy(update={"action_fingerprint": "   "}),
         rulebook=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     assert decision.final_action == Action.OBSERVE
@@ -481,7 +493,7 @@ def test_evaluate_rulebook_gates_ag2_ignores_non_anomalous_primary_findings() ->
             }
         ),
         rulebook=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     assert decision.final_action == Action.PAGE
@@ -500,7 +512,7 @@ def test_evaluate_rulebook_gates_ag2_downgrades_for_all_insufficient_statuses(
             update={"evidence_status_map": {"topic_messages_in_per_sec": status}}
         ),
         rulebook=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     assert decision.final_action == Action.NOTIFY
@@ -527,7 +539,7 @@ def test_evaluate_rulebook_gates_ag2_allows_explicit_non_present_status_per_find
             }
         ),
         rulebook=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     assert decision.final_action == Action.PAGE
@@ -538,7 +550,7 @@ def test_evaluate_rulebook_gates_ag3_denies_page_for_source_topic() -> None:
     decision = evaluate_rulebook_gates(
         gate_input=_gate_input_for_eval().model_copy(update={"topic_role": "SOURCE_TOPIC"}),
         rulebook=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     assert decision.final_action == Action.TICKET
@@ -555,7 +567,7 @@ def test_evaluate_rulebook_gates_ag2_short_circuits_page_before_ag3_for_source_t
             }
         ),
         rulebook=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     assert decision.final_action == Action.NOTIFY
@@ -571,7 +583,7 @@ def test_evaluate_rulebook_gates_ag4_downgrades_when_not_sustained() -> None:
             update={"sustained": False, "diagnosis_confidence": 0.95}
         ),
         rulebook=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     assert decision.final_action == Action.OBSERVE
@@ -585,7 +597,7 @@ def test_evaluate_rulebook_gates_ag4_downgrades_when_confidence_is_below_floor()
             update={"sustained": True, "diagnosis_confidence": 0.59}
         ),
         rulebook=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     assert decision.final_action == Action.OBSERVE
@@ -599,7 +611,7 @@ def test_evaluate_rulebook_gates_ag4_records_deterministic_reason_order_when_bot
             update={"sustained": False, "diagnosis_confidence": 0.59}
         ),
         rulebook=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     assert decision.final_action == Action.OBSERVE
@@ -614,7 +626,7 @@ def test_evaluate_rulebook_gates_ag4_allows_boundary_confidence_of_point_six() -
             update={"sustained": True, "diagnosis_confidence": 0.6}
         ),
         rulebook=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     assert decision.final_action == Action.PAGE
@@ -645,7 +657,7 @@ def test_evaluate_rulebook_gates_ag4_applies_to_ticket_actions(
             }
         ),
         rulebook=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     assert decision.final_action == expected_action
@@ -684,7 +696,7 @@ def test_evaluate_rulebook_gates_uses_stage_alias_for_uat_env_cap() -> None:
     decision = evaluate_rulebook_gates(
         gate_input=_gate_input_for_eval().model_copy(update={"env": Environment.UAT}),
         rulebook=legacy_rulebook,
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     assert decision.env_cap_applied is True
@@ -698,7 +710,7 @@ def test_evaluate_rulebook_gates_keeps_env_cap_applied_false_for_tier_only_cap()
             update={"criticality_tier": CriticalityTier.TIER_1}
         ),
         rulebook=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     assert decision.final_action == Action.TICKET
@@ -744,7 +756,7 @@ def test_evaluate_rulebook_gates_ag1_matrix(
             }
         ),
         rulebook=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     assert decision.gate_rule_ids == ("AG0", "AG1", "AG2", "AG3", "AG4", "AG5", "AG6")
@@ -808,7 +820,7 @@ def test_evaluate_rulebook_gates_micro_benchmark_guardrail() -> None:
 
 
 def test_evaluate_rulebook_gates_ag5_remember_receives_current_action() -> None:
-    dedupe_store = _DedupeStore(duplicate=False)
+    dedupe_store = _DedupeStore(remember_result=True)
     decision = evaluate_rulebook_gates(
         gate_input=_gate_input_for_eval(),
         rulebook=load_rulebook_policy(),
@@ -821,7 +833,7 @@ def test_evaluate_rulebook_gates_ag5_remember_receives_current_action() -> None:
 
 
 def test_evaluate_rulebook_gates_ag5_remember_receives_capped_action_after_ag1() -> None:
-    dedupe_store = _DedupeStore(duplicate=False)
+    dedupe_store = _DedupeStore(remember_result=True)
     # DEV env caps PAGE → NOTIFY via AG1; AG5 remember should receive NOTIFY
     decision = evaluate_rulebook_gates(
         gate_input=_gate_input_for_eval().model_copy(
@@ -836,16 +848,31 @@ def test_evaluate_rulebook_gates_ag5_remember_receives_capped_action_after_ag1()
     assert dedupe_store.remembered_actions[0] == Action.NOTIFY
 
 
-def test_evaluate_rulebook_gates_ag5_skips_remember_on_duplicate() -> None:
-    dedupe_store = _DedupeStore(duplicate=True)
-    _ = evaluate_rulebook_gates(
+def test_evaluate_rulebook_gates_ag5_uses_atomic_claim_result() -> None:
+    dedupe_store = _DedupeStore(remember_result=False)
+    decision = evaluate_rulebook_gates(
         gate_input=_gate_input_for_eval(),
         rulebook=load_rulebook_policy(),
         dedupe_store=dedupe_store,
     )
 
-    assert dedupe_store.remembered == []
-    assert dedupe_store.remembered_actions == []
+    assert decision.final_action == Action.OBSERVE
+    assert "AG5_DUPLICATE_SUPPRESSED" in decision.gate_reason_codes
+    assert dedupe_store.remembered == [decision.action_fingerprint]
+    assert dedupe_store.is_duplicate_calls == 0
+
+
+def test_evaluate_rulebook_gates_ag5_does_not_call_is_duplicate_precheck() -> None:
+    dedupe_store = _DedupeStore(remember_result=True, fail_on_check=True)
+    decision = evaluate_rulebook_gates(
+        gate_input=_gate_input_for_eval(),
+        rulebook=load_rulebook_policy(),
+        dedupe_store=dedupe_store,
+    )
+
+    assert decision.final_action == Action.PAGE
+    assert "AG5_DEDUPE_STORE_ERROR" not in decision.gate_reason_codes
+    assert dedupe_store.is_duplicate_calls == 0
 
 
 # ---------------------------------------------------------------------------
@@ -886,7 +913,7 @@ def test_evaluate_rulebook_gates_ag6_predicate_does_not_fire_when_any_condition_
     decision = evaluate_rulebook_gates(
         gate_input=_gate_input_for_eval().model_copy(update=update_fields),
         rulebook=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     assert decision.postmortem_required is False
@@ -900,7 +927,7 @@ def test_evaluate_rulebook_gates_ag6_no_action_escalation_when_predicate_does_no
     decision = evaluate_rulebook_gates(
         gate_input=_gate_input_for_eval().model_copy(update={"peak": False}),
         rulebook=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     assert decision.final_action == Action.PAGE  # AG6 must not change final_action
@@ -959,12 +986,12 @@ def test_gate_effect_confidence_floor_is_noop_at_runtime() -> None:
     decision_with = evaluate_rulebook_gates(
         gate_input=gate_input,
         rulebook=_make_rulebook(ag2_with_floor),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
     decision_without = evaluate_rulebook_gates(
         gate_input=gate_input,
         rulebook=_make_rulebook(ag2_without_floor),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     assert decision_with.final_action == decision_without.final_action

@@ -72,16 +72,16 @@ class _FindingsRedis:
 
 
 class _DedupeStore:
-    def __init__(self, *, duplicate: bool = False) -> None:
-        self.duplicate = duplicate
+    def __init__(self, *, remember_result: bool = True) -> None:
+        self.remember_result = remember_result
         self.remembered: list[str] = []
 
     def is_duplicate(self, fingerprint: str) -> bool:  # noqa: ARG002
-        return self.duplicate
+        return not self.remember_result
 
     def remember(self, fingerprint: str, action: object) -> bool:  # noqa: ARG002
         self.remembered.append(fingerprint)
-        return True
+        return self.remember_result
 
 
 def _ttl_policy() -> RedisTtlPolicyV1:
@@ -830,7 +830,7 @@ def test_run_gate_decision_stage_cycle_returns_decisions_by_scope() -> None:
     decisions_by_scope = run_gate_decision_stage_cycle(
         gate_inputs_by_scope=gate_inputs_by_scope,
         rulebook_policy=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     assert scope in decisions_by_scope
@@ -881,7 +881,7 @@ def test_run_gate_decision_stage_cycle_applies_ag2_insufficient_evidence_downgra
     decisions_by_scope = run_gate_decision_stage_cycle(
         gate_inputs_by_scope=gate_inputs_by_scope,
         rulebook_policy=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     decision = decisions_by_scope[scope][0]
@@ -924,7 +924,7 @@ def test_run_gate_decision_stage_cycle_applies_ag3_source_topic_page_denial() ->
     decisions_by_scope = run_gate_decision_stage_cycle(
         gate_inputs_by_scope=gate_inputs_by_scope,
         rulebook_policy=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     decision = decisions_by_scope[scope][0]
@@ -967,7 +967,7 @@ def test_run_gate_decision_stage_cycle_applies_ag4_not_sustained_downgrade() -> 
     decisions_by_scope = run_gate_decision_stage_cycle(
         gate_inputs_by_scope=gate_inputs_by_scope,
         rulebook_policy=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     decision = decisions_by_scope[scope][0]
@@ -1010,7 +1010,7 @@ def test_run_gate_decision_stage_cycle_applies_ag4_low_confidence_downgrade() ->
     decisions_by_scope = run_gate_decision_stage_cycle(
         gate_inputs_by_scope=gate_inputs_by_scope,
         rulebook_policy=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     decision = decisions_by_scope[scope][0]
@@ -1053,7 +1053,7 @@ def test_run_gate_decision_stage_cycle_ag4_boundary_confidence_keeps_high_urgenc
     decisions_by_scope = run_gate_decision_stage_cycle(
         gate_inputs_by_scope=gate_inputs_by_scope,
         rulebook_policy=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     decision = decisions_by_scope[scope][0]
@@ -1109,7 +1109,7 @@ def test_run_gate_decision_stage_cycle_applies_ag4_to_ticket_actions(
     decisions_by_scope = run_gate_decision_stage_cycle(
         gate_inputs_by_scope=gate_inputs_by_scope,
         rulebook_policy=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     decision = decisions_by_scope[scope][0]
@@ -1154,7 +1154,7 @@ def test_run_gate_decision_stage_cycle_ag2_reduction_prevents_ag4_reason_codes()
     decisions_by_scope = run_gate_decision_stage_cycle(
         gate_inputs_by_scope=gate_inputs_by_scope,
         rulebook_policy=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     decision = decisions_by_scope[scope][0]
@@ -1198,7 +1198,7 @@ def test_run_gate_decision_stage_cycle_ag4_enforces_thresholds_after_ag3_reducti
     decisions_by_scope = run_gate_decision_stage_cycle(
         gate_inputs_by_scope=gate_inputs_by_scope,
         rulebook_policy=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     decision = decisions_by_scope[scope][0]
@@ -1242,7 +1242,7 @@ def test_run_gate_decision_stage_cycle_ag4_both_failures_preserve_reason_code_or
     decisions_by_scope = run_gate_decision_stage_cycle(
         gate_inputs_by_scope=gate_inputs_by_scope,
         rulebook_policy=load_rulebook_policy(),
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
     )
 
     decision = decisions_by_scope[scope][0]
@@ -1254,7 +1254,7 @@ def test_run_gate_decision_stage_cycle_ag4_both_failures_preserve_reason_code_or
 
 def test_run_gate_decision_stage_cycle_ag4_downgrade_keeps_downstream_semantics() -> None:
     scope = ("prod", "cluster-a", "orders")
-    dedupe_store = _DedupeStore(duplicate=True)
+    dedupe_store = _DedupeStore(remember_result=False)
     gate_inputs_by_scope = {
         scope: (
             GateInputV1(
@@ -1302,7 +1302,7 @@ def test_run_gate_decision_stage_cycle_ag4_downgrade_keeps_downstream_semantics(
 def test_run_gate_decision_stage_cycle_surfaces_ag1_caps_by_scope() -> None:
     dev_scope = ("dev", "cluster-a", "orders")
     prod_scope = ("prod", "cluster-a", "payments")
-    dedupe_store = _DedupeStore(duplicate=False)
+    dedupe_store = _DedupeStore(remember_result=True)
 
     decisions_by_scope = run_gate_decision_stage_cycle(
         gate_inputs_by_scope={
@@ -1406,7 +1406,7 @@ def test_run_gate_decision_stage_cycle_wires_dedupe_store() -> None:
         action_fingerprint="prod/cluster-a/stream-orders/SHARED_TOPIC/orders/VOLUME_DROP/TIER_0",
         peak=True,
     )
-    dedupe_store = _DedupeStore(duplicate=True)
+    dedupe_store = _DedupeStore(remember_result=False)
 
     decisions_by_scope = run_gate_decision_stage_cycle(
         gate_inputs_by_scope={scope: (gate_input,)},
@@ -1416,7 +1416,7 @@ def test_run_gate_decision_stage_cycle_wires_dedupe_store() -> None:
 
     assert decisions_by_scope[scope][0].final_action == Action.OBSERVE
     assert decisions_by_scope[scope][0].gate_reason_codes == ("AG5_DUPLICATE_SUPPRESSED",)
-    assert dedupe_store.remembered == []
+    assert dedupe_store.remembered == [gate_input.action_fingerprint]
 
 
 def test_run_gate_decision_stage_cycle_requires_explicit_rulebook_policy() -> None:
@@ -1500,7 +1500,7 @@ async def test_emit_redis_degraded_mode_events_no_op_when_store_is_none() -> Non
 
 async def test_emit_redis_degraded_mode_events_no_op_for_non_health_trackable_store() -> None:
     events = await emit_redis_degraded_mode_events(
-        dedupe_store=_DedupeStore(duplicate=False),
+        dedupe_store=_DedupeStore(remember_result=True),
         evaluation_time=datetime(2026, 3, 6, 12, 0, tzinfo=UTC),
         health_registry=HealthRegistry(),
     )
