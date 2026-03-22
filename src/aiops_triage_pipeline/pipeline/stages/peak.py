@@ -4,7 +4,7 @@ import math
 import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Mapping, Sequence
 
@@ -119,6 +119,23 @@ def collect_peak_stage_output(
     peak_context_by_scope: dict[PeakScope, PeakWindowContext] = {}
     for scope in sorted(known_scopes):
         profile = cached_profiles_by_scope.get(scope) if cached_profiles_by_scope else None
+        if profile is not None:
+            rejection_reason = _cached_profile_rejection_reason(
+                profile=profile,
+                policy=policy,
+                evaluation_time=effective_time,
+            )
+            if rejection_reason is not None:
+                logger.warning(
+                    "peak_cached_profile_rejected",
+                    event_type="peak.cached_profile_warning",
+                    scope=scope,
+                    reason=rejection_reason,
+                    computed_at=profile.computed_at.isoformat(),
+                    evaluation_time=effective_time.isoformat(),
+                    recompute_frequency=profile.recompute_frequency,
+                )
+                profile = None
         if profile is None:
             history_values = historical_windows_by_scope.get(scope, ())
             profile = _build_peak_profile(
@@ -271,6 +288,7 @@ def compute_sustained_status_by_key(
                 key_count=len(keys_to_evaluate),
                 workers=sustained_parallel_workers,
                 chunk_size=sustained_parallel_chunk_size,
+                exc_info=True,
             )
             sustained_by_key = _compute_sustained_status_serial(
                 keys_to_evaluate=keys_to_evaluate,
@@ -618,6 +636,39 @@ def _build_peak_profile(
         recompute_frequency=policy.recompute_frequency,
         computed_at=evaluation_time,
     )
+
+
+def _cached_profile_rejection_reason(
+    *,
+    profile: PeakProfile,
+    policy: PeakPolicyV1,
+    evaluation_time: datetime,
+) -> str | None:
+    if profile.source_metric != policy.metric:
+        return "source_metric_mismatch"
+    if profile.recompute_frequency != policy.recompute_frequency:
+        return "recompute_frequency_mismatch"
+    if not math.isfinite(profile.peak_threshold_value) or not math.isfinite(
+        profile.near_peak_threshold_value
+    ):
+        return "non_finite_threshold"
+    if profile.near_peak_threshold_value > profile.peak_threshold_value:
+        return "threshold_order_invalid"
+    if profile.computed_at.tzinfo is None:
+        return "computed_at_missing_timezone"
+
+    age = evaluation_time.astimezone(UTC) - profile.computed_at.astimezone(UTC)
+    if age > _recompute_interval(profile.recompute_frequency):
+        return "stale_profile"
+    return None
+
+
+def _recompute_interval(recompute_frequency: str) -> timedelta:
+    if recompute_frequency == "daily":
+        return timedelta(days=1)
+    if recompute_frequency == "weekly":
+        return timedelta(days=7)
+    return timedelta(days=30)
 
 
 def _classify_scope(

@@ -266,3 +266,73 @@ def test_peak_history_retention_bounds_depth_and_evicts_stale_scopes() -> None:
     )
     assert cycle3[("prod", "cluster-a", "inventory")] == (300.0, 305.0)
     assert ("prod", "cluster-a", "orders") not in cycle3
+
+
+def test_load_peak_baseline_windows_advances_retention_on_empty_scope_cycles(monkeypatch) -> None:
+    scope = ("prod", "cluster-a", "orders")
+    retention = __main__._PeakHistoryRetention(
+        max_depth=2,
+        max_scopes=2,
+        max_idle_cycles=1,
+    )
+    monkeypatch.setattr(
+        __main__,
+        "load_metric_baselines",
+        lambda **_: {scope: {"topic_messages_in_per_sec": 100.0}},
+    )
+
+    cycle1 = __main__._load_peak_baseline_windows(
+        redis_client=object(),
+        scopes=[scope],
+        history_retention=retention,
+    )
+    cycle2 = __main__._load_peak_baseline_windows(
+        redis_client=object(),
+        scopes=[],
+        history_retention=retention,
+    )
+    cycle3 = __main__._load_peak_baseline_windows(
+        redis_client=object(),
+        scopes=[],
+        history_retention=retention,
+    )
+
+    assert cycle1 == {scope: (100.0,)}
+    assert cycle2 == {}
+    assert cycle3 == {}
+    assert retention._cycle == 3
+    assert scope not in retention._history_by_scope
+
+
+def test_peak_history_retention_skips_over_cap_scopes_without_active_scope_churn() -> None:
+    retention = __main__._PeakHistoryRetention(
+        max_depth=2,
+        max_scopes=2,
+        max_idle_cycles=3,
+    )
+    scope_a = ("prod", "cluster-a", "a")
+    scope_b = ("prod", "cluster-a", "b")
+    scope_c = ("prod", "cluster-a", "c")
+
+    cycle1 = retention.update(
+        scopes=[scope_a, scope_b, scope_c],
+        baseline_values_by_scope={
+            scope_a: 1.0,
+            scope_b: 2.0,
+            scope_c: 3.0,
+        },
+    )
+    cycle2 = retention.update(
+        scopes=[scope_a, scope_b, scope_c],
+        baseline_values_by_scope={
+            scope_a: 10.0,
+            scope_b: 20.0,
+            scope_c: 30.0,
+        },
+    )
+
+    assert set(cycle1.keys()) == {scope_a, scope_b}
+    assert set(cycle2.keys()) == {scope_a, scope_b}
+    assert cycle2[scope_a] == (1.0, 10.0)
+    assert cycle2[scope_b] == (2.0, 20.0)
+    assert scope_c not in retention._history_by_scope

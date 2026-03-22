@@ -126,6 +126,7 @@ class _PeakHistoryRetention:
         active_scopes = sorted(set(scopes))
         active_scope_set = set(active_scopes)
         cap_evictions = 0
+        skipped_scope_count = 0
 
         for scope in active_scopes:
             history = self._history_by_scope.get(scope)
@@ -136,8 +137,11 @@ class _PeakHistoryRetention:
             if history is None:
                 while len(self._history_by_scope) >= self._max_scopes:
                     if self._evict_oldest_scope(protected_scopes=active_scope_set) is None:
+                        skipped_scope_count += 1
                         break
                     cap_evictions += 1
+                if len(self._history_by_scope) >= self._max_scopes:
+                    continue
                 history = deque(maxlen=self._max_depth)
                 self._history_by_scope[scope] = history
 
@@ -147,12 +151,13 @@ class _PeakHistoryRetention:
 
         stale_evictions = self._evict_stale_scopes()
         total_evictions = cap_evictions + stale_evictions
-        if cap_evictions > 0 and self._logger is not None:
+        if (cap_evictions > 0 or skipped_scope_count > 0) and self._logger is not None:
             self._logger.warning(
                 "peak_history_scope_cap_reached",
                 event_type="peak.history_retention_warning",
                 max_scopes=self._max_scopes,
                 evicted_scope_count=cap_evictions,
+                skipped_scope_count=skipped_scope_count,
             )
 
         record_pipeline_peak_history_scope_count(scope_count=len(self._history_by_scope))
@@ -174,7 +179,7 @@ class _PeakHistoryRetention:
         protected = protected_scopes or set()
         candidates = [scope for scope in self._last_seen_cycle_by_scope if scope not in protected]
         if not candidates:
-            candidates = list(self._last_seen_cycle_by_scope)
+            return None
         scope = min(candidates, key=lambda s: (self._last_seen_cycle_by_scope[s], s))
         self._history_by_scope.pop(scope, None)
         self._last_seen_cycle_by_scope.pop(scope, None)
@@ -591,7 +596,9 @@ def _load_peak_baseline_windows(
 ) -> dict[tuple[str, str, str], tuple[float, ...]]:
     """Hydrate peak historical windows from persisted per-scope baselines."""
     if not scopes:
-        return {}
+        if history_retention is None:
+            return {}
+        return history_retention.update(scopes=[], baseline_values_by_scope={})
     loaded_baselines_by_scope = load_metric_baselines(
         redis_client=redis_client,
         source="prometheus",

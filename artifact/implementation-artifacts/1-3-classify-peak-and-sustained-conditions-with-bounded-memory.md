@@ -1,6 +1,6 @@
 # Story 1.3: Classify Peak and Sustained Conditions with Bounded Memory
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -55,6 +55,13 @@ so that severity decisions reflect real conditions without memory or latency reg
   - [x] Add/extend unit tests for sustained parallel execution equivalence vs serial baseline.
   - [x] Add/extend tests for bounded-memory retention limits and eviction semantics.
   - [x] Run lint and full regression with zero skipped tests.
+
+### Review Follow-ups (AI)
+
+- [x] [AI-Review][MEDIUM] Reject stale or incompatible cached peak profiles before classification so thresholding does not run on outdated cache state. [src/aiops_triage_pipeline/pipeline/stages/peak.py]
+- [x] [AI-Review][MEDIUM] Ensure retention idle-cycle eviction still progresses during empty-scope cycles by advancing retention state on empty baseline loads. [src/aiops_triage_pipeline/__main__.py]
+- [x] [AI-Review][MEDIUM] Prevent active-scope churn under scope-cap pressure by skipping over-cap scopes when all retained scopes are active in the same cycle. [src/aiops_triage_pipeline/__main__.py]
+- [x] [AI-Review][LOW] Include exception context when parallel sustained computation falls back to serial execution for operability/debugging. [src/aiops_triage_pipeline/pipeline/stages/peak.py]
 
 ## Dev Notes
 
@@ -224,6 +231,7 @@ GPT-5 Codex
 - Added bounded in-process peak-history retention in hot-path scheduler loop with scope-cap/staleness eviction and metric emissions.
 - Added Stage 2 parallel/retention settings with validation and startup logging.
 - Added telemetry for sustained compute duration/key count and peak-history scope/evictions.
+- Applied code-review fixes for stale cached-profile rejection, empty-cycle retention progression, scope-cap churn prevention, and fallback exception logging.
 - Validation executed:
   - `uv run ruff check`
   - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
@@ -235,7 +243,8 @@ GPT-5 Codex
 - Added bounded in-process peak-history retention (depth/scopes/idle-cycle limits) with predictable eviction behavior.
 - Preserved Redis sustained continuity and degraded-mode handling while keeping existing D1 key behaviors unchanged.
 - Added observability for sustained compute and retention memory guardrails, including fallback/cap warning events.
-- Full lint and regression gates passed with zero skipped tests (`845 passed`, `0 skipped`).
+- Resolved review findings by enforcing cached-profile freshness checks, keeping retention eviction active on empty cycles, and eliminating active-scope cap churn.
+- Full lint and regression gates passed with zero skipped tests (`849 passed`, `0 skipped`).
 
 ### File List
 
@@ -253,8 +262,22 @@ GPT-5 Codex
 
 ## Story Completion Status
 
-- Story status: `review`
-- Completion note: Story 1.3 implementation complete with bounded sustained parallelism, bounded peak-history retention, and full quality-gate validation.
+- Story status: `done`
+- Completion note: Story 1.3 implementation and adversarial review fixes are complete; cached-profile validity and retention edge cases are covered by tests and full quality gates pass with zero skips.
+
+## Senior Developer Review (AI)
+
+- Review date: 2026-03-22
+- Outcome: Approved after fixes
+- Findings addressed:
+  - [x] Stale/incompatible cached peak profiles are rejected before use.
+  - [x] Retention aging/eviction now advances during empty-scope cycles.
+  - [x] Scope-cap handling no longer evicts currently active scopes in-cycle when capacity is saturated.
+  - [x] Parallel fallback warning now includes exception context (`exc_info=True`).
+- Verification:
+  - `uv run ruff check`
+  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
+  - Result: `849 passed`, `0 skipped`
 
 ## Change Log
 
@@ -262,3 +285,4 @@ GPT-5 Codex
 - 2026-03-22: Implemented Story 1.3 changes for Stage 2 sustained parallelization controls, bounded peak-history retention, and observability updates.
 - 2026-03-22: Added/updated unit tests for parallel sustained equivalence, cached-profile precedence, retention bounds, settings validation, and metrics instrumentation.
 - 2026-03-22: Ran lint and full Docker-enabled regression suite; all tests passed with zero skipped and story moved to review.
+- 2026-03-22: Resolved all review findings, revalidated with full zero-skip regression gate, and updated story/sprint status to done.

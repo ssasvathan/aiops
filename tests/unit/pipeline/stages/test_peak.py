@@ -26,6 +26,7 @@ from aiops_triage_pipeline.models.peak import (
     SustainedStatus,
     SustainedWindowState,
 )
+from aiops_triage_pipeline.pipeline.stages import peak as peak_stage
 from aiops_triage_pipeline.pipeline.stages.peak import (
     build_sustained_window_state_by_key,
     collect_peak_stage_output,
@@ -528,6 +529,36 @@ def test_collect_peak_stage_output_prefers_cached_profile_over_history_recompute
     assert classification.near_peak_threshold_value == 150.0
 
 
+def test_collect_peak_stage_output_recomputes_when_cached_profile_is_stale() -> None:
+    policy = _peak_policy_for_tests()
+    scope = ("prod", "cluster-a", "orders")
+    rows = [_row(scope, "topic_messages_in_per_sec", 120.0)]
+    history = {scope: [float(x) for x in range(1, 101)]}
+    stale_profile = PeakProfile(
+        scope=scope,
+        source_metric=policy.metric,
+        peak_threshold_value=200.0,
+        near_peak_threshold_value=150.0,
+        history_samples_count=100,
+        has_sufficient_history=True,
+        recompute_frequency="weekly",
+        computed_at=datetime(2026, 2, 20, 12, 0, tzinfo=UTC),
+    )
+
+    output = collect_peak_stage_output(
+        rows=rows,
+        historical_windows_by_scope=history,
+        cached_profiles_by_scope={scope: stale_profile},
+        peak_policy=policy,
+        evaluation_time=datetime(2026, 3, 2, 12, 5, tzinfo=UTC),
+    )
+
+    classification = output.classifications_by_scope[scope]
+    assert classification.state == "PEAK"
+    assert classification.peak_threshold_value == 95.0
+    assert classification.near_peak_threshold_value == 90.0
+
+
 def test_compute_sustained_status_by_key_parallel_matches_serial() -> None:
     rulebook = _rulebook_policy_for_tests(required=5)
     evaluation_time = datetime(2026, 3, 2, 12, 0, tzinfo=UTC)
@@ -576,6 +607,76 @@ def test_compute_sustained_status_by_key_parallel_matches_serial() -> None:
 
     assert parallel == serial
     assert list(parallel.keys()) == sorted(parallel.keys())
+
+
+def test_compute_sustained_status_by_key_parallel_fallback_logs_exc_info(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rulebook = _rulebook_policy_for_tests(required=2)
+    evaluation_time = datetime(2026, 3, 2, 12, 0, tzinfo=UTC)
+    findings = [
+        _finding(scope=("prod", "cluster-a", "orders"), anomaly_family="VOLUME_DROP"),
+        _finding(scope=("prod", "cluster-a", "payments"), anomaly_family="VOLUME_DROP"),
+    ]
+    evidence_status_map_by_scope = {
+        ("prod", "cluster-a", "orders"): {
+            "topic_messages_in_per_sec": EvidenceStatus.PRESENT,
+            "total_produce_requests_per_sec": EvidenceStatus.PRESENT,
+        },
+        ("prod", "cluster-a", "payments"): {
+            "topic_messages_in_per_sec": EvidenceStatus.PRESENT,
+            "total_produce_requests_per_sec": EvidenceStatus.PRESENT,
+        },
+    }
+
+    class _RaisingFuture:
+        def result(self):  # noqa: ANN201
+            raise RuntimeError("boom")
+
+    class _RaisingExecutor:
+        def __init__(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
+            return None
+
+        def __enter__(self):  # noqa: ANN201
+            return self
+
+        def __exit__(self, exc_type, exc, tb) -> bool:  # noqa: ANN001, ANN201
+            return False
+
+        def submit(self, fn, *args, **kwargs):  # noqa: ANN001, ANN002, ANN003, ANN201
+            return _RaisingFuture()
+
+    warnings: list[tuple[tuple, dict]] = []
+
+    class _Logger:
+        def warning(self, *args, **kwargs) -> None:  # noqa: ANN002, ANN003
+            warnings.append((args, kwargs))
+
+    monkeypatch.setattr(peak_stage, "ThreadPoolExecutor", _RaisingExecutor)
+    result = compute_sustained_status_by_key(
+        anomaly_findings=findings,
+        prior_window_state_by_key={},
+        required_buckets=rulebook.sustained_intervals_required,
+        evaluation_interval_minutes=rulebook.evaluation_interval_minutes,
+        evaluation_time=evaluation_time,
+        evidence_status_map_by_scope=evidence_status_map_by_scope,
+        logger=_Logger(),
+        sustained_parallel_min_keys=1,
+        sustained_parallel_workers=4,
+        sustained_parallel_chunk_size=1,
+    )
+
+    assert sorted(result.keys()) == [
+        ("prod", "cluster-a", "topic:orders", "VOLUME_DROP"),
+        ("prod", "cluster-a", "topic:payments", "VOLUME_DROP"),
+    ]
+    fallback_warnings = [
+        warning
+        for warning in warnings
+        if warning[0] and warning[0][0] == "sustained_parallel_fallback_to_serial"
+    ]
+    assert fallback_warnings
+    assert fallback_warnings[0][1]["exc_info"] is True
 
 
 def _parse_logs(stream: io.StringIO) -> list[dict]:
