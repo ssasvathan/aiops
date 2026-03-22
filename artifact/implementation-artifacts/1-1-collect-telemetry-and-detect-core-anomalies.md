@@ -1,6 +1,6 @@
 # Story 1.1: Collect Telemetry and Detect Core Anomalies
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -207,7 +207,7 @@ GPT-5 Codex
 - Updated integration smoke coverage to use robust connectivity-failure classification instead of fragile message matching.
 - Strengthened integration smoke validation with full sample-shape assertions and fallback self-metric liveness checks when contract series is empty.
 - Added fallback container guardrails for offline/air-gapped environments with configurable image override and explicit pre-pull guidance.
-- Story moved back to `review` after resolving all medium/low review findings.
+- Story marked `done` after resolving all medium/low review findings and re-running quality gates.
 
 ### File List
 
@@ -222,7 +222,7 @@ GPT-5 Codex
 
 - Reviewer: Sas
 - Date: 2026-03-22
-- Outcome: Changes Requested
+- Outcome: Approved
 
 ### Git vs Story Validation
 
@@ -255,8 +255,9 @@ GPT-5 Codex
 - 2026-03-22: Dev-story implementation completed; enforced zero-skip regression gate, added non-skipping Prometheus integration fallback, and advanced story to review.
 - 2026-03-22: Senior developer adversarial review completed; 2 MEDIUM and 2 LOW findings recorded, follow-up action items added, story moved to in-progress.
 - 2026-03-22: Resolved all medium/low review findings; hardened integration smoke fallback behavior/assertions and clarified implementation traceability.
+- 2026-03-22: Story status set to done and sprint tracking synced after user approval.
 
 ## Story Completion Status
 
-- Story status: `review`
-- Completion note: Medium/low review findings resolved and follow-up checklist completed; ready for re-review.
+- Story status: `done`
+- Completion note: Medium/low review findings resolved, follow-up checklist completed, and quality gates passing.
