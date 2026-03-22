@@ -52,6 +52,17 @@ def _notify(client: SlackClient, denylist: DenylistV1 | None = None) -> None:
     )
 
 
+def _notify_regular(client: SlackClient, denylist: DenylistV1 | None = None) -> None:
+    client.send_notify_notification(
+        case_id=_CASE_ID,
+        action_fingerprint="fp-notify-001",
+        routing_key=_ROUTING_KEY,
+        support_channel=_SUPPORT_CHANNEL,
+        reason_codes=("ENV_CAP_OK", "TIER_CAP_OK"),
+        denylist=denylist or _make_empty_denylist(),
+    )
+
+
 def _make_live_response() -> MagicMock:
     mock_resp = MagicMock()
     mock_resp.read.return_value = b"ok"
@@ -219,6 +230,8 @@ def test_live_mode_http_error_is_caught_logged_not_propagated() -> None:
     ]
     assert error_entries, f"Expected postmortem_notification_send_failed warning; got: {cap_logs}"
     assert error_entries[0].get("log_level") == "warning"
+    assert error_entries[0].get("error_type") == "OSError"
+    assert "error" not in error_entries[0]
 
 
 # ---------------------------------------------------------------------------
@@ -326,6 +339,85 @@ def test_live_mode_denylist_field_denied_absent_from_webhook_payload() -> None:
     assert _CASE_ID not in body["text"], (
         f"Expected denied case_id to be absent from webhook text; got: {body['text']}"
     )
+    assert "[redacted]" in body["text"]
+
+
+def test_notify_off_mode_silent_drop() -> None:
+    client = _make_client(mode=SlackIntegrationMode.OFF)
+    with structlog.testing.capture_logs() as cap_logs:
+        with patch(_URLOPEN_PATH) as mock_urlopen:
+            _notify_regular(client)
+            mock_urlopen.assert_not_called()
+    assert cap_logs == []
+
+
+def test_notify_log_mode_emits_structured_log_no_http() -> None:
+    client = _make_client(mode=SlackIntegrationMode.LOG)
+    with structlog.testing.capture_logs() as cap_logs:
+        with patch(_URLOPEN_PATH) as mock_urlopen:
+            _notify_regular(client)
+            mock_urlopen.assert_not_called()
+    entry = next(e for e in cap_logs if e.get("event") == "notify_notification_dispatch")
+    assert entry.get("case_id") == _CASE_ID
+    assert entry.get("action_fingerprint") == "fp-notify-001"
+    assert entry.get("slack_mode") == SlackIntegrationMode.LOG.value
+    assert entry.get("outcome") == "dispatch_attempted"
+
+
+def test_notify_mock_mode_increments_send_count() -> None:
+    client = _make_client(mode=SlackIntegrationMode.MOCK)
+    with patch(_URLOPEN_PATH) as mock_urlopen:
+        _notify_regular(client)
+        mock_urlopen.assert_not_called()
+    assert client.mock_send_count == 1
+
+
+def test_notify_live_mode_sends_payload() -> None:
+    client = _make_client(mode=SlackIntegrationMode.LIVE, webhook_url=_WEBHOOK_URL)
+    with patch(_URLOPEN_PATH, return_value=_make_live_response()) as mock_urlopen:
+        _notify_regular(client)
+    req = mock_urlopen.call_args[0][0]
+    body = json.loads(req.data.decode())
+    assert "AIOps NOTIFY" in body["text"]
+    assert _CASE_ID in body["text"]
+
+
+def test_notify_live_mode_missing_webhook_logs_fallback() -> None:
+    client = _make_client(mode=SlackIntegrationMode.LIVE, webhook_url=None)
+    with structlog.testing.capture_logs() as cap_logs:
+        with patch(_URLOPEN_PATH) as mock_urlopen:
+            _notify_regular(client)
+            mock_urlopen.assert_not_called()
+    warning = next(e for e in cap_logs if e.get("event") == "notify_notification_no_webhook")
+    assert warning.get("case_id") == _CASE_ID
+    assert warning.get("action_fingerprint") == "fp-notify-001"
+    assert warning.get("outcome") == "no_webhook"
+
+
+def test_notify_live_mode_http_error_logs_fallback_without_raise() -> None:
+    client = _make_client(mode=SlackIntegrationMode.LIVE, webhook_url=_WEBHOOK_URL)
+    with structlog.testing.capture_logs() as cap_logs:
+        with patch(_URLOPEN_PATH, side_effect=OSError("connection refused")):
+            _notify_regular(client)
+    warning = next(e for e in cap_logs if e.get("event") == "notify_notification_send_failed")
+    assert warning.get("outcome") == "send_failed"
+    assert warning.get("action_fingerprint") == "fp-notify-001"
+    assert warning.get("failure_reason") == "webhook_post_failed"
+    assert warning.get("error_type") == "OSError"
+
+
+def test_notify_live_mode_denylist_redacts_case_id_in_webhook_payload() -> None:
+    denylist = DenylistV1(
+        denylist_version="test-deny-case-id",
+        denied_field_names=("case_id",),
+        denied_value_patterns=(),
+    )
+    client = _make_client(mode=SlackIntegrationMode.LIVE, webhook_url=_WEBHOOK_URL)
+    with patch(_URLOPEN_PATH, return_value=_make_live_response()) as mock_urlopen:
+        _notify_regular(client, denylist=denylist)
+    req = mock_urlopen.call_args[0][0]
+    body = json.loads(req.data.decode())
+    assert _CASE_ID not in body["text"]
     assert "[redacted]" in body["text"]
 
 

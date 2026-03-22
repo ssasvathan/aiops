@@ -1,0 +1,21 @@
+{
+  "tdd_phase": "RED",
+  "total_tests": 3,
+  "api_tests": 3,
+  "e2e_tests": 0,
+  "all_tests_skipped": false,
+  "expected_to_fail": true,
+  "fixtures_created": 1,
+  "acceptance_criteria_covered": [
+    "AC1: PAGE/NOTIFY outbound dispatch from decision context",
+    "AC1: denylist enforcement on outbound payloads",
+    "AC2: Slack notify fallback/non-blocking dispatch contract"
+  ],
+  "knowledge_fragments_used": [
+    "test-levels-framework",
+    "test-quality",
+    "data-factories"
+  ],
+  "subagent_execution": "SEQUENTIAL (backend adaptation)",
+  "performance_gain": "baseline (no parallel speedup)"
+}

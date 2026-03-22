@@ -1742,4 +1742,5 @@ def test_slack_client_live_mode_delivery_failure_logs_warning_and_does_not_raise
         e for e in log_entries if e.get("event") == "degraded_mode_slack_send_failed"
     ]
     assert len(failure_entries) == 1
-    assert "connection refused" in failure_entries[0]["error"]
+    assert failure_entries[0]["error_type"] == "OSError"
+    assert "error" not in failure_entries[0]

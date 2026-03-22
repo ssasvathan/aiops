@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import structlog.testing
 
+from aiops_triage_pipeline.denylist.loader import DenylistV1
 from aiops_triage_pipeline.integrations.pagerduty import (
     PagerDutyClient,
     PagerDutyIntegrationMode,
@@ -32,12 +33,21 @@ def _make_client(
     return PagerDutyClient(mode=mode, pd_routing_key=pd_routing_key)
 
 
-def _trigger(client: PagerDutyClient) -> None:
+def _make_empty_denylist() -> DenylistV1:
+    return DenylistV1(
+        denylist_version="test-v0",
+        denied_field_names=(),
+        denied_value_patterns=(),
+    )
+
+
+def _trigger(client: PagerDutyClient, denylist: DenylistV1 | None = None) -> None:
     client.send_page_trigger(
         case_id=_CASE_ID,
         action_fingerprint=_FINGERPRINT,
         routing_key=_ROUTING_KEY,
         summary=_SUMMARY,
+        denylist=denylist,
     )
 
 
@@ -254,3 +264,32 @@ def test_dedup_key_stability_across_calls() -> None:
     assert captured_bodies[0]["dedup_key"] == _FINGERPRINT
     assert captured_bodies[1]["dedup_key"] == _FINGERPRINT
     assert captured_bodies[0]["dedup_key"] == captured_bodies[1]["dedup_key"]
+
+
+def test_live_mode_applies_denylist_to_payload_custom_details() -> None:
+    denylist = DenylistV1(
+        denylist_version="deny-case-id",
+        denied_field_names=("case_id", "action_fingerprint"),
+        denied_value_patterns=(),
+    )
+    client = _make_client(mode=PagerDutyIntegrationMode.LIVE)
+    with patch(_URLOPEN_PATH, return_value=_make_live_response()) as mock_urlopen:
+        _trigger(client, denylist=denylist)
+    req = mock_urlopen.call_args[0][0]
+    body: dict = json.loads(req.data.decode())
+    assert body["payload"]["custom_details"]["case_id"] == "[redacted]"
+    assert body["payload"]["custom_details"]["action_fingerprint"] == "[redacted]"
+    assert body["dedup_key"] == _FINGERPRINT
+
+
+def test_log_mode_applies_denylist_to_dispatch_log_fields() -> None:
+    denylist = DenylistV1(
+        denylist_version="deny-summary",
+        denied_field_names=("summary",),
+        denied_value_patterns=(),
+    )
+    client = _make_client(mode=PagerDutyIntegrationMode.LOG)
+    with structlog.testing.capture_logs() as cap_logs:
+        _trigger(client, denylist=denylist)
+    entry = next(e for e in cap_logs if e.get("event") == "pd_page_trigger_dispatch")
+    assert "summary" not in entry or entry["summary"] == "[redacted]"

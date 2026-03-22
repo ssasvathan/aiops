@@ -1,0 +1,12 @@
+{
+  "success": true,
+  "subagent": "atdd-e2e-tests",
+  "tests": [],
+  "fixture_needs": [],
+  "knowledge_fragments_used": [
+    "test-levels-framework"
+  ],
+  "test_count": 0,
+  "tdd_phase": "RED",
+  "summary": "No E2E tests generated because detected stack is backend (Python service, no UI/browser surface)."
+}

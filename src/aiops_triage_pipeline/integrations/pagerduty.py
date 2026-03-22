@@ -8,6 +8,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
+from aiops_triage_pipeline.denylist.enforcement import apply_denylist
+from aiops_triage_pipeline.denylist.loader import DenylistV1
 from aiops_triage_pipeline.logging.setup import get_logger
 
 _PD_EVENTS_V2_URL = "https://events.pagerduty.com/v2/enqueue"
@@ -75,6 +77,7 @@ class PagerDutyClient:
         action_fingerprint: str,
         routing_key: str,
         summary: str,
+        denylist: DenylistV1 | None = None,
     ) -> None:
         """Send a PAGE trigger to PagerDuty according to the configured integration mode.
 
@@ -97,14 +100,34 @@ class PagerDutyClient:
             return
 
         logger = get_logger("integrations.pagerduty")
+        sanitized = apply_denylist(
+            {
+                "case_id": case_id,
+                "action_fingerprint": action_fingerprint,
+                "topology_routing_key": routing_key,
+                "summary": summary,
+            },
+            denylist,
+        ) if denylist is not None else {
+            "case_id": case_id,
+            "action_fingerprint": action_fingerprint,
+            "topology_routing_key": routing_key,
+            "summary": summary,
+        }
+        sanitized_case_id = str(sanitized.get("case_id", "[redacted]"))
+        sanitized_action_fingerprint = str(sanitized.get("action_fingerprint", "[redacted]"))
+        sanitized_topology_routing_key = str(
+            sanitized.get("topology_routing_key", "[redacted]")
+        )
+        sanitized_summary = str(sanitized.get("summary", "[redacted]"))
         logger.info(
             "pd_page_trigger_dispatch",
             event_type="integrations.pagerduty.trigger",
-            case_id=case_id,
-            action_fingerprint=action_fingerprint,
-            topology_routing_key=routing_key,
+            case_id=sanitized_case_id,
+            action_fingerprint=sanitized_action_fingerprint,
+            topology_routing_key=sanitized_topology_routing_key,
             mode=self._mode.value,
-            summary=summary,
+            summary=sanitized_summary,
         )
 
         if self._mode == PagerDutyIntegrationMode.LOG:
@@ -116,10 +139,11 @@ class PagerDutyClient:
 
         # LIVE mode — attempt PD Events V2 delivery
         self._send_live(
-            case_id=case_id,
+            case_id=sanitized_case_id,
             action_fingerprint=action_fingerprint,
-            routing_key=routing_key,
-            summary=summary,
+            sanitized_action_fingerprint=sanitized_action_fingerprint,
+            routing_key=sanitized_topology_routing_key,
+            summary=sanitized_summary,
             logger=logger,
         )
 
@@ -128,6 +152,7 @@ class PagerDutyClient:
         *,
         case_id: str,
         action_fingerprint: str,
+        sanitized_action_fingerprint: str,
         routing_key: str,
         summary: str,
         logger: object,
@@ -155,7 +180,7 @@ class PagerDutyClient:
                 "custom_details": {
                     "case_id": case_id,
                     "topology_routing_key": routing_key,
-                    "action_fingerprint": action_fingerprint,
+                    "action_fingerprint": sanitized_action_fingerprint,
                 },
             },
         )
@@ -179,7 +204,7 @@ class PagerDutyClient:
                     "pd_page_trigger_sent",
                     event_type="integrations.pagerduty.trigger_sent",
                     case_id=case_id,
-                    action_fingerprint=action_fingerprint,
+                    action_fingerprint=sanitized_action_fingerprint,
                     action="trigger",
                     mode=self._mode.value,
                     pd_incident_id=pd_incident_id,
@@ -193,10 +218,10 @@ class PagerDutyClient:
                 "pd_page_trigger_send_failed",
                 event_type="integrations.pagerduty.send_error",
                 case_id=case_id,
-                action_fingerprint=action_fingerprint,
+                action_fingerprint=sanitized_action_fingerprint,
                 action="trigger",
                 mode=self._mode.value,
                 latency_ms=latency_ms,
-                error=str(exc),
+                error_type=type(exc).__name__,
                 outcome="error",
             )

@@ -147,10 +147,25 @@ def test_ticket_action_does_not_call_pd() -> None:
 
 
 def test_notify_action_does_not_call_pd() -> None:
-    """final_action=NOTIFY → PD adapter not called."""
+    """final_action=NOTIFY → PD adapter not called, Slack notify path called."""
     pd_client = _make_mock_pd_client()
-    _dispatch(decision=_make_decision(Action.NOTIFY), pd_client=pd_client)
+    slack_client = MagicMock(spec=SlackClient)
+    denylist = _make_empty_denylist()
+    _dispatch(
+        decision=_make_decision(Action.NOTIFY),
+        pd_client=pd_client,
+        slack_client=slack_client,
+        denylist=denylist,
+    )
     pd_client.send_page_trigger.assert_not_called()
+    slack_client.send_notification.assert_called_once()
+    kwargs = slack_client.send_notification.call_args.kwargs
+    assert kwargs["case_id"] == _CASE_ID
+    assert kwargs["action_fingerprint"] == _FINGERPRINT
+    assert kwargs["routing_key"] == _TOPOLOGY_ROUTING_KEY
+    assert kwargs["support_channel"] is None
+    assert kwargs["reason_codes"] == ("ENV_CAP_OK", "TIER_CAP_OK")
+    assert kwargs["denylist"] is denylist
 
 
 def test_observe_action_does_not_call_pd() -> None:
@@ -183,6 +198,25 @@ def test_non_page_action_with_no_routing_context_does_not_call_pd() -> None:
     pd_client = _make_mock_pd_client()
     _dispatch(decision=_make_decision(Action.OBSERVE), routing_context=None, pd_client=pd_client)
     pd_client.send_page_trigger.assert_not_called()
+
+
+def test_notify_action_with_no_routing_context_uses_unknown_and_support_channel_none() -> None:
+    """routing_context=None + NOTIFY → Slack notify uses unknown key and support_channel=None."""
+    pd_client = _make_mock_pd_client()
+    slack_client = MagicMock(spec=SlackClient)
+
+    _dispatch(
+        decision=_make_decision(Action.NOTIFY),
+        routing_context=None,
+        pd_client=pd_client,
+        slack_client=slack_client,
+    )
+
+    pd_client.send_page_trigger.assert_not_called()
+    slack_client.send_notification.assert_called_once()
+    kwargs = slack_client.send_notification.call_args.kwargs
+    assert kwargs["routing_key"] == "unknown"
+    assert kwargs["support_channel"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -275,7 +309,7 @@ def test_page_with_postmortem_required_calls_both_pd_and_slack() -> None:
 
 
 def test_notify_with_postmortem_required_calls_slack_not_pd() -> None:
-    """final_action=NOTIFY with postmortem_required=True → PD NOT called, Slack IS called."""
+    """final_action=NOTIFY + postmortem_required=True → notify + postmortem Slack paths."""
     decision = _make_decision(
         Action.NOTIFY,
         postmortem_required=True,
@@ -287,6 +321,7 @@ def test_notify_with_postmortem_required_calls_slack_not_pd() -> None:
     _dispatch(decision=decision, pd_client=pd_client, slack_client=slack_client)
 
     pd_client.send_page_trigger.assert_not_called()
+    slack_client.send_notification.assert_called_once()
     slack_client.send_postmortem_notification.assert_called_once()
 
 

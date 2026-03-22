@@ -1,0 +1,38 @@
+{
+  "success": true,
+  "subagent": "atdd-api-tests",
+  "tests": [
+    {
+      "file": "tests/atdd/test_story_2_4_dispatch_pagerduty_and_slack_red_phase.py",
+      "description": "Backend acceptance tests for dispatch notify route + PagerDuty denylist boundary",
+      "expected_to_fail": true,
+      "acceptance_criteria_covered": [
+        "AC1: PAGE and NOTIFY dispatch payload generation from decision context",
+        "AC1: denylist filtering at outbound boundaries",
+        "AC2: Slack NOTIFY path/fallback contract for non-blocking dispatch"
+      ],
+      "priority_coverage": {
+        "P0": 2,
+        "P1": 1,
+        "P2": 0,
+        "P3": 0
+      },
+      "test_names": [
+        "test_p0_notify_action_dispatches_regular_slack_notification_with_denylist",
+        "test_p0_pagerduty_live_payload_is_denylist_sanitized_before_outbound_send",
+        "test_p1_slack_client_exposes_regular_notify_api"
+      ]
+    }
+  ],
+  "fixture_needs": [
+    "tests/atdd/fixtures/story_2_4_test_data.py"
+  ],
+  "knowledge_fragments_used": [
+    "test-levels-framework",
+    "test-quality",
+    "data-factories"
+  ],
+  "test_count": 3,
+  "tdd_phase": "RED",
+  "summary": "Generated 3 failing backend acceptance tests for Story 2.4 dispatch and denylist safety"
+}

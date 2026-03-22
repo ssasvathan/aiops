@@ -12,6 +12,11 @@ from aiops_triage_pipeline.logging.setup import get_logger
 from aiops_triage_pipeline.models.events import DegradedModeEvent
 
 
+def _error_type(exc: Exception) -> str:
+    """Return a stable, non-sensitive error tag for structured logs."""
+    return type(exc).__name__
+
+
 class SlackIntegrationMode(str, Enum):
     """Slack notification mode (mirrors LocalDev integration mode pattern).
 
@@ -179,8 +184,112 @@ class SlackClient:
             logger.warning(
                 "postmortem_notification_send_failed",
                 slack_mode=self._mode.value,
-                error=str(exc),
+                error_type=_error_type(exc),
             )
+
+    def send_notification(
+        self,
+        *,
+        case_id: str,
+        action_fingerprint: str,
+        routing_key: str,
+        support_channel: str | None,
+        reason_codes: tuple[str, ...],
+        denylist: DenylistV1,
+    ) -> None:
+        """Dispatch a regular NOTIFY action with denylist-safe payloads.
+
+        In OFF mode, no output is emitted.
+        In LOG/MOCK modes, a structured dispatch log is emitted and HTTP is skipped.
+        In LIVE mode, dispatch log is emitted and webhook delivery is attempted.
+        Failures and unavailability always degrade to structured warning logs.
+        """
+        if self._mode == SlackIntegrationMode.OFF:
+            return
+
+        logger = get_logger("integrations.slack")
+        raw_fields: dict[str, Any] = {
+            "case_id": case_id,
+            "action_fingerprint": action_fingerprint,
+            "routing_key": routing_key,
+            "support_channel": support_channel,
+            "reason_codes": list(reason_codes),
+        }
+        sanitized = apply_denylist(raw_fields, denylist)
+        logger.info(
+            "notify_notification_dispatch",
+            slack_mode=self._mode.value,
+            outcome="dispatch_attempted",
+            **sanitized,
+        )
+
+        if self._mode == SlackIntegrationMode.LOG:
+            return
+
+        if self._mode == SlackIntegrationMode.MOCK:
+            self._mock_send_count += 1
+            return
+
+        if not self._webhook_url:
+            logger.warning(
+                "notify_notification_no_webhook",
+                slack_mode=self._mode.value,
+                case_id=sanitized.get("case_id", "[redacted]"),
+                action_fingerprint=sanitized.get("action_fingerprint", "[redacted]"),
+                outcome="no_webhook",
+                failure_reason="missing_webhook_url",
+            )
+            return
+
+        payload = {
+            "text": (
+                ":information_source: *AIOps NOTIFY*\n"
+                f"Case: `{sanitized.get('case_id', '[redacted]')}`\n"
+                f"Fingerprint: `{sanitized.get('action_fingerprint', '[redacted]')}`\n"
+                f"Routing: `{sanitized.get('routing_key', '[redacted]')}`\n"
+                f"Support Channel: {sanitized.get('support_channel') or 'N/A'}\n"
+                f"Reason Codes: {sanitized.get('reason_codes', [])}"
+            )
+        }
+        req = urllib.request.Request(
+            self._webhook_url,
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=5):
+                pass
+        except Exception as exc:
+            logger.warning(
+                "notify_notification_send_failed",
+                slack_mode=self._mode.value,
+                case_id=sanitized.get("case_id", "[redacted]"),
+                action_fingerprint=sanitized.get("action_fingerprint", "[redacted]"),
+                outcome="send_failed",
+                failure_reason="webhook_post_failed",
+                error_type=_error_type(exc),
+            )
+
+    def send_notify_notification(
+        self,
+        *,
+        case_id: str,
+        action_fingerprint: str,
+        routing_key: str,
+        support_channel: str | None,
+        reason_codes: tuple[str, ...],
+        denylist: DenylistV1,
+    ) -> None:
+        """Backward-compatible alias for the regular NOTIFY notification API."""
+        self.send_notification(
+            case_id=case_id,
+            action_fingerprint=action_fingerprint,
+            routing_key=routing_key,
+            support_channel=support_channel,
+            reason_codes=reason_codes,
+            denylist=denylist,
+        )
 
     def send_linkage_failed_final_escalation(
         self,
@@ -265,7 +374,7 @@ class SlackClient:
                 slack_mode=self._mode.value,
                 request_id=request_id,
                 case_id=case_id,
-                error=str(exc),
+                error_type=_error_type(exc),
             )
 
     def _send_live(self, event: DegradedModeEvent, logger: object) -> None:
@@ -299,6 +408,6 @@ class SlackClient:
             _log.warning(
                 "degraded_mode_slack_send_failed",
                 event_type="integrations.slack.send_error",
-                error=str(exc),
+                error_type=_error_type(exc),
                 affected_scope=event.affected_scope,
             )

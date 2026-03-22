@@ -23,9 +23,9 @@ def dispatch_action(
     Stage 7 is the final stage in the hot-path pipeline:
         Evidence → Peak → Topology → CaseFile → Outbox → Gating → Dispatch
 
-    Only PAGE actions invoke the PagerDuty adapter. All other actions (TICKET,
-    NOTIFY, OBSERVE) are logged for audit completeness but do not trigger external
-    calls from this stage.
+    PAGE actions invoke PagerDuty and NOTIFY actions invoke Slack notifications.
+    Other actions (TICKET, OBSERVE) are logged for audit completeness but do not
+    trigger external calls from this stage.
 
     When postmortem_required=True on the decision, a postmortem obligation notification
     is dispatched via Slack (or structured log fallback) independently of the PAGE action
@@ -38,7 +38,7 @@ def dispatch_action(
                          topology resolution was unsuccessful.
         pd_client:       PagerDutyClient configured with the active integration mode.
         slack_client:    SlackClient configured with the active integration mode.
-        denylist:        Active exposure denylist for Slack payload sanitization.
+        denylist:        Active exposure denylist for outbound payload sanitization.
     """
     logger = get_logger("pipeline.stages.dispatch")
     topology_routing_key = routing_context.routing_key if routing_context else "unknown"
@@ -53,6 +53,7 @@ def dispatch_action(
                     f"AIOps PAGE alert — fingerprint={decision.action_fingerprint} "
                     f"routing_key={topology_routing_key}"
                 ),
+                denylist=denylist,
             )
         except Exception as exc:
             logger.error(
@@ -76,8 +77,40 @@ def dispatch_action(
                 mode=pd_client.mode.value,
                 outcome="pd_trigger_sent",
             )
+    elif decision.final_action == Action.NOTIFY:
+        try:
+            slack_client.send_notification(
+                case_id=case_id,
+                action_fingerprint=decision.action_fingerprint,
+                routing_key=topology_routing_key,
+                support_channel=routing_context.support_channel if routing_context else None,
+                reason_codes=decision.gate_reason_codes,
+                denylist=denylist,
+            )
+        except Exception as exc:
+            logger.error(
+                "action_dispatch_notify_failed",
+                event_type="pipeline.stages.dispatch.notify_dispatch_failed",
+                case_id=case_id,
+                final_action=decision.final_action.value,
+                action_fingerprint=decision.action_fingerprint,
+                topology_routing_key=topology_routing_key,
+                mode=getattr(getattr(slack_client, "mode", None), "value", "unknown"),
+                error=str(exc),
+            )
+        else:
+            logger.info(
+                "action_dispatched",
+                event_type="pipeline.stages.dispatch.action_dispatched",
+                case_id=case_id,
+                final_action=decision.final_action.value,
+                action_fingerprint=decision.action_fingerprint,
+                topology_routing_key=topology_routing_key,
+                mode=getattr(getattr(slack_client, "mode", None), "value", "unknown"),
+                outcome="notify_sent",
+            )
     else:
-        # Non-PAGE actions: log for audit completeness; no external call at this stage.
+        # Non-PAGE/NOTIFY actions: log for audit completeness; no external call.
         logger.info(
             "action_dispatched",
             event_type="pipeline.stages.dispatch.action_dispatched",
