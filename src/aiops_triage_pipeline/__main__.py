@@ -41,6 +41,7 @@ from aiops_triage_pipeline.logging.setup import configure_logging, get_logger
 from aiops_triage_pipeline.models.evidence import EvidenceRow
 from aiops_triage_pipeline.outbox.repository import OutboxSqlRepository
 from aiops_triage_pipeline.outbox.worker import OutboxPublisherWorker
+from aiops_triage_pipeline.pipeline.baseline_store import load_metric_baselines
 from aiops_triage_pipeline.pipeline.scheduler import (
     emit_redis_degraded_mode_events,
     evaluate_scheduler_tick,
@@ -256,6 +257,7 @@ async def _hot_path_scheduler_loop(
     """Async hot-path scheduler loop: evidence → peak → topology → gate → casefile → dispatch."""
     interval_seconds = settings.HOT_PATH_SCHEDULER_INTERVAL_SECONDS
     previous_boundary = None
+    previous_sustained_identity_keys: set[tuple[str, str, str, str]] = set()
 
     while True:
         evaluation_time = datetime.now(UTC)
@@ -289,17 +291,25 @@ async def _hot_path_scheduler_loop(
                 redis_ttl_policy=redis_ttl_policy,
                 alert_evaluator=alert_evaluator,
             )
+            peak_scopes = _peak_scopes_from_rows(evidence_output.rows)
             prior_sustained_window_state_by_key = load_sustained_window_states(
                 redis_client=redis_client,
-                identity_keys=build_sustained_identity_keys(evidence_output.anomaly_result.findings),
+                identity_keys=_build_sustained_identity_key_candidates(
+                    anomaly_findings=evidence_output.anomaly_result.findings,
+                    evidence_scopes=evidence_output.evidence_status_map_by_scope.keys(),
+                    prior_identity_keys=previous_sustained_identity_keys,
+                ),
             )
             cached_peak_profiles_by_scope = load_peak_profiles(
                 redis_client=redis_client,
-                scopes=_peak_scopes_from_rows(evidence_output.rows),
+                scopes=peak_scopes,
             )
             peak_output = run_peak_stage_cycle(
                 evidence_output=evidence_output,
-                historical_windows_by_scope={},
+                historical_windows_by_scope=_load_peak_baseline_windows(
+                    redis_client=redis_client,
+                    scopes=peak_scopes,
+                ),
                 prior_sustained_window_state_by_key=prior_sustained_window_state_by_key,
                 cached_peak_profiles_by_scope=cached_peak_profiles_by_scope,
                 evaluation_time=evaluation_time,
@@ -317,6 +327,7 @@ async def _hot_path_scheduler_loop(
                 profiles_by_scope=peak_output.profiles_by_scope,
                 redis_ttl_policy=redis_ttl_policy,
             )
+            previous_sustained_identity_keys = set(peak_output.sustained_by_key.keys())
             topology_output = run_topology_stage_cycle(
                 evidence_output=evidence_output,
                 snapshot=snapshot,
@@ -433,6 +444,48 @@ def _peak_scopes_from_rows(rows: tuple[EvidenceRow, ...]) -> list[tuple[str, str
         if len(row.scope) == 4:
             scopes.add((row.scope[0], row.scope[1], row.scope[3]))
     return sorted(scopes)
+
+
+def _build_sustained_identity_key_candidates(
+    *,
+    anomaly_findings: tuple,
+    evidence_scopes,
+    prior_identity_keys: set[tuple[str, str, str, str]],
+) -> list[tuple[str, str, str, str]]:
+    """Build sustained-state lookup keys from findings, observed scopes, and prior keys."""
+    keys: set[tuple[str, str, str, str]] = set(prior_identity_keys)
+    keys.update(build_sustained_identity_keys(anomaly_findings))
+    for scope in evidence_scopes:
+        if len(scope) == 3:
+            env, cluster_id, topic = scope
+            keys.add((env, cluster_id, f"topic:{topic}", "VOLUME_DROP"))
+            keys.add((env, cluster_id, f"topic:{topic}", "THROUGHPUT_CONSTRAINED_PROXY"))
+            continue
+        if len(scope) == 4:
+            env, cluster_id, group, _ = scope
+            keys.add((env, cluster_id, f"group:{group}", "CONSUMER_LAG"))
+    return sorted(keys)
+
+
+def _load_peak_baseline_windows(
+    *,
+    redis_client,
+    scopes: list[tuple[str, str, str]],
+) -> dict[tuple[str, str, str], tuple[float, ...]]:
+    """Hydrate peak historical windows from persisted per-scope baselines."""
+    if not scopes:
+        return {}
+    baseline_values_by_scope = load_metric_baselines(
+        redis_client=redis_client,
+        source="prometheus",
+        scope_metric_pairs=[(scope, "topic_messages_in_per_sec") for scope in scopes],
+    )
+    windows_by_scope: dict[tuple[str, str, str], tuple[float, ...]] = {}
+    for scope in scopes:
+        baseline_value = baseline_values_by_scope.get(scope, {}).get("topic_messages_in_per_sec")
+        if baseline_value is not None:
+            windows_by_scope[scope] = (baseline_value,)
+    return windows_by_scope
 
 
 def _run_cold_path() -> None:

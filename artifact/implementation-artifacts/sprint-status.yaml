@@ -42,7 +42,7 @@ story_location: "/home/sas/workspace/aiops/artifact/implementation-artifacts"
 development_status:
   epic-1: in-progress
   1-1-collect-telemetry-and-detect-core-anomalies: done
-  1-2-persist-and-reuse-redis-baselines-and-state-in-bulk: review
+  1-2-persist-and-reuse-redis-baselines-and-state-in-bulk: done
   1-3-classify-peak-and-sustained-conditions-with-bounded-memory: backlog
   1-4-resolve-topology-ownership-and-blast-radius-from-unified-registry: backlog
   1-5-execute-yaml-rulebook-gates-ag0-ag3-via-isolated-rule-engine: backlog

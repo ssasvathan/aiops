@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from aiops_triage_pipeline import __main__
+from aiops_triage_pipeline.models.anomaly import AnomalyFinding
 
 
 def test_main_dispatches_casefile_lifecycle_mode_once(monkeypatch) -> None:
@@ -191,3 +192,41 @@ def test_run_hot_path_emits_structured_error_on_bootstrap_failure(monkeypatch) -
     call_args = mock_logger.critical.call_args
     assert call_args[0][0] == "hot_path_bootstrap_failed"
     assert call_args[1]["event_type"] == "runtime.bootstrap_error"
+
+
+def test_build_sustained_identity_key_candidates_includes_scope_and_prior_keys() -> None:
+    finding = AnomalyFinding(
+        finding_id="VOLUME_DROP:prod|cluster-a|orders",
+        anomaly_family="VOLUME_DROP",
+        scope=("prod", "cluster-a", "orders"),
+        severity="MEDIUM",
+        reason_codes=("DETECTED",),
+        evidence_required=("topic_messages_in_per_sec",),
+        is_primary=True,
+    )
+    keys = __main__._build_sustained_identity_key_candidates(
+        anomaly_findings=(finding,),
+        evidence_scopes={
+            ("prod", "cluster-a", "orders"),
+            ("prod", "cluster-a", "group-a", "orders"),
+        },
+        prior_identity_keys={("prod", "cluster-a", "topic:payments", "VOLUME_DROP")},
+    )
+
+    assert ("prod", "cluster-a", "topic:orders", "VOLUME_DROP") in keys
+    assert ("prod", "cluster-a", "topic:orders", "THROUGHPUT_CONSTRAINED_PROXY") in keys
+    assert ("prod", "cluster-a", "group:group-a", "CONSUMER_LAG") in keys
+    assert ("prod", "cluster-a", "topic:payments", "VOLUME_DROP") in keys
+
+
+def test_load_peak_baseline_windows_uses_cached_topic_baseline(monkeypatch) -> None:
+    scope = ("prod", "cluster-a", "orders")
+    monkeypatch.setattr(
+        __main__,
+        "load_metric_baselines",
+        lambda **_: {scope: {"topic_messages_in_per_sec": 123.0}},
+    )
+
+    windows = __main__._load_peak_baseline_windows(redis_client=object(), scopes=[scope])
+
+    assert windows == {scope: (123.0,)}
