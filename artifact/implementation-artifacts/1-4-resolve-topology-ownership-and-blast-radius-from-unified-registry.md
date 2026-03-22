@@ -1,6 +1,6 @@
 # Story 1.4: Resolve Topology, Ownership, and Blast Radius from Unified Registry
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -26,36 +26,36 @@ so that action routing and impact assessment are immediately available in each t
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Enforce unified topology-registry source-of-truth and single supported schema (AC: 1, 2)
-  - [ ] Define/verify canonical runtime file location as `config/topology-registry.yaml` and ensure hot-path startup wiring uses it via `TOPOLOGY_REGISTRY_PATH`.
-  - [ ] Remove legacy format ambiguity from loader contracts/rules for this story scope (single supported input format for runtime loading).
-  - [ ] Keep validation failures explicit and typed (`TopologyRegistryValidationError`) with actionable category/key context.
+- [x] Task 1: Enforce unified topology-registry source-of-truth and single supported schema (AC: 1, 2)
+  - [x] Define/verify canonical runtime file location as `config/topology-registry.yaml` and ensure hot-path startup wiring uses it via `TOPOLOGY_REGISTRY_PATH`.
+  - [x] Remove legacy format ambiguity from loader contracts/rules for this story scope (single supported input format for runtime loading).
+  - [x] Keep validation failures explicit and typed (`TopologyRegistryValidationError`) with actionable category/key context.
 
-- [ ] Task 2: Complete deterministic topology scope resolution and blast-radius enrichment (AC: 1)
-  - [ ] Resolve both supported scope shapes `(env, cluster_id, topic)` and `(env, cluster_id, group, topic)`.
-  - [ ] Ensure resolved output always includes stream identity, normalized topic role, criticality tier, and blast radius.
-  - [ ] Derive deterministic downstream impacts from source/sink/shared-component topology with stable ordering.
+- [x] Task 2: Complete deterministic topology scope resolution and blast-radius enrichment (AC: 1)
+  - [x] Resolve both supported scope shapes `(env, cluster_id, topic)` and `(env, cluster_id, group, topic)`.
+  - [x] Ensure resolved output always includes stream identity, normalized topic role, criticality tier, and blast radius.
+  - [x] Derive deterministic downstream impacts from source/sink/shared-component topology with stable ordering.
 
-- [ ] Task 3: Implement ordered ownership fallback with confidence-aware output (AC: 2)
-  - [ ] Enforce lookup precedence `consumer_group_owner -> topic_owner -> stream_default_owner -> platform_default`.
-  - [ ] Propagate chosen lookup level + routing target into Stage 3 output and downstream case assembly/dispatch.
-  - [ ] Include confidence metadata in resolution output path (or explicit rationale when absent) without breaking existing contracts.
+- [x] Task 3: Implement ordered ownership fallback with confidence-aware output (AC: 2)
+  - [x] Enforce lookup precedence `consumer_group_owner -> topic_owner -> stream_default_owner -> platform_default`.
+  - [x] Propagate chosen lookup level + routing target into Stage 3 output and downstream case assembly/dispatch.
+  - [x] Include confidence metadata in resolution output path (or explicit rationale when absent) without breaking existing contracts.
 
-- [ ] Task 4: Harden runtime reload-on-change with last-known-good safety (AC: 2)
-  - [ ] Keep mtime-based reload checks in hot-path loop and swap snapshot atomically only on successful validation.
-  - [ ] On invalid reload input, retain last-known-good snapshot and emit structured warning with reason category.
-  - [ ] Add/confirm success logging for reload swaps and no-op behavior when source file is unchanged.
+- [x] Task 4: Harden runtime reload-on-change with last-known-good safety (AC: 2)
+  - [x] Keep mtime-based reload checks in hot-path loop and swap snapshot atomically only on successful validation.
+  - [x] On invalid reload input, retain last-known-good snapshot and emit structured warning with reason category.
+  - [x] Add/confirm success logging for reload swaps and no-op behavior when source file is unchanged.
 
-- [ ] Task 5: Preserve Stage 3 to Stage 6/CaseFile integration invariants (AC: 1, 2)
-  - [ ] Ensure unresolved topology scopes are tracked explicitly and never fabricated into gate input context.
-  - [ ] Keep casefile topology context assembly strict (missing required topology context remains a loud failure).
-  - [ ] Preserve routing-context handoff into dispatch with deterministic fallback behavior for unresolved scopes.
+- [x] Task 5: Preserve Stage 3 to Stage 6/CaseFile integration invariants (AC: 1, 2)
+  - [x] Ensure unresolved topology scopes are tracked explicitly and never fabricated into gate input context.
+  - [x] Keep casefile topology context assembly strict (missing required topology context remains a loud failure).
+  - [x] Preserve routing-context handoff into dispatch with deterministic fallback behavior for unresolved scopes.
 
-- [ ] Task 6: Expand topology-focused tests and run quality gates (AC: 1, 2)
-  - [ ] Extend loader tests for unified-format validation boundaries and reload behavior (including invalid reload preservation).
-  - [ ] Extend resolver/topology tests for fallback order, blast radius mapping, downstream impact determinism, and unresolved reasons.
-  - [ ] Add/extend scheduler/casefile/dispatch coverage where new ownership-confidence metadata flows through.
-  - [ ] Run lint and full regression with Docker-enabled pytest and **0 skipped tests**.
+- [x] Task 6: Expand topology-focused tests and run quality gates (AC: 1, 2)
+  - [x] Extend loader tests for unified-format validation boundaries and reload behavior (including invalid reload preservation).
+  - [x] Extend resolver/topology tests for fallback order, blast radius mapping, downstream impact determinism, and unresolved reasons.
+  - [x] Add/extend scheduler/casefile/dispatch coverage where new ownership-confidence metadata flows through.
+  - [x] Run lint and full regression with Docker-enabled pytest and **0 skipped tests**.
 
 ## Dev Notes
 
@@ -219,24 +219,80 @@ GPT-5 Codex
 
 ### Debug Log References
 
-- Story context generated from planning artifacts, architecture shards, current codebase, prior story, and recent commit history.
-- Validation checklist reviewed manually (workflow validator task file not present in `_bmad/core/tasks`).
+- Implemented canonical topology path defaults and env alignment (`config/topology-registry.yaml`, `TOPOLOGY_REGISTRY_PATH`).
+- Enforced single runtime registry schema support (v2 only) and explicit `unsupported_version` validation category.
+- Added ownership confidence diagnostics and explicit confidence rationale when confidence is absent.
+- Updated resolver downstream-impact derivation to include downstream entities only (shared components + sinks).
+- Added reload no-op structured logging and dispatch routing-context topic-scope fallback for group scopes.
+- Updated loader/resolver/topology/main/contract tests plus ATDD story tests to match the new behavior.
+
+### Implementation Plan
+
+- Keep existing Stage 3/4/7 contracts stable and push confidence metadata through diagnostics.
+- Constrain runtime registry loading to unified schema while preserving explicit typed failure categories.
+- Preserve deterministic ordering across ownership fallback and downstream impact output.
+- Validate with lint + full Docker-enabled regression gate (no skipped tests).
 
 ### Completion Notes List
 
-- Story context created for FR12/FR13/FR14/FR15/FR16 with explicit implementation guardrails.
-- Story status prepared for handoff to `dev-story`.
+- Canonical runtime topology registry path is now `config/topology-registry.yaml` with settings/env defaults aligned.
+- Topology loader now accepts only version 2 input schema and fails legacy schemas with typed `unsupported_version`.
+- Ownership fallback remains deterministic and now emits `selected_owner_confidence` (or explicit reason when absent) in diagnostics.
+- Stage 3 routing-context fallback for group scopes now deterministically reuses topic-scope routing when needed for dispatch handoff.
+- Downstream impacts are deterministic and constrained to downstream entities (shared components and sinks).
+- Validation completed and re-verified in code review: `uv run ruff check` and full Docker-enabled regression `857 passed`, `0 skipped`.
 
 ### File List
 
+- .gitignore
 - artifact/implementation-artifacts/1-4-resolve-topology-ownership-and-blast-radius-from-unified-registry.md
 - artifact/implementation-artifacts/sprint-status.yaml
+- artifact/test-artifacts/atdd-checklist-1-4-resolve-topology-ownership-and-blast-radius-from-unified-registry.md
+- config/.env.dev
+- config/.env.local
+- config/.env.prod.template
+- config/.env.uat.template
+- config/policies/topology-registry-loader-rules-v1.yaml
+- config/topology-registry.yaml
+- src/aiops_triage_pipeline/__main__.py
+- src/aiops_triage_pipeline/config/settings.py
+- src/aiops_triage_pipeline/contracts/topology_registry.py
+- src/aiops_triage_pipeline/registry/loader.py
+- src/aiops_triage_pipeline/registry/resolver.py
+- tests/atdd/fixtures/story_1_4_test_data.py
+- tests/atdd/story_1_4_topology_registry_red_phase.py
+- tests/unit/contracts/test_policy_models.py
+- tests/unit/pipeline/stages/test_topology.py
+- tests/unit/registry/test_loader.py
+- tests/unit/registry/test_resolver.py
+- tests/unit/test_main.py
+
+## Senior Developer Review (AI)
+
+### Reviewer
+
+- Reviewer: Sas (AI Code Review Workflow)
+- Date: 2026-03-22
+- Outcome: Approved after fixes
+
+### Findings and Resolutions
+
+- [MEDIUM][Resolved] File-list traceability drift: `tests/atdd/fixtures/story_1_4_test_data.py` and generated ATDD checklist artifact were present but not listed in Dev Agent Record File List. Updated File List to include all implementation artifacts for Story 1.4.
+- [MEDIUM][Resolved] Workspace hygiene gap: generated temp outputs under `artifact/test-artifacts/atdd-temp/` and compiled bytecode under `tests/atdd/__pycache__/` were left behind, creating noisy undocumented deltas. Removed generated temp/bytecode files and added `.gitignore` rule for `artifact/test-artifacts/atdd-temp/`.
+- [MEDIUM][Resolved] Review audit trail missing: story lacked a dedicated senior review record section for findings/resolution traceability. Added this section and synchronized Change Log with review-fix completion.
+
+### Verification Evidence
+
+- `uv run ruff check` → pass
+- `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs` → `857 passed`, `0 skipped`
 
 ## Story Completion Status
 
-- Story status: `ready-for-dev`
-- Completion note: Ultimate context engine analysis completed - comprehensive developer guide created.
+- Story status: `done`
+- Completion note: Story implementation and adversarial code review fixes completed; lint and full Docker-enabled regression re-run passed with zero skips.
 
 ## Change Log
 
 - 2026-03-22: Story created via create-story workflow with exhaustive artifact and code-context analysis; status set to ready-for-dev.
+- 2026-03-22: Implemented Story 1.4 topology ownership/blast-radius updates; completed tests and moved story to review.
+- 2026-03-22: Completed `bmad-bmm-code-review` findings remediation; reran lint/full regression (`857 passed`, `0 skipped`); set story to done.

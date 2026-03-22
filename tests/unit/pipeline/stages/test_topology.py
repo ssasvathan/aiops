@@ -167,7 +167,6 @@ def test_collect_topology_stage_output_builds_gate_context_for_topic_and_group_s
     ] == [
         ("shared_component", "nifi_flow_id:nifi-edl-writer-main", "VISIBILITY_ONLY"),
         ("sink", "edl_orders_events_v1", "DOWNSTREAM_DATA_FRESHNESS_RISK"),
-        ("source", "Payments", "DIRECT_COMPONENT_RISK"),
     ]
     assert output.unresolved_by_scope == {}
 

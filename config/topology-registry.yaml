@@ -1,0 +1,24 @@
+version: 2
+routing_directory:
+  - routing_key: OWN::Streaming::KafkaPlatform::Ops
+    owning_team_id: team-kafka-platform
+    owning_team_name: Kafka Platform Ops
+ownership_map:
+  consumer_group_owners: []
+  topic_owners: []
+  stream_default_owner: []
+  platform_default: OWN::Streaming::KafkaPlatform::Ops
+streams:
+  - stream_id: example-stream
+    criticality_tier: UNKNOWN
+    instances:
+      - env: prod
+        cluster_id: Business_Essential
+        sources:
+          - source_system: ExampleSystem
+            source_topic: example-topic
+            criticality_tier: UNKNOWN
+        topic_index:
+          example-topic:
+            role: SOURCE_TOPIC
+            stream_id: example-stream

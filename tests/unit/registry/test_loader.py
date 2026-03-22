@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from pathlib import Path
 from time import perf_counter
+from unittest.mock import MagicMock
 
 import pytest
 from pydantic import BaseModel
@@ -60,28 +61,29 @@ topic_index:
 
 def _v0_registry_yaml_with_ordered_sources_and_sinks() -> str:
     return """
-version: 1
+version: 2
 streams:
   - stream_id: payments-stream
-    env: prod
-    cluster_id: Business_Essential
-    sources:
-      - source_system: Zeta
-        source_topic: z-topic
-      - source_system: Alpha
-        source_topic: a-topic
-    sinks:
-      - sink_system: ZetaSink
-        sink_topic: z-sink
-      - sink_system: AlphaSink
-        sink_topic: a-sink
-topic_index:
-  z-topic:
-    role: SOURCE_TOPIC
-    stream_id: payments-stream
-  a-topic:
-    role: SOURCE_TOPIC
-    stream_id: payments-stream
+    instances:
+      - env: prod
+        cluster_id: Business_Essential
+        sources:
+          - source_system: Zeta
+            source_topic: z-topic
+          - source_system: Alpha
+            source_topic: a-topic
+        sinks:
+          - sink_system: ZetaSink
+            sink_topic: z-sink
+          - sink_system: AlphaSink
+            sink_topic: a-sink
+        topic_index:
+          z-topic:
+            role: SOURCE_TOPIC
+            stream_id: payments-stream
+          a-topic:
+            role: SOURCE_TOPIC
+            stream_id: payments-stream
 """
 
 
@@ -414,20 +416,13 @@ def _expected_v0_compat_output() -> dict[str, object]:
     }
 
 
-def test_load_v0_registry_canonicalizes_to_in_memory_model(tmp_path: Path) -> None:
+def test_load_rejects_legacy_v1_registry_with_explicit_unsupported_version(tmp_path: Path) -> None:
     path = tmp_path / "topology-v0.yaml"
     _write_registry(path, _v0_registry_yaml())
 
-    snapshot = load_topology_registry(
-        path,
-        default_env="prod",
-        default_cluster_id="Business_Essential",
-    )
-
-    assert snapshot.metadata.input_version == 1
-    assert snapshot.metadata.source_path == str(path)
-    assert len(snapshot.registry.streams) == 1
-    assert ("prod", "Business_Essential") in snapshot.registry.topic_index_by_scope
+    with pytest.raises(TopologyRegistryValidationError) as exc_info:
+        load_topology_registry(path)
+    assert exc_info.value.category == "unsupported_version"
 
 
 def test_load_v1_registry_canonicalizes_to_in_memory_model(tmp_path: Path) -> None:
@@ -441,20 +436,15 @@ def test_load_v1_registry_canonicalizes_to_in_memory_model(tmp_path: Path) -> No
     assert ("prod", "Business_Essential") in snapshot.registry.topic_index_by_scope
 
 
-def test_v0_and_v1_equivalent_fixtures_produce_identical_canonical_model(tmp_path: Path) -> None:
-    path_v0 = tmp_path / "topology-v0.yaml"
-    path_v1 = tmp_path / "topology-v1.yaml"
-    _write_registry(path_v0, _v0_registry_yaml())
-    _write_registry(path_v1, _v1_registry_yaml())
+def test_load_fails_fast_with_unsupported_version_category_for_legacy_schema(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "topology-v1-legacy.yaml"
+    _write_registry(path, _v0_registry_yaml())
 
-    v0_snapshot = load_topology_registry(
-        path_v0,
-        default_env="prod",
-        default_cluster_id="Business_Essential",
-    )
-    v1_snapshot = load_topology_registry(path_v1)
-
-    assert _to_plain(v0_snapshot.registry) == _to_plain(v1_snapshot.registry)
+    with pytest.raises(TopologyRegistryValidationError) as exc_info:
+        load_topology_registry(path)
+    assert exc_info.value.category == "unsupported_version"
 
 
 def test_loader_output_is_immutable_for_concurrent_reads(tmp_path: Path) -> None:
@@ -626,25 +616,7 @@ def test_reload_on_change_completes_within_five_seconds(tmp_path: Path) -> None:
 
 
 def test_v0_compat_projection_matches_v0_golden_output_field_by_field(tmp_path: Path) -> None:
-    path = tmp_path / "topology-v0.yaml"
-    _write_registry(path, _v0_registry_yaml())
-    snapshot = load_topology_registry(
-        path,
-        default_env="prod",
-        default_cluster_id="Business_Essential",
-    )
-
-    compat_view = build_v0_compat_view(
-        snapshot=snapshot,
-        env="prod",
-        cluster_id="Business_Essential",
-    )
-
-    assert compat_view.to_legacy_dict() == _expected_v0_compat_output()
-
-
-def test_v0_compat_projection_from_v1_matches_same_v0_golden_output(tmp_path: Path) -> None:
-    path = tmp_path / "topology-v1.yaml"
+    path = tmp_path / "topology-v2.yaml"
     _write_registry(path, _v1_registry_yaml())
     snapshot = load_topology_registry(path)
 
@@ -655,6 +627,25 @@ def test_v0_compat_projection_from_v1_matches_same_v0_golden_output(tmp_path: Pa
     )
 
     assert compat_view.to_legacy_dict() == _expected_v0_compat_output()
+
+
+def test_reload_if_changed_emits_noop_log_when_source_mtime_is_unchanged(tmp_path: Path) -> None:
+    path = tmp_path / "topology-v2.yaml"
+    _write_registry(path, _v1_registry_yaml())
+    loader = TopologyRegistryLoader(path)
+    logger = MagicMock()
+    loader._logger = logger  # type: ignore[attr-defined]
+    loader.load()
+
+    changed = loader.reload_if_changed()
+
+    assert changed is False
+    logger.info.assert_any_call(
+        "topology_registry_reload_noop",
+        event_type="registry.reload_noop",
+        source_path=str(path),
+        source_mtime_ns=loader.get_snapshot().metadata.source_mtime_ns,
+    )
 
 
 def test_v0_compat_projection_is_scope_isolated_for_topic_name_collisions(tmp_path: Path) -> None:
@@ -747,13 +738,9 @@ def test_v0_compat_projection_preserves_legacy_sources_and_sinks_order(tmp_path:
 
 
 def test_v0_compat_projection_preserves_required_keys_and_types(tmp_path: Path) -> None:
-    path = tmp_path / "topology-v0.yaml"
-    _write_registry(path, _v0_registry_yaml())
-    snapshot = load_topology_registry(
-        path,
-        default_env="prod",
-        default_cluster_id="Business_Essential",
-    )
+    path = tmp_path / "topology-v2.yaml"
+    _write_registry(path, _v1_registry_yaml())
+    snapshot = load_topology_registry(path)
 
     payload = build_v0_compat_view(
         snapshot=snapshot,

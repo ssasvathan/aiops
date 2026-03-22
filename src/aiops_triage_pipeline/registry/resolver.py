@@ -245,7 +245,7 @@ def resolve_anomaly_scope(
         topic=topic,
         source_system=source_system,
     )
-    ownership_routing, unresolved = _resolve_ownership_routing(
+    ownership_routing, unresolved, owner_confidence = _resolve_ownership_routing(
         scope=anomaly_scope,
         ownership_map=snapshot.registry.ownership_map,
         routing_directory=snapshot.registry.routing_directory,
@@ -270,6 +270,11 @@ def resolve_anomaly_scope(
     )
     diagnostics["selected_owner_level"] = ownership_routing.lookup_level
     diagnostics["selected_routing_key"] = ownership_routing.target.routing_key
+    _set_owner_confidence_diagnostics(
+        diagnostics=diagnostics,
+        owner_confidence=owner_confidence,
+        fallback_reason="confidence_not_provided",
+    )
     return TopologyResolution(
         scope=anomaly_scope,
         status="resolved",
@@ -344,7 +349,7 @@ def _resolve_ownership_routing(
     topic: str,
     group: str | None,
     stream_id: str,
-) -> tuple[OwnershipRoutingResolution | None, TopologyResolution | None]:
+) -> tuple[OwnershipRoutingResolution | None, TopologyResolution | None, float | None]:
     lookup_path = _ownership_lookup_path(include_consumer_group=group is not None)
     selected_owner = _select_owner_routing_key(
         ownership_map=ownership_map,
@@ -367,9 +372,9 @@ def _resolve_ownership_routing(
             scope=scope,
             reason_code=REASON_OWNER_NOT_FOUND,
             diagnostics=diagnostics,
-        )
+        ), None
 
-    selected_level, routing_key = selected_owner
+    selected_level, routing_key, owner_confidence = selected_owner
     routing_target = routing_directory.get(routing_key)
     if routing_target is None:
         diagnostics = _scope_diagnostics(
@@ -382,11 +387,16 @@ def _resolve_ownership_routing(
         diagnostics["ownership_lookup_path"] = lookup_path
         diagnostics["selected_owner_level"] = selected_level
         diagnostics["selected_routing_key"] = routing_key
+        _set_owner_confidence_diagnostics(
+            diagnostics=diagnostics,
+            owner_confidence=owner_confidence,
+            fallback_reason="confidence_not_provided",
+        )
         return None, _unresolved(
             scope=scope,
             reason_code=REASON_ROUTING_KEY_NOT_FOUND,
             diagnostics=diagnostics,
-        )
+        ), owner_confidence
 
     return OwnershipRoutingResolution(
         lookup_level=selected_level,
@@ -398,7 +408,7 @@ def _resolve_ownership_routing(
             escalation_policy_ref=routing_target.escalation_policy_ref,
             service_now_assignment_group=routing_target.service_now_assignment_group,
         ),
-    ), None
+    ), None, owner_confidence
 
 
 def _select_owner_routing_key(
@@ -409,36 +419,52 @@ def _select_owner_routing_key(
     topic: str,
     group: str | None,
     stream_id: str,
-) -> tuple[OwnershipLookupLevel, str] | None:
+) -> tuple[OwnershipLookupLevel, str, float | None] | None:
     if group is not None:
-        routing_key = ownership_map.consumer_group_routing_key(
+        entry = ownership_map.consumer_group_owner(
             env=env,
             cluster_id=cluster_id,
             group=group,
         )
-        if routing_key is not None:
-            return ("consumer_group_owner", routing_key)
+        if entry is not None:
+            return ("consumer_group_owner", entry.routing_key, entry.confidence)
 
-    topic_routing_key = ownership_map.topic_routing_key(
+    topic_owner = ownership_map.topic_owner(
         env=env,
         cluster_id=cluster_id,
         topic=topic,
     )
-    if topic_routing_key is not None:
-        return ("topic_owner", topic_routing_key)
+    if topic_owner is not None:
+        return ("topic_owner", topic_owner.routing_key, topic_owner.confidence)
 
-    stream_default_routing_key = ownership_map.stream_default_routing_key(
+    stream_default_owner = ownership_map.stream_default_owner_entry(
         stream_id=stream_id,
         env=env,
         cluster_id=cluster_id,
     )
-    if stream_default_routing_key is not None:
-        return ("stream_default_owner", stream_default_routing_key)
+    if stream_default_owner is not None:
+        return (
+            "stream_default_owner",
+            stream_default_owner.routing_key,
+            stream_default_owner.confidence,
+        )
 
     if ownership_map.platform_default is not None:
-        return ("platform_default", ownership_map.platform_default)
+        return ("platform_default", ownership_map.platform_default, None)
 
     return None
+
+
+def _set_owner_confidence_diagnostics(
+    *,
+    diagnostics: dict[str, str],
+    owner_confidence: float | None,
+    fallback_reason: str,
+) -> None:
+    if owner_confidence is not None:
+        diagnostics["selected_owner_confidence"] = str(owner_confidence)
+        return
+    diagnostics["selected_owner_confidence_reason"] = fallback_reason
 
 
 def _ownership_lookup_path(*, include_consumer_group: bool) -> str:
@@ -486,18 +512,6 @@ def _derive_downstream_impacts(
             impact.risk_status,
         )
         impacts_by_key.setdefault(key, impact)
-
-    for source in stream_instance.sources:
-        component_id = _mapping_str(source, "source_system") or _mapping_str(source, "source_topic")
-        if component_id is None:
-            continue
-        _record_impact(
-            DownstreamImpact(
-                component_type="source",
-                component_id=component_id,
-                exposure_type="DIRECT_COMPONENT_RISK",
-            )
-        )
 
     for sink in stream_instance.sinks:
         component_id = (

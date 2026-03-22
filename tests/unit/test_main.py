@@ -219,6 +219,30 @@ def test_build_sustained_identity_key_candidates_includes_scope_and_prior_keys()
     assert ("prod", "cluster-a", "topic:payments", "VOLUME_DROP") in keys
 
 
+def test_resolve_routing_context_for_scope_prefers_exact_scope_match() -> None:
+    scope = ("prod", "cluster-a", "group-a", "orders")
+    exact = object()
+    topic_fallback = object()
+    resolved = __main__._resolve_routing_context_for_scope(
+        scope=scope,
+        routing_by_scope={
+            scope: exact,
+            ("prod", "cluster-a", "orders"): topic_fallback,
+        },
+    )
+    assert resolved is exact
+
+
+def test_resolve_routing_context_for_scope_falls_back_to_topic_scope_for_group_scopes() -> None:
+    resolved = __main__._resolve_routing_context_for_scope(
+        scope=("prod", "cluster-a", "group-a", "orders"),
+        routing_by_scope={
+            ("prod", "cluster-a", "orders"): "topic-routing",
+        },
+    )
+    assert resolved == "topic-routing"
+
+
 def test_load_peak_baseline_windows_uses_cached_topic_baseline(monkeypatch) -> None:
     scope = ("prod", "cluster-a", "orders")
     monkeypatch.setattr(

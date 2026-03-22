@@ -1,0 +1,50 @@
+target:
+  type: story
+  id: 1-4-resolve-topology-ownership-and-blast-radius-from-unified-registry
+  title: Resolve Topology, Ownership, and Blast Radius from Unified Registry
+decision:
+  status: PASS
+  mode: deterministic
+  date: 2026-03-22T15-57-48Z
+  evaluator: Sas / TEA Agent
+rationale: >-
+  P0 coverage is 100%, P1 coverage is 100% (target 90%), and overall coverage is
+  100% (minimum 80%); deterministic gate criteria are fully met.
+criteria:
+  p0_coverage_required_pct: 100
+  p0_coverage_actual_pct: 100
+  p1_coverage_pass_target_pct: 90
+  p1_coverage_minimum_pct: 80
+  p1_coverage_actual_pct: 100
+  overall_coverage_minimum_pct: 80
+  overall_coverage_actual_pct: 100
+execution_evidence:
+  source: local_run
+  command: >-
+    uv run pytest -q tests/unit/registry/test_loader.py tests/unit/registry/test_resolver.py
+    tests/unit/pipeline/stages/test_topology.py tests/unit/pipeline/test_scheduler_topology.py
+    tests/unit/test_main.py tests/unit/contracts/test_policy_models.py
+    tests/atdd/story_1_4_topology_registry_red_phase.py -rs
+  total_tests: 113
+  passed: 113
+  failed: 0
+  skipped: 0
+  duration: 0.92s
+artifacts:
+  traceability_report: artifact/test-artifacts/traceability-report.md
+  traceability_matrix: artifact/test-artifacts/traceability-matrix.md
+  phase1_matrix_json: /tmp/tea-trace-coverage-matrix-2026-03-22T15-57-48Z.json
+risk_summary:
+  critical_gaps: 0
+  high_gaps: 0
+  medium_gaps: 0
+  low_gaps: 0
+  nfr:
+    security: NOT_ASSESSED
+    performance: PASS
+    reliability: PASS
+    maintainability: CONCERNS
+next_actions:
+  - Proceed with standard release flow.
+  - Keep story-focused topology regression slice in CI.
+  - Split oversized registry unit test modules as follow-up maintenance.

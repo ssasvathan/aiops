@@ -1,4 +1,4 @@
-"""Topology registry loader: v0/v1 parsing, canonicalization, validation, and reload."""
+"""Topology registry loader: canonical v2 parsing, validation, and reload."""
 
 from __future__ import annotations
 
@@ -186,26 +186,30 @@ class CanonicalOwnershipMap(BaseModel, frozen=True):
     stream_default_owner: tuple[StreamDefaultOwnerEntry, ...] = ()
     platform_default: str | None = None
 
-    _consumer_group_index: Mapping[tuple[str, str, str], str] = PrivateAttr(default_factory=dict)
-    _topic_index: Mapping[tuple[str, str, str], str] = PrivateAttr(default_factory=dict)
-    _stream_default_index: Mapping[tuple[str, str, str], str] = PrivateAttr(default_factory=dict)
+    _consumer_group_index: Mapping[tuple[str, str, str], ConsumerGroupOwnerEntry] = PrivateAttr(
+        default_factory=dict
+    )
+    _topic_index: Mapping[tuple[str, str, str], TopicOwnerEntry] = PrivateAttr(default_factory=dict)
+    _stream_default_index: Mapping[tuple[str, str, str], StreamDefaultOwnerEntry] = PrivateAttr(
+        default_factory=dict
+    )
 
     @model_validator(mode="after")
     def _build_lookup_indexes(self) -> "CanonicalOwnershipMap":
-        consumer_group_index: dict[tuple[str, str, str], str] = {}
+        consumer_group_index: dict[tuple[str, str, str], ConsumerGroupOwnerEntry] = {}
         for entry in self.consumer_group_owners:
             key = (entry.env, entry.cluster_id, entry.group)
-            consumer_group_index.setdefault(key, entry.routing_key)
+            consumer_group_index.setdefault(key, entry)
 
-        topic_index: dict[tuple[str, str, str], str] = {}
+        topic_index: dict[tuple[str, str, str], TopicOwnerEntry] = {}
         for entry in self.topic_owners:
             key = (entry.env, entry.cluster_id, entry.topic)
-            topic_index.setdefault(key, entry.routing_key)
+            topic_index.setdefault(key, entry)
 
-        stream_default_index: dict[tuple[str, str, str], str] = {}
+        stream_default_index: dict[tuple[str, str, str], StreamDefaultOwnerEntry] = {}
         for entry in self.stream_default_owner:
             key = (entry.stream_id, entry.env, entry.cluster_id)
-            stream_default_index.setdefault(key, entry.routing_key)
+            stream_default_index.setdefault(key, entry)
 
         object.__setattr__(
             self,
@@ -216,6 +220,33 @@ class CanonicalOwnershipMap(BaseModel, frozen=True):
         object.__setattr__(self, "_stream_default_index", MappingProxyType(stream_default_index))
         return self
 
+    def consumer_group_owner(
+        self,
+        *,
+        env: str,
+        cluster_id: str,
+        group: str,
+    ) -> ConsumerGroupOwnerEntry | None:
+        return self._consumer_group_index.get((env, cluster_id, group))
+
+    def topic_owner(
+        self,
+        *,
+        env: str,
+        cluster_id: str,
+        topic: str,
+    ) -> TopicOwnerEntry | None:
+        return self._topic_index.get((env, cluster_id, topic))
+
+    def stream_default_owner_entry(
+        self,
+        *,
+        stream_id: str,
+        env: str,
+        cluster_id: str,
+    ) -> StreamDefaultOwnerEntry | None:
+        return self._stream_default_index.get((stream_id, env, cluster_id))
+
     def consumer_group_routing_key(
         self,
         *,
@@ -223,7 +254,8 @@ class CanonicalOwnershipMap(BaseModel, frozen=True):
         cluster_id: str,
         group: str,
     ) -> str | None:
-        return self._consumer_group_index.get((env, cluster_id, group))
+        entry = self.consumer_group_owner(env=env, cluster_id=cluster_id, group=group)
+        return entry.routing_key if entry is not None else None
 
     def topic_routing_key(
         self,
@@ -232,7 +264,8 @@ class CanonicalOwnershipMap(BaseModel, frozen=True):
         cluster_id: str,
         topic: str,
     ) -> str | None:
-        return self._topic_index.get((env, cluster_id, topic))
+        entry = self.topic_owner(env=env, cluster_id=cluster_id, topic=topic)
+        return entry.routing_key if entry is not None else None
 
     def stream_default_routing_key(
         self,
@@ -241,7 +274,12 @@ class CanonicalOwnershipMap(BaseModel, frozen=True):
         env: str,
         cluster_id: str,
     ) -> str | None:
-        return self._stream_default_index.get((stream_id, env, cluster_id))
+        entry = self.stream_default_owner_entry(
+            stream_id=stream_id,
+            env=env,
+            cluster_id=cluster_id,
+        )
+        return entry.routing_key if entry is not None else None
 
 
 class CanonicalTopologyRegistry(BaseModel, frozen=True):
@@ -539,6 +577,12 @@ class TopologyRegistryLoader:
         current_mtime = current.metadata.source_mtime_ns
         latest_mtime = self._path.stat().st_mtime_ns
         if latest_mtime == current_mtime:
+            self._logger.info(
+                "topology_registry_reload_noop",
+                event_type="registry.reload_noop",
+                source_path=str(self._path),
+                source_mtime_ns=current_mtime,
+            )
             return False
 
         try:
@@ -779,7 +823,7 @@ def _validate_supported_version(
 ) -> None:
     if version not in rules.supported_registry_versions:
         raise TopologyRegistryValidationError(
-            category="unsupported_registry_version",
+            category="unsupported_version",
             source_path=source_path,
             offending_key="version",
             detail=(
@@ -807,16 +851,7 @@ def _canonicalize_registry(
             detail="expected a list of stream entries",
         )
 
-    if input_version >= 2:
-        streams = _canonicalize_v1_streams(streams_raw=streams_raw, source_path=source_path)
-    else:
-        streams = _canonicalize_v0_streams(
-            raw=raw,
-            streams_raw=streams_raw,
-            source_path=source_path,
-            default_env=default_env,
-            default_cluster_id=default_cluster_id,
-        )
+    streams = _canonicalize_v1_streams(streams_raw=streams_raw, source_path=source_path)
 
     streams_by_id: dict[str, CanonicalStream] = {}
     topic_index_by_scope: dict[tuple[str, str], dict[str, CanonicalTopicEntry]] = defaultdict(dict)

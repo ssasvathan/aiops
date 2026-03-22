@@ -41,3 +41,4 @@ Thumbs.db
 htmlcov/
 .ruff_cache/
 .worktrees/
+artifact/test-artifacts/atdd-temp/

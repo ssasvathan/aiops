@@ -6,6 +6,7 @@ import time
 from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Mapping
 
 import redis as redis_lib
 import structlog
@@ -269,7 +270,10 @@ def _run_hot_path() -> None:
         )
         raise
 
-    if settings.TOPOLOGY_REGISTRY_PATH is None:
+    if (
+        settings.TOPOLOGY_REGISTRY_PATH is None
+        or not settings.TOPOLOGY_REGISTRY_PATH.strip()
+    ):
         logger.critical(
             "hot_path_topology_registry_not_configured",
             event_type="runtime.startup_error",
@@ -468,7 +472,10 @@ async def _hot_path_scheduler_loop(
             )
 
             for scope, decisions in decisions_by_scope.items():
-                routing_context = topology_output.routing_by_scope.get(scope)
+                routing_context = _resolve_routing_context_for_scope(
+                    scope=scope,
+                    routing_by_scope=topology_output.routing_by_scope,
+                )
                 gate_inputs = gate_inputs_by_scope.get(scope, ())
                 for decision in decisions:
                     gate_input = next(
@@ -565,6 +572,21 @@ def _peak_scopes_from_rows(rows: tuple[EvidenceRow, ...]) -> list[tuple[str, str
         if len(row.scope) == 4:
             scopes.add((row.scope[0], row.scope[1], row.scope[3]))
     return sorted(scopes)
+
+
+def _resolve_routing_context_for_scope(
+    *,
+    scope: tuple[str, ...],
+    routing_by_scope: Mapping[tuple[str, ...], object],
+):
+    """Resolve Stage 3 routing context with deterministic topic-scope fallback."""
+    routing_context = routing_by_scope.get(scope)
+    if routing_context is not None:
+        return routing_context
+    if len(scope) == 4:
+        topic_scope = (scope[0], scope[1], scope[3])
+        return routing_by_scope.get(topic_scope)
+    return None
 
 
 def _build_sustained_identity_key_candidates(

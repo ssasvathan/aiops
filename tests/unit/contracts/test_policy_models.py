@@ -72,7 +72,7 @@ def test_topology_registry_is_frozen(
     minimal_topology_registry: TopologyRegistryLoaderRulesV1,
 ) -> None:
     with pytest.raises(ValidationError):
-        minimal_topology_registry.prefer_v2_format = False  # type: ignore[misc]
+        minimal_topology_registry.supported_registry_versions = (1, 2)  # type: ignore[misc]
 
 
 # ── Round-trip serialization tests ────────────────────────────────────────────

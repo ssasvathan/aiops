@@ -7,8 +7,7 @@ from pydantic import BaseModel
 
 class TopologyRegistryLoaderRulesV1(BaseModel, frozen=True):
     schema_version: Literal["v1"] = "v1"
-    supported_registry_versions: tuple[int, ...] = (1, 2)
-    prefer_v2_format: bool = True
+    supported_registry_versions: tuple[int, ...] = (2,)
     routing_key_required: bool = True
     fail_on_unknown_topic_role: bool = False
     unknown_routing_key_fallback: str = "OWN::Streaming::KafkaPlatform::Ops"

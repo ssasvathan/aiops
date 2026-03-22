@@ -44,7 +44,7 @@ development_status:
   1-1-collect-telemetry-and-detect-core-anomalies: done
   1-2-persist-and-reuse-redis-baselines-and-state-in-bulk: done
   1-3-classify-peak-and-sustained-conditions-with-bounded-memory: done
-  1-4-resolve-topology-ownership-and-blast-radius-from-unified-registry: ready-for-dev
+  1-4-resolve-topology-ownership-and-blast-radius-from-unified-registry: done
   1-5-execute-yaml-rulebook-gates-ag0-ag3-via-isolated-rule-engine: backlog
   1-6-complete-ag4-ag6-atomic-deduplication-and-decision-trail-output: backlog
   epic-1-retrospective: optional

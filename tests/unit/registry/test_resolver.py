@@ -171,6 +171,7 @@ def test_resolve_anomaly_scope_resolves_topic_scope(tmp_path: Path) -> None:
         == "topic_owner->stream_default_owner->platform_default"
     )
     assert result.diagnostics["selected_owner_level"] == "topic_owner"
+    assert result.diagnostics["selected_owner_confidence"] == "1.0"
 
 
 def test_resolve_anomaly_scope_resolves_group_scope(tmp_path: Path) -> None:
@@ -195,6 +196,7 @@ def test_resolve_anomaly_scope_resolves_group_scope(tmp_path: Path) -> None:
         == "consumer_group_owner->topic_owner->stream_default_owner->platform_default"
     )
     assert result.diagnostics["selected_owner_level"] == "consumer_group_owner"
+    assert result.diagnostics["selected_owner_confidence"] == "1.0"
 
 
 def test_resolve_anomaly_scope_prevents_cross_cluster_topic_collisions(tmp_path: Path) -> None:
@@ -262,6 +264,7 @@ def test_resolve_anomaly_scope_falls_through_to_platform_default_when_no_other_o
     assert result.ownership_routing is not None
     assert result.ownership_routing.lookup_level == "platform_default"
     assert result.ownership_routing.target.routing_key == "OWN::Streaming::KafkaPlatform::Ops"
+    assert result.diagnostics["selected_owner_confidence_reason"] == "confidence_not_provided"
 
 
 def test_resolve_anomaly_scope_returns_explicit_unresolved_when_scope_missing(
@@ -549,7 +552,6 @@ def test_resolve_anomaly_scope_derives_downstream_impacts_with_deterministic_ord
     ] == [
         ("shared_component", "nifi_flow_id:nifi-edl-writer-main", "VISIBILITY_ONLY", "AT_RISK"),
         ("sink", "edl_orders_events_v1", "DOWNSTREAM_DATA_FRESHNESS_RISK", "AT_RISK"),
-        ("source", "Payments", "DIRECT_COMPONENT_RISK", "AT_RISK"),
     ]
 
 
@@ -611,7 +613,6 @@ streams:
         ("shared_component", "nifi_flow_id:nifi-edl-writer-main", "VISIBILITY_ONLY"),
         ("shared_component", "nifi_flow_id_alias:nifi-edl-writer-main", "VISIBILITY_ONLY"),
         ("sink", "edl_orders_events_v1", "DOWNSTREAM_DATA_FRESHNESS_RISK"),
-        ("source", "Payments", "DIRECT_COMPONENT_RISK"),
     ]
 
 
