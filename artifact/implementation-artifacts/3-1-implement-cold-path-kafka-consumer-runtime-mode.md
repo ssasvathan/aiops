@@ -1,6 +1,6 @@
 # Story 3.1: Implement Cold-Path Kafka Consumer Runtime Mode
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -201,7 +201,9 @@ claude-sonnet-4-6
 - Updated all 5 env files (local, dev, docker, uat.template, prod.template).
 - 11 new unit tests in `test_kafka_consumer.py`; 2 new tests replacing stub test in `test_main.py`; 4 integration tests in `cold_path/test_consumer_lifecycle.py`.
 - All 4 ATDD red-phase tests now GREEN.
-- Final gate: 955 passed, 0 skipped, ruff clean.
+- Initial gate: 955 passed, 0 skipped, ruff clean.
+- Code review (2026-03-22): Fixed 5 findings — added `pytestmark = pytest.mark.integration` to cold-path integration tests; fixed tautological assertion in `test_subscribe_and_poll_against_real_kafka`; added non-empty validation for `KAFKA_COLD_PATH_CONSUMER_GROUP` in Settings; removed dead `_FakeConsumer` class and `_make_adapter_with_fake_consumer` helper; added unit tests for `commit()` `_NO_OFFSET` suppression path and re-raise path; added settings validation unit tests for consumer group.
+- Post-review gate: 926 unit/ATDD passed, 0 skipped, ruff clean.
 
 ### File List
 
@@ -210,6 +212,7 @@ claude-sonnet-4-6
 - `src/aiops_triage_pipeline/config/settings.py` (modified)
 - `tests/unit/integrations/test_kafka_consumer.py` (new)
 - `tests/unit/test_main.py` (modified)
+- `tests/unit/config/test_settings.py` (modified — added consumer group validation tests)
 - `tests/integration/cold_path/__init__.py` (new)
 - `tests/integration/cold_path/test_consumer_lifecycle.py` (new)
 - `tests/atdd/fixtures/story_3_1_test_data.py` (pre-existing ATDD fixture)
@@ -232,8 +235,9 @@ claude-sonnet-4-6
 ## Change Log
 
 - 2026-03-22: Implemented cold-path Kafka consumer runtime mode (Story 3.1). Replaced bootstrap stub with live sequential consumer loop, added adapter boundary, health transitions, configuration, tests, and documentation.
+- 2026-03-22: Code review fixes — added integration test markers, fixed tautological assertion, added settings-level consumer group non-empty validation, removed dead test code, added commit() error path unit tests.
 
 ## Story Completion Status
 
-- Story status: `review`
-- Completion note: All 6 tasks complete. 4 ATDD tests GREEN, 955 regression tests passed (0 skipped), ruff clean.
+- Story status: `done`
+- Completion note: All 6 tasks complete. 4 ATDD tests GREEN, 926 unit/ATDD tests passed (0 skipped), ruff clean. Code review findings fixed: integration test markers, tautological assertion, settings validation, dead code, commit error path tests.

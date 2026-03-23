@@ -348,3 +348,35 @@ def test_load_policy_yaml_schema_mismatch(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="_Policy"):
         load_policy_yaml(policy_file, _Policy)
+
+
+def _base_settings_kwargs() -> dict:
+    """Minimal keyword arguments for constructing a valid Settings object in tests."""
+    return {
+        "_env_file": None,
+        "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092",
+        "DATABASE_URL": "postgresql+psycopg://u:p@h/db",
+        "REDIS_URL": "redis://localhost:6379/0",
+        "S3_ENDPOINT_URL": "http://localhost:9000",
+        "S3_ACCESS_KEY": "key",
+        "S3_SECRET_KEY": "secret",
+        "S3_BUCKET": "bucket",
+    }
+
+
+def test_kafka_cold_path_consumer_group_default_is_non_empty() -> None:
+    """KAFKA_COLD_PATH_CONSUMER_GROUP defaults to canonical non-empty value."""
+    settings = Settings(**_base_settings_kwargs())
+    assert settings.KAFKA_COLD_PATH_CONSUMER_GROUP == "aiops-cold-path-diagnosis"
+
+
+def test_kafka_cold_path_consumer_group_empty_raises() -> None:
+    """KAFKA_COLD_PATH_CONSUMER_GROUP cannot be an empty string."""
+    with pytest.raises((ValueError, Exception), match="KAFKA_COLD_PATH_CONSUMER_GROUP"):
+        Settings(**{**_base_settings_kwargs(), "KAFKA_COLD_PATH_CONSUMER_GROUP": ""})
+
+
+def test_kafka_cold_path_consumer_group_whitespace_raises() -> None:
+    """KAFKA_COLD_PATH_CONSUMER_GROUP cannot be a whitespace-only string."""
+    with pytest.raises((ValueError, Exception), match="KAFKA_COLD_PATH_CONSUMER_GROUP"):
+        Settings(**{**_base_settings_kwargs(), "KAFKA_COLD_PATH_CONSUMER_GROUP": "   "})

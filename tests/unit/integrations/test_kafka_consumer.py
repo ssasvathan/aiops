@@ -25,62 +25,6 @@ def _build_settings(**overrides: object) -> SimpleNamespace:
     return SimpleNamespace(**base)
 
 
-class _FakeConsumer:
-    def __init__(self, config: dict) -> None:
-        self.config = config
-        self.subscriptions: list[list[str]] = []
-        self.polls: list[float] = []
-        self.commits: list[bool] = []
-        self.closed = False
-        self._poll_return = None
-
-    def subscribe(self, topics: list[str]) -> None:
-        self.subscriptions.append(topics)
-
-    def poll(self, *, timeout: float) -> object:
-        self.polls.append(timeout)
-        return self._poll_return
-
-    def commit(self, *, asynchronous: bool = True) -> None:
-        self.commits.append(asynchronous)
-
-    def close(self) -> None:
-        self.closed = True
-
-
-def _make_adapter_with_fake_consumer(
-    *,
-    consumer_group: str = "test-group",
-    settings: SimpleNamespace | None = None,
-    fake_consumer: _FakeConsumer | None = None,
-    monkeypatch,
-) -> tuple[ConfluentKafkaCaseHeaderConsumer, _FakeConsumer]:
-    if settings is None:
-        settings = _build_settings()
-    if fake_consumer is None:
-        fake_consumer = _FakeConsumer({})
-
-    import aiops_triage_pipeline.integrations.kafka_consumer as mod
-
-    monkeypatch.setattr(
-        mod,
-        "ConfluentKafkaCaseHeaderConsumer.__init__",
-        lambda self, *, consumer_group, settings: None,
-        raising=False,
-    )
-
-    # Patch at the confluent_kafka import level instead
-    fake_module = MagicMock()
-    fake_module.Consumer.return_value = fake_consumer
-    monkeypatch.setitem(__import__("sys").modules, "confluent_kafka", fake_module)
-
-    adapter = ConfluentKafkaCaseHeaderConsumer(
-        consumer_group=consumer_group,
-        settings=settings,
-    )
-    return adapter, adapter._consumer
-
-
 class TestConfluentKafkaCaseHeaderConsumer:
     def test_construction_builds_consumer_with_correct_config(self, monkeypatch) -> None:
         """Consumer is built with group.id, bootstrap.servers, and auto-commit disabled."""
@@ -244,3 +188,47 @@ class TestConfluentKafkaCaseHeaderConsumer:
             consumer_group="grp", settings=_build_settings()
         )
         assert isinstance(adapter, KafkaConsumerAdapterProtocol)
+
+    def test_commit_suppresses_no_offset_error(self, monkeypatch) -> None:
+        """commit() silently swallows _NO_OFFSET (-168) errors (nothing to commit is normal)."""
+
+        class _FakeKafkaError:
+            def code(self) -> int:
+                return -168  # _NO_OFFSET constant
+
+        no_offset_exc = Exception("_NO_OFFSET")
+        no_offset_exc.args = (_FakeKafkaError(),)
+
+        fake_consumer = MagicMock()
+        fake_consumer.commit.side_effect = no_offset_exc
+        fake_confluent = MagicMock()
+        fake_confluent.Consumer.return_value = fake_consumer
+        monkeypatch.setitem(__import__("sys").modules, "confluent_kafka", fake_confluent)
+
+        adapter = ConfluentKafkaCaseHeaderConsumer(
+            consumer_group="grp", settings=_build_settings()
+        )
+        # Must not raise — _NO_OFFSET is a normal shutdown condition.
+        adapter.commit()
+
+    def test_commit_reraises_non_no_offset_errors(self, monkeypatch) -> None:
+        """commit() re-raises exceptions that do not carry a _NO_OFFSET (-168) error code."""
+
+        class _FakeKafkaError:
+            def code(self) -> int:
+                return -1  # Some other Kafka error code
+
+        # Build an exception whose first arg has a .code() returning non-(-168)
+        other_exc = Exception(_FakeKafkaError())
+
+        fake_consumer = MagicMock()
+        fake_consumer.commit.side_effect = other_exc
+        fake_confluent = MagicMock()
+        fake_confluent.Consumer.return_value = fake_consumer
+        monkeypatch.setitem(__import__("sys").modules, "confluent_kafka", fake_confluent)
+
+        adapter = ConfluentKafkaCaseHeaderConsumer(
+            consumer_group="grp", settings=_build_settings()
+        )
+        with pytest.raises(Exception):
+            adapter.commit()

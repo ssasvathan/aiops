@@ -15,6 +15,8 @@ import pytest
 
 from aiops_triage_pipeline.integrations.kafka_consumer import ConfluentKafkaCaseHeaderConsumer
 
+pytestmark = pytest.mark.integration
+
 
 def _is_environment_prereq_error(exc: Exception) -> bool:
     text = f"{type(exc).__name__}: {exc}"
@@ -67,9 +69,11 @@ class TestColdPathConsumerLifecycle:
         )
         try:
             adapter.subscribe(["aiops-case-header"])
-            # Poll with short timeout — no messages expected, None is the correct result.
+            # Poll with short timeout — no messages expected; result is None or an error msg.
             msg = adapter.poll(timeout=2.0)
-            assert msg is None or (msg is not None and msg.error() is not None or True)
+            # Either no message (None) or a message with an error (e.g. partition EOF) is valid;
+            # a non-error message payload is not expected against an empty topic.
+            assert msg is None or msg.error() is not None
         finally:
             adapter.commit()
             adapter.close()

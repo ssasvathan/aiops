@@ -154,6 +154,8 @@ class Settings(BaseSettings):
                 )
             if not Path(self.KRB5_CONF_PATH).exists():
                 raise ValueError(f"KRB5 config file not found: {self.KRB5_CONF_PATH}")
+        if not self.KAFKA_COLD_PATH_CONSUMER_GROUP.strip():
+            raise ValueError("KAFKA_COLD_PATH_CONSUMER_GROUP must be a non-empty string")
         if self.KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS <= 0:
             raise ValueError("KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS must be > 0")
         if self.CASEFILE_LIFECYCLE_POLL_INTERVAL_SECONDS <= 0:
