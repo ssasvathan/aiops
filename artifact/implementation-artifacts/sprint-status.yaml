@@ -61,12 +61,12 @@ development_status:
   3-3-invoke-llm-for-all-cases-with-enriched-prompt-and-schema-validation: done
   3-4-persist-diagnosis-artifact-with-fallback-guarantees: done
   epic-3-retrospective: done
-  epic-4: in-progress
+  epic-4: done
   4-1-add-distributed-cycle-lock-with-fail-open-behavior: done
   4-2-coordinate-scope-shards-and-recover-from-pod-failure: done
   4-3-roll-out-distributed-coordination-incrementally: done
-  epic-4-retrospective: optional
-  epic-5: backlog
+  epic-4-retrospective: done
+  epic-5: in-progress
   5-1-load-and-validate-policies-at-startup: backlog
   5-2-enforce-security-critical-integration-configuration: backlog
   5-3-enable-operator-and-maintainer-policy-tuning-workflows: backlog
