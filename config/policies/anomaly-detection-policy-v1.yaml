@@ -1,0 +1,12 @@
+schema_version: "v1"
+policy_id: "anomaly-detection-policy-v1"
+
+lag_buildup_min_lag: 100.0
+lag_buildup_min_growth: 25.0
+lag_buildup_max_offset_progress: 10.0
+throughput_min_messages_per_sec: 1000.0
+throughput_min_total_produce_requests_per_sec: 100.0
+throughput_failure_ratio_min: 0.05
+volume_drop_max_current_messages_in_per_sec: 1.0
+volume_drop_min_baseline_messages_in_per_sec: 50.0
+volume_drop_min_expected_requests_per_sec: 150.0

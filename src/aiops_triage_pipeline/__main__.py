@@ -29,6 +29,7 @@ from aiops_triage_pipeline.config.settings import (
     get_settings,
     load_policy_yaml,
 )
+from aiops_triage_pipeline.contracts.anomaly_detection_policy import AnomalyDetectionPolicyV1
 from aiops_triage_pipeline.contracts.case_header_event import CaseHeaderEventV1
 from aiops_triage_pipeline.contracts.casefile_retention_policy import CasefileRetentionPolicyV1
 from aiops_triage_pipeline.contracts.outbox_policy import OutboxPolicyV1
@@ -106,6 +107,9 @@ from aiops_triage_pipeline.registry.loader import TopologyRegistryLoader
 from aiops_triage_pipeline.storage.client import build_s3_object_store_client_from_settings
 from aiops_triage_pipeline.storage.lifecycle import CasefileLifecycleRunner
 
+_ANOMALY_DETECTION_POLICY_PATH = (
+    Path(__file__).resolve().parents[2] / "config/policies/anomaly-detection-policy-v1.yaml"
+)
 _PEAK_POLICY_PATH = Path(__file__).resolve().parents[2] / "config/policies/peak-policy-v1.yaml"
 _RULEBOOK_POLICY_PATH = Path(__file__).resolve().parents[2] / "config/policies/rulebook-v1.yaml"
 _REDIS_TTL_POLICY_PATH = (
@@ -316,6 +320,9 @@ def _run_hot_path() -> None:
 
     try:
         # Load policies once at startup — avoids per-cycle disk I/O.
+        anomaly_detection_policy = load_policy_yaml(
+            _ANOMALY_DETECTION_POLICY_PATH, AnomalyDetectionPolicyV1
+        )
         peak_policy = load_peak_policy(_PEAK_POLICY_PATH)
         rulebook_policy = load_rulebook_policy(_RULEBOOK_POLICY_PATH)
         redis_ttl_policy = load_redis_ttl_policy(_REDIS_TTL_POLICY_PATH)
@@ -324,6 +331,15 @@ def _run_hot_path() -> None:
         )
         metric_queries = build_metric_queries(_PROMETHEUS_METRICS_CONTRACT_PATH)
         denylist = load_denylist(_DENYLIST_PATH)
+        logger.info(
+            "startup_policies_loaded",
+            event_type="runtime.startup_policies_loaded",
+            rulebook_policy_version=rulebook_policy.schema_version,
+            peak_policy_version=peak_policy.schema_version,
+            anomaly_detection_policy_version=anomaly_detection_policy.schema_version,
+            redis_ttl_policy_version=redis_ttl_policy.schema_version,
+            prometheus_metrics_contract_version=prometheus_metrics_contract.schema_version,
+        )
 
         # Build runtime dependencies.
         prometheus_client = PrometheusHTTPClient(base_url=settings.PROMETHEUS_URL)
@@ -376,6 +392,7 @@ def _run_hot_path() -> None:
             alert_evaluator=alert_evaluator,
             prometheus_client=prometheus_client,
             metric_queries=metric_queries,
+            anomaly_detection_policy=anomaly_detection_policy,
             peak_policy=peak_policy,
             rulebook_policy=rulebook_policy,
             redis_ttl_policy=redis_ttl_policy,
@@ -402,6 +419,7 @@ async def _hot_path_scheduler_loop(
     alert_evaluator: OperationalAlertEvaluator,
     prometheus_client: PrometheusHTTPClient,
     metric_queries: dict[str, MetricQueryDefinition],
+    anomaly_detection_policy: AnomalyDetectionPolicyV1,
     peak_policy,
     rulebook_policy,
     redis_ttl_policy,
@@ -736,6 +754,7 @@ async def _hot_path_scheduler_loop(
                             prometheus_metrics_contract=prometheus_metrics_contract,
                             denylist=denylist,
                             diagnosis_policy_version="v1",
+                            anomaly_detection_policy_version=anomaly_detection_policy.schema_version,
                         )
                         outbox_ready = persist_casefile_and_prepare_outbox_ready(
                             casefile=casefile,

@@ -2,6 +2,9 @@
 
 # ── Event Contracts ──────────────────────────────────────────────────────────
 from aiops_triage_pipeline.contracts.action_decision import ActionDecisionV1
+
+# ── Policy Contracts ─────────────────────────────────────────────────────────
+from aiops_triage_pipeline.contracts.anomaly_detection_policy import AnomalyDetectionPolicyV1
 from aiops_triage_pipeline.contracts.case_header_event import CaseHeaderEventV1
 from aiops_triage_pipeline.contracts.casefile_retention_policy import (
     CasefileRetentionPolicy,
@@ -16,8 +19,6 @@ from aiops_triage_pipeline.contracts.enums import (
     EvidenceStatus,
 )
 from aiops_triage_pipeline.contracts.gate_input import Finding, GateInputV1
-
-# ── Policy Contracts ─────────────────────────────────────────────────────────
 from aiops_triage_pipeline.contracts.local_dev import LocalDevContractV1, LocalDevIntegrationModes
 from aiops_triage_pipeline.contracts.operational_alert_policy import (
     AlertRuleDescriptor,
@@ -53,6 +54,8 @@ from aiops_triage_pipeline.contracts.topology_registry import TopologyRegistryLo
 from aiops_triage_pipeline.contracts.triage_excerpt import TriageExcerptV1
 
 __all__ = [
+    # Policy contracts
+    "AnomalyDetectionPolicyV1",
     # Enums
     "Action",
     "CriticalityTier",

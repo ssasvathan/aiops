@@ -5,6 +5,7 @@ import structlog
 from pydantic import ValidationError
 
 from aiops_triage_pipeline.config.settings import (
+    AppEnv,
     IntegrationMode,
     Settings,
     get_settings,
@@ -441,3 +442,20 @@ def test_log_active_config_includes_shard_registry_enabled() -> None:
     assert "DISTRIBUTED_CYCLE_LOCK_ENABLED" in event, (
         "Both coordination flags must be logged together"
     )
+
+
+def test_env_file_selection_uses_app_env() -> None:
+    """APP_ENV=dev resolves to AppEnv.dev and max_action returns NOTIFY (FR50 precedence)."""
+    settings = Settings(
+        APP_ENV="dev",
+        _env_file=None,
+        KAFKA_BOOTSTRAP_SERVERS="localhost:9092",
+        DATABASE_URL="postgresql+psycopg://u:p@h/db",
+        REDIS_URL="redis://localhost:6379/0",
+        S3_ENDPOINT_URL="http://localhost:9000",
+        S3_ACCESS_KEY="key",
+        S3_SECRET_KEY="secret",
+        S3_BUCKET="bucket",
+    )
+    assert settings.APP_ENV == AppEnv.dev
+    assert settings.max_action == "NOTIFY"

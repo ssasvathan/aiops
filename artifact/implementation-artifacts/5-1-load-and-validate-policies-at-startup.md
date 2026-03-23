@@ -1,6 +1,6 @@
 # Story 5.1: Load and Validate Policies at Startup
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -27,34 +27,34 @@ so that runtime behavior is deterministic and fails fast on invalid configuratio
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Create `AnomalyDetectionPolicyV1` contract (AC: 1)
-  - [ ] Create `src/aiops_triage_pipeline/contracts/anomaly_detection_policy.py` with frozen Pydantic v2
+- [x] Task 1: Create `AnomalyDetectionPolicyV1` contract (AC: 1)
+  - [x] Create `src/aiops_triage_pipeline/contracts/anomaly_detection_policy.py` with frozen Pydantic v2
         `AnomalyDetectionPolicyV1` model containing all anomaly detector threshold fields (see Dev Notes
         for exact field names and default values from existing module-level constants in `stages/anomaly.py`).
-  - [ ] Fields: `schema_version: Literal["v1"] = "v1"`, `policy_id: Literal["anomaly-detection-policy-v1"] = "anomaly-detection-policy-v1"`, and all nine threshold fields with `float` type and positive validators (`lag_buildup_min_lag`, `lag_buildup_min_growth`, `lag_buildup_max_offset_progress`, `throughput_min_messages_per_sec`, `throughput_min_total_produce_requests_per_sec`, `throughput_failure_ratio_min`, `volume_drop_max_current_messages_in_per_sec`, `volume_drop_min_baseline_messages_in_per_sec`, `volume_drop_min_expected_requests_per_sec`).
-  - [ ] Add `field_validator` enforcing all float thresholds are `> 0` (except `throughput_failure_ratio_min` which must be in `(0.0, 1.0]`).
-  - [ ] Export from `contracts/__init__.py` if the package has an `__init__.py` with re-exports (check pattern in existing contracts).
+  - [x] Fields: `schema_version: Literal["v1"] = "v1"`, `policy_id: Literal["anomaly-detection-policy-v1"] = "anomaly-detection-policy-v1"`, and all nine threshold fields with `float` type and positive validators (`lag_buildup_min_lag`, `lag_buildup_min_growth`, `lag_buildup_max_offset_progress`, `throughput_min_messages_per_sec`, `throughput_min_total_produce_requests_per_sec`, `throughput_failure_ratio_min`, `volume_drop_max_current_messages_in_per_sec`, `volume_drop_min_baseline_messages_in_per_sec`, `volume_drop_min_expected_requests_per_sec`).
+  - [x] Add `field_validator` enforcing all float thresholds are `> 0` (except `throughput_failure_ratio_min` which must be in `(0.0, 1.0]`).
+  - [x] Export from `contracts/__init__.py` if the package has an `__init__.py` with re-exports (check pattern in existing contracts).
 
-- [ ] Task 2: Create `config/policies/anomaly-detection-policy-v1.yaml` (AC: 1)
-  - [ ] Create the YAML file at `config/policies/anomaly-detection-policy-v1.yaml` with `schema_version: v1`,
+- [x] Task 2: Create `config/policies/anomaly-detection-policy-v1.yaml` (AC: 1)
+  - [x] Create the YAML file at `config/policies/anomaly-detection-policy-v1.yaml` with `schema_version: v1`,
         `policy_id: anomaly-detection-policy-v1`, and threshold values set to the current constant values
         from `stages/anomaly.py` (see Dev Notes for exact values).
-  - [ ] Verify `load_policy_yaml(Path("config/policies/anomaly-detection-policy-v1.yaml"), AnomalyDetectionPolicyV1)`
+  - [x] Verify `load_policy_yaml(Path("config/policies/anomaly-detection-policy-v1.yaml"), AnomalyDetectionPolicyV1)`
         succeeds without error.
 
-- [ ] Task 3: Wire anomaly detection policy at hot-path startup (AC: 1)
-  - [ ] Add `_ANOMALY_DETECTION_POLICY_PATH` module-level constant to `__main__.py` (alongside existing
+- [x] Task 3: Wire anomaly detection policy at hot-path startup (AC: 1)
+  - [x] Add `_ANOMALY_DETECTION_POLICY_PATH` module-level constant to `__main__.py` (alongside existing
         `_PEAK_POLICY_PATH`, `_RULEBOOK_POLICY_PATH`, etc.).
-  - [ ] Load `anomaly_detection_policy` in the hot-path startup `try` block at line ~319 (existing policies
+  - [x] Load `anomaly_detection_policy` in the hot-path startup `try` block at line ~319 (existing policies
         block), using `load_policy_yaml(_ANOMALY_DETECTION_POLICY_PATH, AnomalyDetectionPolicyV1)`.
-  - [ ] Update the `assemble_casefile_triage_stage(...)` call (line ~727) to pass
+  - [x] Update the `assemble_casefile_triage_stage(...)` call (line ~727) to pass
         `anomaly_detection_policy_version=anomaly_detection_policy.schema_version` explicitly, removing
         the implicit default `"v1"`.
-  - [ ] Add `startup_policies_loaded` log event immediately after all policies are loaded in the hot-path
+  - [x] Add `startup_policies_loaded` log event immediately after all policies are loaded in the hot-path
         startup block, listing all loaded policy versions (see Dev Notes for exact log fields).
 
-- [ ] Task 4: Write unit tests (AC: 1, 2)
-  - [ ] Create `tests/unit/contracts/test_anomaly_detection_policy.py` with:
+- [x] Task 4: Write unit tests (AC: 1, 2)
+  - [x] Create `tests/unit/contracts/test_anomaly_detection_policy.py` with:
     - `test_default_values_match_anomaly_stage_constants`: instantiate `AnomalyDetectionPolicyV1()` and assert
       all default values match the current module-level constants in `stages/anomaly.py`.
     - `test_invalid_threshold_raises`: assert negative or zero thresholds raise `ValidationError`.
@@ -62,14 +62,14 @@ so that runtime behavior is deterministic and fails fast on invalid configuratio
     - `test_load_policy_yaml_roundtrip`: use `load_policy_yaml` to load the real
       `config/policies/anomaly-detection-policy-v1.yaml` and assert the result is an `AnomalyDetectionPolicyV1`
       instance with the expected default values.
-  - [ ] Add `test_env_file_selection_uses_app_env` to `tests/unit/config/test_settings.py`:
+  - [x] Add `test_env_file_selection_uses_app_env` to `tests/unit/config/test_settings.py`:
     verify that `Settings(APP_ENV="dev", _env_file=None, ...)` resolves `APP_ENV` to `AppEnv.dev` and
     `max_action` returns `"NOTIFY"` (FR50 precedence coverage).
 
-- [ ] Task 5: Run full regression (AC: 1, 2)
-  - [ ] `uv run ruff check`
-  - [ ] `uv run pytest -q tests/unit`
-  - [ ] `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
+- [x] Task 5: Run full regression (AC: 1, 2)
+  - [x] `uv run ruff check`
+  - [x] `uv run pytest -q tests/unit`
+  - [x] `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
 
 ## Dev Notes
 
@@ -269,6 +269,24 @@ claude-sonnet-4-6
 
 ### Completion Notes List
 
+- Created `AnomalyDetectionPolicyV1` frozen Pydantic v2 model with nine float threshold fields, two `field_validator`s (positive constraint + `(0.0, 1.0]` range for failure ratio), and `Literal["v1"]` schema_version pattern matching all existing contracts.
+- Created `config/policies/anomaly-detection-policy-v1.yaml` with values matching the nine module-level constants in `stages/anomaly.py`.
+- Wired anomaly detection policy into `__main__.py`: added `_ANOMALY_DETECTION_POLICY_PATH` constant, loaded in hot-path startup `try` block, passed `anomaly_detection_policy` as parameter to `_hot_path_scheduler_loop`, updated `assemble_casefile_triage_stage` call to pass explicit `anomaly_detection_policy_version=anomaly_detection_policy.schema_version`, added `startup_policies_loaded` structured log event.
+- Exported `AnomalyDetectionPolicyV1` from `contracts/__init__.py` following existing pattern.
+- Added 4 unit tests in `test_anomaly_detection_policy.py` (default values, invalid threshold, failure ratio range, YAML round-trip) and 1 test in `test_settings.py` (FR50 env file selection).
+- Updated 5 existing `test_main.py` tests that call `_hot_path_scheduler_loop` to pass the new `anomaly_detection_policy` parameter.
+- Full regression: 1121 tests passed, 0 skipped, 0 failed.
+
 ### File List
+
+- `src/aiops_triage_pipeline/contracts/anomaly_detection_policy.py` (new)
+- `src/aiops_triage_pipeline/contracts/__init__.py` (modified)
+- `src/aiops_triage_pipeline/__main__.py` (modified)
+- `config/policies/anomaly-detection-policy-v1.yaml` (new)
+- `tests/unit/contracts/test_anomaly_detection_policy.py` (new)
+- `tests/unit/config/test_settings.py` (modified)
+- `tests/unit/test_main.py` (modified)
+- `artifact/implementation-artifacts/sprint-status.yaml` (modified)
+- `artifact/implementation-artifacts/5-1-load-and-validate-policies-at-startup.md` (modified)
 
 ### Story Completion Status
