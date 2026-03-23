@@ -381,6 +381,33 @@ def _base_settings_kwargs() -> dict:
     }
 
 
+def test_shard_coordination_defaults_to_disabled() -> None:
+    """SHARD_REGISTRY_ENABLED defaults to False and shard parameters have safe positive defaults."""
+    settings = Settings(**_base_settings_kwargs())
+    assert settings.SHARD_REGISTRY_ENABLED is False
+    assert settings.SHARD_COORDINATION_SHARD_COUNT > 0
+    assert settings.SHARD_LEASE_TTL_SECONDS > 0
+    assert settings.SHARD_CHECKPOINT_TTL_SECONDS > 0
+
+
+def test_shard_coordination_shard_count_rejects_zero() -> None:
+    """SHARD_COORDINATION_SHARD_COUNT=0 raises a validation error."""
+    with pytest.raises((ValueError, ValidationError)):
+        Settings(**{**_base_settings_kwargs(), "SHARD_COORDINATION_SHARD_COUNT": 0})
+
+
+def test_shard_lease_ttl_seconds_rejects_zero() -> None:
+    """SHARD_LEASE_TTL_SECONDS=0 raises a validation error."""
+    with pytest.raises((ValueError, ValidationError)):
+        Settings(**{**_base_settings_kwargs(), "SHARD_LEASE_TTL_SECONDS": 0})
+
+
+def test_shard_checkpoint_ttl_seconds_rejects_zero() -> None:
+    """SHARD_CHECKPOINT_TTL_SECONDS=0 raises a validation error."""
+    with pytest.raises((ValueError, ValidationError)):
+        Settings(**{**_base_settings_kwargs(), "SHARD_CHECKPOINT_TTL_SECONDS": 0})
+
+
 def test_kafka_cold_path_consumer_group_default_is_non_empty() -> None:
     """KAFKA_COLD_PATH_CONSUMER_GROUP defaults to canonical non-empty value."""
     settings = Settings(**_base_settings_kwargs())

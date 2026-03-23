@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import time
 
-import pytest
-
 from aiops_triage_pipeline.coordination.shard_registry import (
     RedisShardCoordinator,
     ShardLeaseStatus,
@@ -13,7 +11,6 @@ from aiops_triage_pipeline.coordination.shard_registry import (
     build_shard_checkpoint_key,
     build_shard_lease_key,
 )
-
 
 # ── Fake Redis helpers ────────────────────────────────────────────────────────
 
@@ -33,7 +30,7 @@ class _FakeRedis:
             self._values.pop(key, None)
             self._expires_at.pop(key, None)
 
-    def set(self, name: str, value: str, *, nx: bool = False, ex: int | None = None) -> bool:
+    def set(self, name: str, value: str, *, nx: bool, ex: int | None = None) -> bool:
         self._purge_expired()
         if nx and name in self._values:
             return False
@@ -253,30 +250,3 @@ def test_shard_checkpoint_key_matches_expected_format() -> None:
     assert key == "aiops:shard:checkpoint:0:1700000300"
 
 
-def test_findings_cache_shard_checkpoint_write() -> None:
-    from aiops_triage_pipeline.cache.findings_cache import set_shard_interval_checkpoint
-
-    class _RecordingClient:
-        def __init__(self) -> None:
-            self.calls: list[dict[str, object]] = []
-
-        def get(self, key: str) -> str | None:
-            return None
-
-        def set(self, key: str, value: str, *, ex: int | None = None) -> bool:
-            self.calls.append({"key": key, "value": value, "ex": ex})
-            return True
-
-    client = _RecordingClient()
-    set_shard_interval_checkpoint(
-        redis_client=client,
-        shard_id=2,
-        interval_bucket=1700000600,
-        ttl_seconds=660,
-    )
-
-    assert len(client.calls) == 1
-    call = client.calls[0]
-    assert call["key"] == "aiops:shard:checkpoint:2:1700000600"
-    assert call["value"] == "1"
-    assert call["ex"] == 660

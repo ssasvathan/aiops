@@ -230,13 +230,21 @@ gpt-5-codex
 ### File List
 
 - `artifact/implementation-artifacts/4-2-coordinate-scope-shards-and-recover-from-pod-failure.md`
+- `artifact/implementation-artifacts/4-3-roll-out-distributed-coordination-incrementally.md` (pre-populated next story)
 - `artifact/implementation-artifacts/sprint-status.yaml`
+- `artifact/test-artifacts/atdd-checklist-4-2-coordinate-scope-shards-and-recover-from-pod-failure.md` (new)
+- `artifact/test-artifacts/tea-atdd-api-tests-2026-03-23T12-51-32Z.json` (new)
+- `artifact/test-artifacts/tea-atdd-e2e-tests-2026-03-23T12-51-32Z.json` (new)
+- `artifact/test-artifacts/tea-atdd-summary-2026-03-23T12-51-32Z.json` (new)
 - `src/aiops_triage_pipeline/coordination/shard_registry.py` (new)
+- `src/aiops_triage_pipeline/coordination/__init__.py` (modified — added shard_registry exports)
 - `src/aiops_triage_pipeline/cache/findings_cache.py` (modified)
 - `src/aiops_triage_pipeline/config/settings.py` (modified)
 - `src/aiops_triage_pipeline/health/metrics.py` (modified)
 - `src/aiops_triage_pipeline/__main__.py` (modified)
 - `tests/unit/coordination/test_shard_registry.py` (new)
+- `tests/unit/cache/test_findings_cache.py` (modified — added shard checkpoint test)
+- `tests/unit/config/test_settings.py` (modified — added shard settings tests)
 - `tests/integration/coordination/test_shard_lease_contention.py` (new)
 - `tests/unit/test_main.py` (modified — added SHARD_REGISTRY_ENABLED to test helper SimpleNamespace)
 - `tests/atdd/test_story_4_2_coordinate_scope_shards_and_recover_from_pod_failure_red_phase.py` (pre-existing ATDD)

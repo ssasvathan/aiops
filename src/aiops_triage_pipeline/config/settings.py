@@ -105,9 +105,11 @@ class Settings(BaseSettings):
     CYCLE_LOCK_MARGIN_SECONDS: int = 60
 
     # Shard coordination (Story 4.2) — disabled by default for incremental rollout
+    # SHARD_LEASE_TTL_SECONDS must be < HOT_PATH_SCHEDULER_INTERVAL_SECONDS so that a
+    # pod's NX lease expires before the next cycle, allowing clean per-cycle re-acquisition.
     SHARD_REGISTRY_ENABLED: bool = False
     SHARD_COORDINATION_SHARD_COUNT: int = 4
-    SHARD_LEASE_TTL_SECONDS: int = 360
+    SHARD_LEASE_TTL_SECONDS: int = 270  # default < 300 (interval) for clean NX re-acquire
     SHARD_CHECKPOINT_TTL_SECONDS: int = 660
     TOPOLOGY_REGISTRY_PATH: str = "config/topology-registry.yaml"
     STAGE2_SUSTAINED_PARALLEL_MIN_KEYS: int = 64

@@ -8,6 +8,7 @@ from aiops_triage_pipeline.cache.findings_cache import (
     get_or_compute_interval_findings,
     interval_findings_ttl_seconds,
     set_interval_findings,
+    set_shard_interval_checkpoint,
 )
 from aiops_triage_pipeline.contracts.redis_ttl_policy import RedisTtlPolicyV1, RedisTtlsByEnv
 from aiops_triage_pipeline.models.anomaly import AnomalyFinding
@@ -272,3 +273,35 @@ def test_get_or_compute_interval_findings_ignores_write_failures() -> None:
     )
 
     assert loaded == findings
+
+
+# ── Shard checkpoint surface (Story 4.2) ─────────────────────────────────────
+
+
+def test_set_shard_interval_checkpoint_writes_single_key_with_ttl() -> None:
+    """set_shard_interval_checkpoint writes exactly one key per shard per interval (NFR-SC2)."""
+
+    class _RecordingClient:
+        def __init__(self) -> None:
+            self.calls: list[dict[str, object]] = []
+
+        def get(self, key: str) -> str | None:
+            return None
+
+        def set(self, key: str, value: str, *, ex: int | None = None) -> bool:
+            self.calls.append({"key": key, "value": value, "ex": ex})
+            return True
+
+    client = _RecordingClient()
+    set_shard_interval_checkpoint(
+        redis_client=client,
+        shard_id=2,
+        interval_bucket=1700000600,
+        ttl_seconds=660,
+    )
+
+    assert len(client.calls) == 1
+    call = client.calls[0]
+    assert call["key"] == "aiops:shard:checkpoint:2:1700000600"
+    assert call["value"] == "1"
+    assert call["ex"] == 660
