@@ -6,6 +6,9 @@ from typing import Callable, Protocol
 
 from aiops_triage_pipeline.cache.evidence_window import evidence_window_ttl_seconds
 from aiops_triage_pipeline.contracts.redis_ttl_policy import RedisTtlPolicyV1
+from aiops_triage_pipeline.coordination.shard_registry import (
+    build_shard_checkpoint_key as _build_shard_checkpoint_key,
+)
 from aiops_triage_pipeline.logging.setup import get_logger
 from aiops_triage_pipeline.models.anomaly import AnomalyFinding
 
@@ -180,3 +183,25 @@ def _deserialize_findings(payload: str) -> tuple[AnomalyFinding, ...]:
     if not isinstance(decoded, list):
         raise ValueError("cached findings payload must be a JSON list")
     return tuple(AnomalyFinding.model_validate(item) for item in decoded)
+
+
+# ── Shard checkpoint surface (Story 4.2) ─────────────────────────────────────
+
+# Re-export for callers that import only from this module.
+build_shard_checkpoint_key = _build_shard_checkpoint_key
+
+
+def set_shard_interval_checkpoint(
+    *,
+    redis_client: FindingsCacheClientProtocol,
+    shard_id: int,
+    interval_bucket: int,
+    ttl_seconds: int,
+) -> None:
+    """Write a per-shard per-interval checkpoint marker to Redis.
+
+    Uses a single write per shard per interval (O(1) per shard), replacing the
+    previous per-scope coordination writes to satisfy NFR-SC2.
+    """
+    key = _build_shard_checkpoint_key(shard_id, interval_bucket)
+    redis_client.set(key, "1", ex=ttl_seconds)

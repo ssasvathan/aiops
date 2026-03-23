@@ -91,6 +91,21 @@ _coordination_cycle_lock_fail_open_total = _meter.create_counter(
     description="Total distributed cycle lock fail-open outcomes",
     unit="1",
 )
+_coordination_shard_checkpoints_total = _meter.create_counter(
+    name="aiops.coordination.shard.checkpoints_total",
+    description="Total per-shard per-interval checkpoint writes",
+    unit="1",
+)
+_coordination_shard_lease_recovered_total = _meter.create_counter(
+    name="aiops.coordination.shard.lease_recovered_total",
+    description="Total shard lease recoveries after holder failure",
+    unit="1",
+)
+_coordination_shard_assignments_total = _meter.create_counter(
+    name="aiops.coordination.shard.assignments_total",
+    description="Total scope-to-shard assignment operations",
+    unit="1",
+)
 _evidence_interval_drift_seconds = _meter.create_histogram(
     name="aiops.evidence_builder.interval_drift_seconds",
     description="Observed scheduler interval drift in seconds",
@@ -271,6 +286,27 @@ def record_cycle_lock_fail_open(*, reason: str | None = None) -> None:
     _coordination_cycle_lock_fail_open_total.add(
         1,
         attributes={"component": "coordination", "reason": reason_code},
+    )
+
+
+def record_shard_checkpoint_written(*, shard_id: int) -> None:
+    _coordination_shard_checkpoints_total.add(
+        1,
+        attributes={"component": "coordination", "shard_id": str(shard_id)},
+    )
+
+
+def record_shard_lease_recovered(*, shard_id: int, new_owner_id: str) -> None:
+    _coordination_shard_lease_recovered_total.add(
+        1,
+        attributes={"component": "coordination", "shard_id": str(shard_id)},
+    )
+
+
+def record_shard_assignment(*, shard_id: int, pod_id: str, scope_count: int) -> None:
+    _coordination_shard_assignments_total.add(
+        max(scope_count, 0),
+        attributes={"component": "coordination", "shard_id": str(shard_id), "pod_id": pod_id},
     )
 
 

@@ -76,11 +76,40 @@ flowchart TD
   - `yielded`: pod skips stage execution for that interval and sleeps to next boundary.
   - `fail_open`: pod continues stage execution and emits degraded coordination health/metrics.
 
+### Shard coordination (Story 4.2)
+
+When `SHARD_REGISTRY_ENABLED=true`, each hot-path pod additionally participates in
+shard-level scope distribution using Redis leases.  The feature is **disabled by default**
+to allow incremental rollout.
+
+**How it works per cycle:**
+
+1. For each shard in `[0, SHARD_COORDINATION_SHARD_COUNT)`, the pod attempts
+   `SET NX EX aiops:shard:lease:<shard_id>` with `SHARD_LEASE_TTL_SECONDS` as the TTL.
+2. Shards acquired by this pod are checkpointed to Redis via
+   `aiops:shard:checkpoint:<shard_id>:<interval_bucket>` with `SHARD_CHECKPOINT_TTL_SECONDS` TTL.
+3. If a holder pod fails, its leases expire naturally — no manual intervention required.
+   Any other pod can then acquire those leases on the next cycle.
+4. On any Redis coordination failure, the pod falls back to **full-scope processing**
+   (D3 fail-open semantics) and emits a structured warning.
+
+**Relevant settings:**
+
+| Setting | Default | Description |
+|---|---|---|
+| `SHARD_REGISTRY_ENABLED` | `false` | Enable/disable shard coordination |
+| `SHARD_COORDINATION_SHARD_COUNT` | `4` | Number of shards to distribute scopes across |
+| `SHARD_LEASE_TTL_SECONDS` | `360` | Shard lease TTL (must be > interval + margin) |
+| `SHARD_CHECKPOINT_TTL_SECONDS` | `660` | Checkpoint key TTL (should exceed 2 × interval) |
+
+**Rollback:** Set `SHARD_REGISTRY_ENABLED=false` to revert to single-pod full-scope processing instantly.
+
 ### Notes
 
 - Hot-path never publishes to Kafka directly. It writes a `READY` outbox row; the `outbox-publisher` process handles Kafka delivery.
 - `TOPOLOGY_REGISTRY_PATH` must be set — hot-path exits at startup if missing.
 - Safe rollout default keeps distributed lock disabled (`DISTRIBUTED_CYCLE_LOCK_ENABLED=false`).
+- Safe rollout default keeps shard coordination disabled (`SHARD_REGISTRY_ENABLED=false`).
 - `--once` is not supported for this mode.
 
 ---

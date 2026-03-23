@@ -25,6 +25,15 @@
   - Effective lock TTL = `HOT_PATH_SCHEDULER_INTERVAL_SECONDS + CYCLE_LOCK_MARGIN_SECONDS`
   - Lock key namespace: `aiops:lock:cycle` (`SET NX EX`, no explicit unlock)
   - Redis lock errors fail open by design (cycle still executes; coordination health is degraded)
+- Shard coordination controls (Story 4.2, disabled by default):
+  - `SHARD_REGISTRY_ENABLED` (default `false`) — enable to distribute scope workloads across pods
+  - `SHARD_COORDINATION_SHARD_COUNT` (default `4`, must be `>0`) — number of shards
+  - `SHARD_LEASE_TTL_SECONDS` (default `360`, must be `>0`) — shard lease TTL in Redis
+  - `SHARD_CHECKPOINT_TTL_SECONDS` (default `660`, must be `>0`) — checkpoint key TTL
+  - Shard lease namespace: `aiops:shard:lease:<id>` (`SET NX EX`, no explicit unlock)
+  - Checkpoint namespace: `aiops:shard:checkpoint:<id>:<interval_bucket>`
+  - Shard coordination errors fall back to full-scope processing (D3 fail-open semantics)
+  - Rollback: set `SHARD_REGISTRY_ENABLED=false` to revert instantly to full-scope mode
 
 ## Startup Command
 

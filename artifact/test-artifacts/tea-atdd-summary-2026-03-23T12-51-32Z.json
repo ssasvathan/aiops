@@ -1,0 +1,15 @@
+{
+  "story_id": "4-2-coordinate-scope-shards-and-recover-from-pod-failure",
+  "tdd_phase": "RED",
+  "total_tests": 7,
+  "api_tests": 7,
+  "e2e_tests": 0,
+  "fixtures_created": 1,
+  "expected_to_fail": true,
+  "subagent_execution": "SEQUENTIAL (API -> E2E)",
+  "performance_gain": "baseline (no parallel speedup)",
+  "evidence": {
+    "command": "uv run pytest -q tests/atdd/test_story_4_2_coordinate_scope_shards_and_recover_from_pod_failure_red_phase.py",
+    "result": "7 failed in 0.80s"
+  }
+}

@@ -689,6 +689,7 @@ def _hot_path_settings_for_coordination_tests(*, lock_enabled: bool) -> SimpleNa
         STAGE2_SUSTAINED_PARALLEL_WORKERS=4,
         STAGE2_SUSTAINED_PARALLEL_CHUNK_SIZE=32,
         DISTRIBUTED_CYCLE_LOCK_ENABLED=lock_enabled,
+        SHARD_REGISTRY_ENABLED=False,
     )
 
 

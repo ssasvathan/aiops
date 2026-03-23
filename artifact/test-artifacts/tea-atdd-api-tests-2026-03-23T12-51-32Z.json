@@ -1,0 +1,50 @@
+{
+  "success": true,
+  "subagent": "atdd-api-tests",
+  "tests": [
+    {
+      "file": "tests/atdd/test_story_4_2_coordinate_scope_shards_and_recover_from_pod_failure_red_phase.py",
+      "description": "ATDD backend acceptance tests for Story 4.2 shard scope coordination and pod-failure lease recovery (RED PHASE)",
+      "expected_to_fail": true,
+      "acceptance_criteria_covered": [
+        "Settings expose shard coordination feature flag, shard count, lease TTL, and checkpoint TTL controls",
+        "Shard coordination module exposes D1 key builders and assignment/lease primitives",
+        "Scope-to-shard assignment remains deterministic for stable scope and pod membership inputs",
+        "Lease acquisition supports expiry-based handoff so another pod can resume shard processing",
+        "Findings cache exposes per-shard per-interval checkpoint write surfaces",
+        "Metrics surface exposes shard checkpoint and lease recovery observability counters",
+        "Hot-path scheduler source includes shard gating and full-scope fallback markers"
+      ],
+      "priority_coverage": {
+        "P0": 5,
+        "P1": 2,
+        "P2": 0,
+        "P3": 0
+      }
+    }
+  ],
+  "fixture_needs": [
+    "tests/atdd/fixtures/story_4_2_test_data.py"
+  ],
+  "knowledge_fragments_used": [
+    "data-factories",
+    "component-tdd",
+    "test-quality",
+    "test-healing-patterns",
+    "test-levels-framework",
+    "test-priorities-matrix",
+    "ci-burn-in",
+    "overview",
+    "api-request",
+    "auth-session",
+    "recurse",
+    "pactjs-utils-overview",
+    "pactjs-utils-consumer-helpers",
+    "pactjs-utils-provider-verifier",
+    "pactjs-utils-request-filter",
+    "pact-mcp"
+  ],
+  "test_count": 7,
+  "tdd_phase": "RED",
+  "summary": "Generated 7 failing backend ATDD tests for Story 4.2"
+}

@@ -122,6 +122,11 @@ When `DISTRIBUTED_CYCLE_LOCK_ENABLED=true`, hot-path interval ownership is coord
 Redis `SET NX EX` on `aiops:lock:cycle`. Non-owners yield the interval; Redis lock failures
 explicitly fail open (cycle execution continues with degraded coordination health signaling).
 
+When `SHARD_REGISTRY_ENABLED=true`, each hot-path pod additionally participates in shard-level
+scope distribution.  Scopes are hashed deterministically to shards and each shard is leased via
+`aiops:shard:lease:<id>`.  Failed-pod shard recovery occurs automatically after TTL expiry — no
+manual intervention required.  Coordination failures degrade to full-scope processing (D3 fail-open).
+
 **Gate engine (AG0–AG6):**
 
 | Gate | Responsibility |
@@ -349,6 +354,10 @@ config/.env.docker
 |----------|---------|-------|
 | `DISTRIBUTED_CYCLE_LOCK_ENABLED` | `false` | Enables distributed interval ownership coordination |
 | `CYCLE_LOCK_MARGIN_SECONDS` | `60` | Added to `HOT_PATH_SCHEDULER_INTERVAL_SECONDS` to compute lock TTL (`>0`) |
+| `SHARD_REGISTRY_ENABLED` | `false` | Enables shard-level scope distribution across pods |
+| `SHARD_COORDINATION_SHARD_COUNT` | `4` | Number of shards (`>0`) |
+| `SHARD_LEASE_TTL_SECONDS` | `360` | Shard lease TTL in seconds (`>0`) |
+| `SHARD_CHECKPOINT_TTL_SECONDS` | `660` | Checkpoint key TTL in seconds (`>0`) |
 
 ---
 

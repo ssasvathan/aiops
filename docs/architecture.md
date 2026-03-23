@@ -52,7 +52,7 @@
 ## Component Overview
 
 - `pipeline/stages/`: stage computation and gating decisions
-- `coordination/`: distributed cycle lock protocol and Redis lock implementation
+- `coordination/`: distributed coordination — cycle lock (Story 4.1) and shard registry with lease/checkpoint primitives (Story 4.2)
 - `outbox/`: durable publish sequencing and worker
 - `linkage/`: ServiceNow retry state and transition safety
 - `storage/`: casefile serialization, validation, object-store writes
