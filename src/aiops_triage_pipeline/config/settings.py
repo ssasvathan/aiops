@@ -147,6 +147,24 @@ class Settings(BaseSettings):
         return self
 
     @model_validator(mode="after")
+    def validate_critical_integrations_prod_mode(self) -> "Settings":
+        """Reject MOCK and OFF for PD, Slack, SN in prod — each requires LIVE (or LOG)."""
+        if self.APP_ENV != AppEnv.prod:
+            return self
+        _critical: list[tuple[str, IntegrationMode]] = [
+            ("INTEGRATION_MODE_PD", self.INTEGRATION_MODE_PD),
+            ("INTEGRATION_MODE_SLACK", self.INTEGRATION_MODE_SLACK),
+            ("INTEGRATION_MODE_SN", self.INTEGRATION_MODE_SN),
+        ]
+        for field_name, mode in _critical:
+            if mode in (IntegrationMode.OFF, IntegrationMode.MOCK):
+                raise ValueError(
+                    f"{field_name} must be LIVE or LOG in prod environment; "
+                    f"got {mode.value}"
+                )
+        return self
+
+    @model_validator(mode="after")
     def validate_kerberos_files(self) -> "Settings":
         """Fail-fast at boot if SASL_SSL is configured but Kerberos files are missing."""
         if self.KAFKA_SECURITY_PROTOCOL == "SASL_SSL":

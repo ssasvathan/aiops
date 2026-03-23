@@ -1,6 +1,6 @@
 # Story 5.2: Enforce Security-Critical Integration Configuration
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -26,22 +26,22 @@ so that deployments cannot start in insecure or unsupported states.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Extend prod integration mode guardrails to cover PD, Slack, and SN (AC: 2)
-  - [ ] In `src/aiops_triage_pipeline/config/settings.py`, add a new `@model_validator(mode="after")`
+- [x] Task 1: Extend prod integration mode guardrails to cover PD, Slack, and SN (AC: 2)
+  - [x] In `src/aiops_triage_pipeline/config/settings.py`, add a new `@model_validator(mode="after")`
         named `validate_critical_integrations_prod_mode` that iterates over
         `INTEGRATION_MODE_PD`, `INTEGRATION_MODE_SLACK`, and `INTEGRATION_MODE_SN` and raises
         `ValueError` if any is `IntegrationMode.OFF` or `IntegrationMode.MOCK` when
         `APP_ENV == AppEnv.prod`.
-  - [ ] Follow the exact pattern of the existing `validate_llm_prod_mode` validator (lines 136–147).
-  - [ ] Error message should name the specific field and its current value, e.g.:
+  - [x] Follow the exact pattern of the existing `validate_llm_prod_mode` validator (lines 136–147).
+  - [x] Error message should name the specific field and its current value, e.g.:
         `"INTEGRATION_MODE_PD must be LIVE or LOG in prod environment; got MOCK"`
-  - [ ] **Do NOT modify** `validate_llm_prod_mode` — it remains as a separate validator.
-  - [ ] **Do NOT add new settings fields** — no new env vars or defaults needed.
-  - [ ] **Do NOT modify** `log_active_config` — all four integration modes are already logged
+  - [x] **Do NOT modify** `validate_llm_prod_mode` — it remains as a separate validator.
+  - [x] **Do NOT add new settings fields** — no new env vars or defaults needed.
+  - [x] **Do NOT modify** `log_active_config` — all four integration modes are already logged
         (lines 231–234 of settings.py).
 
-- [ ] Task 2: Write unit tests for new prod guardrails (AC: 2)
-  - [ ] Add the following tests to `tests/unit/config/test_settings.py`,
+- [x] Task 2: Write unit tests for new prod guardrails (AC: 2)
+  - [x] Add the following tests to `tests/unit/config/test_settings.py`,
         following the `_PROD_SETTINGS_BASE` fixture pattern already established:
     - `test_prod_pd_mock_raises_validation_error`: `APP_ENV=prod + INTEGRATION_MODE_PD=MOCK` → `ValidationError`
     - `test_prod_pd_off_raises_validation_error`: `APP_ENV=prod + INTEGRATION_MODE_PD=OFF` → `ValidationError`
@@ -54,13 +54,13 @@ so that deployments cannot start in insecure or unsupported states.
     - `test_prod_sn_off_raises_validation_error`: `APP_ENV=prod + INTEGRATION_MODE_SN=OFF` → `ValidationError`
     - `test_prod_sn_live_succeeds`: `APP_ENV=prod + INTEGRATION_MODE_SN=LIVE` → succeeds
     - `test_local_pd_mock_succeeds`: `APP_ENV=local + INTEGRATION_MODE_PD=MOCK` → succeeds (non-prod)
-  - [ ] All new tests must use `_PROD_SETTINGS_BASE` dict (lines 267–277 of test_settings.py)
+  - [x] All new tests must use `_PROD_SETTINGS_BASE` dict (lines 267–277 of test_settings.py)
         and `pytest.raises((ValueError, ValidationError), match="INTEGRATION_MODE_PD")` pattern.
 
-- [ ] Task 3: Run full regression (AC: 1, 2)
-  - [ ] `uv run ruff check`
-  - [ ] `uv run pytest -q tests/unit`
-  - [ ] `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
+- [x] Task 3: Run full regression (AC: 1, 2)
+  - [x] `uv run ruff check`
+  - [x] `uv run pytest -q tests/unit`
+  - [x] `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
 
 ## Dev Notes
 
@@ -310,5 +310,15 @@ claude-sonnet-4-6
 
 ### Completion Notes List
 
+- Added `validate_critical_integrations_prod_mode` model validator to `Settings` class in `config/settings.py`, immediately after `validate_llm_prod_mode`. Validator iterates over PD, Slack, and SN integration modes and raises `ValueError` if any is `OFF` or `MOCK` in `prod` environment.
+- Added 11 unit tests to `tests/unit/config/test_settings.py` following the `_PROD_SETTINGS_BASE` fixture pattern: 6 raises tests (MOCK/OFF for PD, Slack, SN), 4 succeeds tests (LIVE/LOG for PD and SN, LIVE for Slack), 1 non-prod succeeds test.
+- Full regression: 1134 tests pass, 0 skipped, 0 failures. Unit suite: 1038 tests (+11 new). Ruff lint clean.
+- `validate_llm_prod_mode`, `validate_kerberos_files`, and `log_active_config` left unmodified per story constraints.
+
 ### File List
+
+- `src/aiops_triage_pipeline/config/settings.py`
+- `tests/unit/config/test_settings.py`
+- `artifact/implementation-artifacts/sprint-status.yaml`
+- `artifact/implementation-artifacts/5-2-enforce-security-critical-integration-configuration.md`
 
