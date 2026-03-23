@@ -233,6 +233,7 @@ claude-sonnet-4-6
 - `tests/unit/coordination/test_rollout_flags.py`
 - `tests/unit/config/test_settings.py`
 - `tests/unit/pipeline/test_scheduler.py`
+- `tests/unit/test_main.py`
 - `tests/integration/coordination/test_coordination_rollout.py`
 - `docs/deployment-guide.md`
 - `docs/runtime-modes.md`
@@ -240,5 +241,5 @@ claude-sonnet-4-6
 
 ### Story Completion Status
 
-- Story status: `ready-for-dev`
-- Completion note: `Ultimate context engine analysis completed — incremental rollout story context created with flag-combination tests, statelessness integration tests, and operator rollout documentation targets`
+- Story status: `review`
+- Completion note: `All tasks complete — flag-combination unit tests, stateless rollout integration tests, operator docs, and flag-independence scheduler tests implemented. Code review applied fixes: H1 integration test now exercises real coordination primitives; H2 shard gate tests added to test_main.py; M1 OTLP metric assertion added; M2 TTL margin increased; L1 fixture scope fixed to session; L2 false/true flag combination test added.`

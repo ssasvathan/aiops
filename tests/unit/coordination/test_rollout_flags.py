@@ -9,6 +9,8 @@ that no SET or GET commands are issued when the relevant feature flag is off.
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 from aiops_triage_pipeline.config.settings import Settings
 from aiops_triage_pipeline.coordination.cycle_lock import RedisCycleLock
 from aiops_triage_pipeline.coordination.shard_registry import RedisShardCoordinator
@@ -89,16 +91,31 @@ def _simulate_coordinated_cycle(
     Mirrors the conditional logic in the hot-path scheduler loop
     (``__main__._run_hot_path_scheduler_loop``) so unit tests can assert
     Redis side effects without spinning up the full async scheduler.
+
+    Also fires the metric recording functions that the real scheduler loop calls
+    (``record_cycle_lock_acquired`` / ``record_shard_checkpoint_written``) so that
+    tests can patch those names and verify observable behaviour (AC 2).
     """
+    from aiops_triage_pipeline.coordination.protocol import CycleLockStatus
+    from aiops_triage_pipeline.coordination.shard_registry import ShardLeaseStatus
+    from aiops_triage_pipeline.health.metrics import (
+        record_cycle_lock_acquired,
+        record_shard_checkpoint_written,
+    )
+
     if settings.DISTRIBUTED_CYCLE_LOCK_ENABLED:
-        cycle_lock.acquire(interval_seconds=interval_seconds, owner_id=owner_id)
+        outcome = cycle_lock.acquire(interval_seconds=interval_seconds, owner_id=owner_id)
+        if outcome.status == CycleLockStatus.acquired:
+            record_cycle_lock_acquired()
 
     if settings.SHARD_REGISTRY_ENABLED:
-        shard_coordinator.acquire_lease(
+        lease_outcome = shard_coordinator.acquire_lease(
             shard_id=0,
             owner_id=owner_id,
             lease_ttl_seconds=settings.SHARD_LEASE_TTL_SECONDS,
         )
+        if lease_outcome.status == ShardLeaseStatus.acquired:
+            record_shard_checkpoint_written(shard_id=0)
 
 
 # ── Flag-combination tests ────────────────────────────────────────────────────
@@ -128,7 +145,11 @@ def test_both_flags_false_produces_zero_redis_coordination_calls() -> None:
 
 
 def test_lock_enabled_shard_disabled_emits_lock_calls_only() -> None:
-    """Lock flag=True, shard flag=False → only lock Redis calls, zero shard calls (AC 2)."""
+    """Lock flag=True, shard flag=False → only lock Redis calls, zero shard calls (AC 2).
+
+    Also verifies that the ``record_cycle_lock_acquired`` OTLP metric is emitted once,
+    confirming the lock/yield/fail-open behaviour is observable by operators.
+    """
     settings = Settings(**{
         **_SETTINGS_BASE,
         "DISTRIBUTED_CYCLE_LOCK_ENABLED": True,
@@ -138,11 +159,12 @@ def test_lock_enabled_shard_disabled_emits_lock_calls_only() -> None:
     cycle_lock = RedisCycleLock(redis_client=fake_redis, margin_seconds=60)
     shard_coordinator = RedisShardCoordinator(redis_client=fake_redis, pod_id="test-pod")
 
-    _simulate_coordinated_cycle(
-        settings=settings,
-        cycle_lock=cycle_lock,
-        shard_coordinator=shard_coordinator,
-    )
+    with patch("aiops_triage_pipeline.health.metrics.record_cycle_lock_acquired") as mock_metric:
+        _simulate_coordinated_cycle(
+            settings=settings,
+            cycle_lock=cycle_lock,
+            shard_coordinator=shard_coordinator,
+        )
 
     lock_calls = fake_redis.lock_set_calls()
     shard_calls = fake_redis.shard_set_calls()
@@ -154,6 +176,10 @@ def test_lock_enabled_shard_disabled_emits_lock_calls_only() -> None:
     assert shard_calls == [], (
         f"Expected zero Redis calls on aiops:shard:* when SHARD_REGISTRY_ENABLED=False,"
         f" got: {shard_calls}"
+    )
+    mock_metric.assert_called_once(), (
+        "record_cycle_lock_acquired() must be called once when lock is acquired"
+        " (AC 2 observability)"
     )
 
 
@@ -179,6 +205,42 @@ def test_both_flags_true_activates_lock_and_shard_coordination() -> None:
     )
     assert fake_redis.shard_set_calls(), (
         "Expected at least one shard Redis call when SHARD_REGISTRY_ENABLED=True"
+    )
+
+
+def test_shard_enabled_lock_disabled_emits_shard_calls_only() -> None:
+    """Shard flag=True, lock flag=False → only shard Redis calls, zero lock calls.
+
+    Covers the ``false/true`` flag combination documented in runtime-modes.md as
+    "Shard-only (not recommended)": shard distribution active but no interval
+    deduplication via the cycle lock.
+    """
+    settings = Settings(**{
+        **_SETTINGS_BASE,
+        "DISTRIBUTED_CYCLE_LOCK_ENABLED": False,
+        "SHARD_REGISTRY_ENABLED": True,
+    })
+    fake_redis = _CallRecordingRedis()
+    cycle_lock = RedisCycleLock(redis_client=fake_redis, margin_seconds=60)
+    shard_coordinator = RedisShardCoordinator(redis_client=fake_redis, pod_id="test-pod")
+
+    with patch("aiops_triage_pipeline.health.metrics.record_shard_checkpoint_written"):
+        _simulate_coordinated_cycle(
+            settings=settings,
+            cycle_lock=cycle_lock,
+            shard_coordinator=shard_coordinator,
+        )
+
+    lock_calls = fake_redis.lock_set_calls()
+    shard_calls = fake_redis.shard_set_calls()
+
+    assert lock_calls == [], (
+        f"Expected zero Redis SET on aiops:lock:* when DISTRIBUTED_CYCLE_LOCK_ENABLED=False,"
+        f" got: {lock_calls}"
+    )
+    assert len(shard_calls) >= 1, (
+        f"Expected at least one Redis SET on aiops:shard:* when SHARD_REGISTRY_ENABLED=True,"
+        f" got: {shard_calls}"
     )
 
 

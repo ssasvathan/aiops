@@ -862,3 +862,121 @@ async def test_hot_path_scheduler_does_not_attempt_lock_when_feature_flag_disabl
         )
 
     cycle_lock.acquire.assert_not_called()
+
+
+def _hot_path_settings_for_shard_tests(*, shard_enabled: bool) -> SimpleNamespace:
+    """Settings fixture for shard-flag gate tests in test_main.py."""
+    return SimpleNamespace(
+        HOT_PATH_SCHEDULER_INTERVAL_SECONDS=300,
+        STAGE2_PEAK_HISTORY_MAX_DEPTH=4,
+        STAGE2_PEAK_HISTORY_MAX_SCOPES=8,
+        STAGE2_PEAK_HISTORY_MAX_IDLE_CYCLES=2,
+        STAGE2_SUSTAINED_PARALLEL_MIN_KEYS=64,
+        STAGE2_SUSTAINED_PARALLEL_WORKERS=4,
+        STAGE2_SUSTAINED_PARALLEL_CHUNK_SIZE=32,
+        DISTRIBUTED_CYCLE_LOCK_ENABLED=False,
+        SHARD_REGISTRY_ENABLED=shard_enabled,
+        SHARD_COORDINATION_SHARD_COUNT=2,
+        SHARD_LEASE_TTL_SECONDS=270,
+        SHARD_CHECKPOINT_TTL_SECONDS=660,
+    )
+
+
+def _make_shard_loop_call(monkeypatch, settings, shard_coordinator):
+    """Shared helper: run _hot_path_scheduler_loop up to the topology reload (after shard gate)."""
+    tick = SimpleNamespace(
+        expected_boundary=datetime(2026, 3, 23, 12, 0, tzinfo=UTC),
+        drift_seconds=0,
+        missed_intervals=0,
+    )
+    monkeypatch.setattr(__main__, "evaluate_scheduler_tick", lambda **_: tick)
+    topology_loader = MagicMock()
+    topology_loader.reload_if_changed.side_effect = asyncio.CancelledError()
+    cycle_lock = MagicMock()
+    cycle_lock.acquire.return_value = SimpleNamespace(
+        status=CycleLockStatus.acquired,
+        key="aiops:lock:cycle",
+        ttl_seconds=360,
+    )
+    registry = MagicMock()
+    registry.update = AsyncMock()
+    monkeypatch.setattr(__main__, "get_health_registry", lambda: registry)
+    monkeypatch.setattr(__main__, "record_cycle_lock_acquired", MagicMock())
+    monkeypatch.setattr(__main__, "set_shard_interval_checkpoint", MagicMock())
+
+    return dict(
+        settings=settings,
+        logger=MagicMock(),
+        alert_evaluator=MagicMock(),
+        prometheus_client=MagicMock(),
+        metric_queries={},
+        peak_policy=MagicMock(),
+        rulebook_policy=MagicMock(),
+        redis_ttl_policy=MagicMock(),
+        prometheus_metrics_contract=MagicMock(),
+        denylist=MagicMock(),
+        redis_client=MagicMock(),
+        dedupe_store=MagicMock(),
+        object_store_client=MagicMock(),
+        outbox_repository=MagicMock(),
+        pd_client=MagicMock(),
+        slack_client=MagicMock(),
+        topology_loader=topology_loader,
+        cycle_lock=cycle_lock,
+        cycle_lock_owner_id="pod-a",
+        shard_coordinator=shard_coordinator,
+    )
+
+
+@pytest.mark.asyncio
+async def test_hot_path_scheduler_does_not_call_acquire_lease_when_shard_flag_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SHARD_REGISTRY_ENABLED=False → shard_coordinator.acquire_lease never called (AC 1).
+
+    Passes a non-None shard_coordinator so the test exercises the flag-guard condition
+    ``if settings.SHARD_REGISTRY_ENABLED and shard_coordinator is not None`` in
+    ``_hot_path_scheduler_loop``, not just the None-coordinator short-circuit.
+    """
+    shard_coordinator = MagicMock()
+    kwargs = _make_shard_loop_call(
+        monkeypatch,
+        _hot_path_settings_for_shard_tests(shard_enabled=False),
+        shard_coordinator,
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await __main__._hot_path_scheduler_loop(**kwargs)
+
+    shard_coordinator.acquire_lease.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_hot_path_scheduler_calls_acquire_lease_for_each_shard_when_flag_enabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """SHARD_REGISTRY_ENABLED=True → acquire_lease called once per configured shard (AC 2)."""
+    from aiops_triage_pipeline.coordination.shard_registry import (  # noqa: PLC0415
+        ShardLeaseOutcome,
+        ShardLeaseStatus,
+    )
+
+    shard_coordinator = MagicMock()
+    shard_coordinator.acquire_lease.return_value = ShardLeaseOutcome(
+        status=ShardLeaseStatus.acquired,
+        shard_id=0,
+        owner_id="pod-a",
+        ttl_seconds=270,
+    )
+    monkeypatch.setattr(__main__, "record_shard_checkpoint_written", MagicMock())
+    kwargs = _make_shard_loop_call(
+        monkeypatch,
+        _hot_path_settings_for_shard_tests(shard_enabled=True),
+        shard_coordinator,
+    )
+
+    with pytest.raises(asyncio.CancelledError):
+        await __main__._hot_path_scheduler_loop(**kwargs)
+
+    # SHARD_COORDINATION_SHARD_COUNT=2, so acquire_lease is called twice (once per shard)
+    assert shard_coordinator.acquire_lease.call_count == 2
