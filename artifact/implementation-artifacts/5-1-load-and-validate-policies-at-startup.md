@@ -1,6 +1,6 @@
 # Story 5.1: Load and Validate Policies at Startup
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -286,7 +286,24 @@ claude-sonnet-4-6
 - `tests/unit/contracts/test_anomaly_detection_policy.py` (new)
 - `tests/unit/config/test_settings.py` (modified)
 - `tests/unit/test_main.py` (modified)
+- `tests/unit/contracts/conftest.py` (modified)
+- `tests/unit/contracts/test_policy_models.py` (modified)
 - `artifact/implementation-artifacts/sprint-status.yaml` (modified)
 - `artifact/implementation-artifacts/5-1-load-and-validate-policies-at-startup.md` (modified)
+
+### Code Review (AI) — 2026-03-23
+
+**Reviewer:** claude-sonnet-4-6 (adversarial code review workflow)
+
+**Outcome:** Changes Requested → Fixed → Approved
+
+**Findings resolved:**
+
+- **M1** `contracts/__init__.py`: Collapsed misleading `# ── Event Contracts / Policy Contracts` split headers into a single `# ── Contracts (alphabetical)` block. isort enforces alphabetical order across all `contracts.*` imports, making the two-section comment structure inaccurate (event contracts like `CaseHeaderEventV1` appeared under Policy Contracts).
+- **M2** `test_policy_models.py` + `conftest.py`: Added `AnomalyDetectionPolicyV1` to the established policy contract parity tests: `test_anomaly_detection_policy_is_frozen`, `test_anomaly_detection_policy_round_trip`, and inclusion in `test_all_policy_contracts_have_schema_version_v1` — matching the pattern for all other policy contracts.
+- **L1** `contracts/__init__.py` `__all__`: Removed isolated `# Policy contracts` section for `AnomalyDetectionPolicyV1` at top of `__all__`; merged into the existing `# Policy contracts` section in alphabetical order.
+- **L2** `test_anomaly_detection_policy.py`: Expanded `test_invalid_threshold_raises` to loop over all 8 fields covered by `_validate_positive`, ensuring a missed field in the decorator list would be caught.
+
+**Post-fix regression:** 1027 unit tests passed, 0 skipped, 0 failed.
 
 ### Story Completion Status

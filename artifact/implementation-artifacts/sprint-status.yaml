@@ -67,7 +67,7 @@ development_status:
   4-3-roll-out-distributed-coordination-incrementally: done
   epic-4-retrospective: done
   epic-5: in-progress
-  5-1-load-and-validate-policies-at-startup: review
+  5-1-load-and-validate-policies-at-startup: done
   5-2-enforce-security-critical-integration-configuration: backlog
   5-3-enable-operator-and-maintainer-policy-tuning-workflows: backlog
   5-4-expose-health-metrics-and-runtime-alert-evaluation: backlog
