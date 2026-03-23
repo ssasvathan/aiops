@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Protocol
 
-
 # ── Key builders (D1 namespace: aiops:shard:...) ─────────────────────────────
 
 
@@ -22,6 +21,13 @@ def build_shard_checkpoint_key(shard_id: int, interval_bucket: int) -> str:
 
 
 # ── Deterministic scope assignment ────────────────────────────────────────────
+
+
+def scope_to_shard_id(scope: tuple[str, str, str], shard_count: int) -> int:
+    """Map a scope tuple to its shard index via SHA-256 consistent hash."""
+    key = "|".join(scope)
+    digest = hashlib.sha256(key.encode()).hexdigest()
+    return int(digest, 16) % shard_count
 
 
 def assign_scopes_to_pod(
@@ -42,15 +48,33 @@ def assign_scopes_to_pod(
 
     sorted_pods = sorted(active_pod_ids)
 
-    def _scope_shard(scope: tuple[str, str, str]) -> int:
-        key = "|".join(scope)
-        digest = hashlib.sha256(key.encode()).hexdigest()
-        return int(digest, 16) % shard_count
-
     def _shard_owner(shard_id: int) -> str:
         return sorted_pods[shard_id % len(sorted_pods)]
 
-    return [scope for scope in scopes if _shard_owner(_scope_shard(scope)) == pod_id]
+    return [
+        scope for scope in scopes
+        if _shard_owner(scope_to_shard_id(scope, shard_count)) == pod_id
+    ]
+
+
+def filter_scopes_by_shard_ids(
+    *,
+    scopes: list[tuple[str, str, str]],
+    acquired_shard_ids: set[int],
+    shard_count: int,
+) -> list[tuple[str, str, str]]:
+    """Return scopes whose consistent-hash shard falls in acquired_shard_ids.
+
+    Used by the scheduler loop to restrict processing to scopes owned by this
+    pod's acquired leases (D11-D12).  Returns all scopes when acquired_shard_ids
+    is empty or shard_count is not positive (fail-open, D3).
+    """
+    if not acquired_shard_ids or shard_count <= 0:
+        return list(scopes)
+    return [
+        scope for scope in scopes
+        if scope_to_shard_id(scope, shard_count) in acquired_shard_ids
+    ]
 
 
 # ── Lease outcome models ──────────────────────────────────────────────────────

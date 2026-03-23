@@ -18,6 +18,7 @@ from aiops_triage_pipeline.cache.evidence_window import (
     load_sustained_window_states,
     persist_sustained_window_states,
 )
+from aiops_triage_pipeline.cache.findings_cache import set_shard_interval_checkpoint
 from aiops_triage_pipeline.cache.peak_cache import (
     load_peak_profiles,
     persist_peak_profiles,
@@ -31,13 +32,13 @@ from aiops_triage_pipeline.config.settings import (
 from aiops_triage_pipeline.contracts.case_header_event import CaseHeaderEventV1
 from aiops_triage_pipeline.contracts.casefile_retention_policy import CasefileRetentionPolicyV1
 from aiops_triage_pipeline.contracts.outbox_policy import OutboxPolicyV1
-from aiops_triage_pipeline.cache.findings_cache import set_shard_interval_checkpoint
 from aiops_triage_pipeline.coordination import RedisCycleLock
 from aiops_triage_pipeline.coordination.protocol import CycleLockProtocol, CycleLockStatus
 from aiops_triage_pipeline.coordination.shard_registry import (
     RedisShardCoordinator,
     ShardLeaseStatus,
-    assign_scopes_to_pod,
+    filter_scopes_by_shard_ids,
+    scope_to_shard_id,
 )
 from aiops_triage_pipeline.denylist.loader import load_denylist
 from aiops_triage_pipeline.diagnosis.context_retrieval import retrieve_case_context_with_hash
@@ -428,6 +429,7 @@ async def _hot_path_scheduler_loop(
         logger=logger,
     )
     coordination_registry = get_health_registry()
+    _previous_shard_holders: dict[int, str] = {}  # shard_id → holder_id when this pod last yielded
 
     while True:
         evaluation_time = datetime.now(UTC)
@@ -522,6 +524,8 @@ async def _hot_path_scheduler_loop(
         # and processes only the scopes mapped to its shard set.  On any shard
         # coordination failure the pod falls back to full_scope processing (D3
         # fail-open semantics) rather than halting the cycle.
+        acquired_shard_ids: set[int] = set()
+        shard_coordination_degraded = False
         shard_scopes_filter: list[tuple[str, str, str]] | None = None
         if settings.SHARD_REGISTRY_ENABLED and shard_coordinator is not None:
             interval_bucket = int(evaluation_time.astimezone(UTC).timestamp()) - (
@@ -535,6 +539,12 @@ async def _hot_path_scheduler_loop(
                         lease_ttl_seconds=settings.SHARD_LEASE_TTL_SECONDS,
                     )
                     if lease_outcome.status == ShardLeaseStatus.acquired:
+                        acquired_shard_ids.add(shard_id)
+                        prev_holder = _previous_shard_holders.pop(shard_id, None)
+                        if prev_holder is not None and prev_holder != cycle_lock_owner_id:
+                            record_shard_lease_recovered(
+                                shard_id=shard_id, new_owner_id=cycle_lock_owner_id
+                            )
                         record_shard_checkpoint_written(shard_id=shard_id)
                         set_shard_interval_checkpoint(
                             redis_client=redis_client,
@@ -549,20 +559,36 @@ async def _hot_path_scheduler_loop(
                             owner_id=cycle_lock_owner_id,
                         )
                     elif lease_outcome.status == ShardLeaseStatus.yielded:
+                        if lease_outcome.holder_id is not None:
+                            _previous_shard_holders[shard_id] = lease_outcome.holder_id
                         logger.info(
                             "hot_path_shard_lease_yielded",
                             event_type="hot_path.shard_lease_yielded",
                             shard_id=shard_id,
                             holder_id=lease_outcome.holder_id,
                         )
+                    elif lease_outcome.status == ShardLeaseStatus.fail_open:
+                        shard_coordination_degraded = True
+                        await coordination_registry.update(
+                            "coordination",
+                            HealthStatus.DEGRADED,
+                            reason=lease_outcome.reason,
+                        )
+                        logger.warning(
+                            "hot_path_shard_lease_fail_open",
+                            event_type="hot_path.shard_coordination_degraded",
+                            shard_id=shard_id,
+                            reason=lease_outcome.reason,
+                        )
             except Exception:  # noqa: BLE001 - shard failure degrades to full-scope (D3)
+                shard_coordination_degraded = True
+                acquired_shard_ids.clear()
                 logger.warning(
                     "hot_path_shard_coordination_failed",
                     event_type="hot_path.shard_coordination_degraded",
                     reason="falling back to full_scope processing",
                     exc_info=True,
                 )
-                shard_scopes_filter = None
 
         decisions_by_scope: dict = {}
         try:
@@ -579,6 +605,32 @@ async def _hot_path_scheduler_loop(
                 alert_evaluator=alert_evaluator,
             )
             peak_scopes = _peak_scopes_from_rows(evidence_output.rows)
+            if (
+                settings.SHARD_REGISTRY_ENABLED
+                and acquired_shard_ids
+                and not shard_coordination_degraded
+            ):
+                shard_scopes_filter = filter_scopes_by_shard_ids(
+                    scopes=peak_scopes,
+                    acquired_shard_ids=acquired_shard_ids,
+                    shard_count=settings.SHARD_COORDINATION_SHARD_COUNT,
+                )
+                _shard_scope_counts: dict[int, int] = {sid: 0 for sid in acquired_shard_ids}
+                for _s in shard_scopes_filter:
+                    _sid = scope_to_shard_id(_s, settings.SHARD_COORDINATION_SHARD_COUNT)
+                    if _sid in _shard_scope_counts:
+                        _shard_scope_counts[_sid] += 1
+                for _sid, _cnt in _shard_scope_counts.items():
+                    record_shard_assignment(
+                        shard_id=_sid, pod_id=cycle_lock_owner_id, scope_count=_cnt
+                    )
+                peak_scopes = shard_scopes_filter
+                logger.info(
+                    "hot_path_shard_scope_filter_applied",
+                    event_type="hot_path.shard_scope_assigned",
+                    acquired_shard_count=len(acquired_shard_ids),
+                    assigned_scope_count=len(peak_scopes),
+                )
             prior_sustained_window_state_by_key = load_sustained_window_states(
                 redis_client=redis_client,
                 identity_keys=_build_sustained_identity_key_candidates(
@@ -637,7 +689,18 @@ async def _hot_path_scheduler_loop(
                 alert_evaluator=alert_evaluator,
             )
 
+            _shard_scope_set = set(shard_scopes_filter) if shard_scopes_filter is not None else None
             for scope, decisions in decisions_by_scope.items():
+                if _shard_scope_set is not None:
+                    # Normalize scope to 3-tuple for shard membership check
+                    if len(scope) == 3:
+                        _norm: tuple[str, str, str] | None = (scope[0], scope[1], scope[2])
+                    elif len(scope) == 4:
+                        _norm = (scope[0], scope[1], scope[3])
+                    else:
+                        _norm = None
+                    if _norm is None or _norm not in _shard_scope_set:
+                        continue
                 routing_context = _resolve_routing_context_for_scope(
                     scope=scope,
                     routing_by_scope=topology_output.routing_by_scope,
