@@ -59,7 +59,7 @@ development_status:
   3-1-implement-cold-path-kafka-consumer-runtime-mode: done
   3-2-reconstruct-case-context-and-build-deterministic-evidence-summary: done
   3-3-invoke-llm-for-all-cases-with-enriched-prompt-and-schema-validation: done
-  3-4-persist-diagnosis-artifact-with-fallback-guarantees: backlog
+  3-4-persist-diagnosis-artifact-with-fallback-guarantees: done
   epic-3-retrospective: optional
   epic-4: backlog
   4-1-add-distributed-cycle-lock-with-fail-open-behavior: backlog

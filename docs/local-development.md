@@ -114,6 +114,8 @@ configured in `config/.env.local` before running cold-path locally.
 
 Local diagnosis behavior by `INTEGRATION_MODE_LLM`:
 
+- Across all modes, diagnosis persistence is deterministic: success and fallback outcomes both write `diagnosis.json` with hash-chain fields; fallback reports include explicit `PRIMARY_DIAGNOSIS_ABSENT` observability semantics.
+
 - `LOG`: cold-path invokes diagnosis for all cases, but returns deterministic stub reports (no outbound LLM call).
 - `MOCK`: cold-path invokes diagnosis for all cases with deterministic mock outputs/failure modes.
 - `LIVE`: cold-path invokes diagnosis for all cases and calls the configured `LLM_BASE_URL`.

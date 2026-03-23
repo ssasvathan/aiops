@@ -562,6 +562,7 @@ async def test_timeout_fallback_writes_diagnosis_json() -> None:
     )
 
     assert report.reason_codes == ("LLM_TIMEOUT",)
+    assert "PRIMARY_DIAGNOSIS_ABSENT" in report.gaps
     mock_store.put_if_absent.assert_called_once()
     call_kwargs = mock_store.put_if_absent.call_args.kwargs
     assert "diagnosis.json" in call_kwargs["key"]
@@ -592,6 +593,7 @@ async def test_timeout_fallback_has_triage_hash() -> None:
 
     assert report.reason_codes == ("LLM_TIMEOUT",)
     assert report.triage_hash == _FAKE_TRIAGE_HASH
+    assert "PRIMARY_DIAGNOSIS_ABSENT" in report.gaps
 
 
 async def test_schema_validation_error_returns_schema_invalid_fallback() -> None:
@@ -612,7 +614,8 @@ async def test_schema_validation_error_returns_schema_invalid_fallback() -> None
     )
 
     assert report.reason_codes == ("LLM_SCHEMA_INVALID",)
-    assert report.gaps == ("LLM output failed schema validation",)
+    assert "PRIMARY_DIAGNOSIS_ABSENT" in report.gaps
+    assert "LLM output failed schema validation" in report.gaps
 
 
 async def test_schema_validation_error_writes_diagnosis_json() -> None:
@@ -654,6 +657,7 @@ async def test_connect_error_returns_unavailable_fallback() -> None:
     )
 
     assert report.reason_codes == ("LLM_UNAVAILABLE",)
+    assert "PRIMARY_DIAGNOSIS_ABSENT" in report.gaps
 
 
 async def test_connect_error_writes_diagnosis_json() -> None:
@@ -695,6 +699,7 @@ async def test_http_error_returns_llm_error_fallback() -> None:
     )
 
     assert report.reason_codes == ("LLM_ERROR",)
+    assert "PRIMARY_DIAGNOSIS_ABSENT" in report.gaps
 
 
 async def test_http_error_writes_diagnosis_json() -> None:
@@ -760,6 +765,7 @@ async def test_transport_timeout_returns_unavailable_fallback() -> None:
     )
 
     assert report.reason_codes == ("LLM_UNAVAILABLE",)
+    assert "PRIMARY_DIAGNOSIS_ABSENT" in report.gaps
 
 
 async def test_no_retry_on_timeout() -> None:
@@ -809,6 +815,7 @@ async def test_fallback_report_is_schema_valid() -> None:
 
     validated = DiagnosisReportV1.model_validate(report.model_dump(mode="json"))
     assert validated.reason_codes == ("LLM_UNAVAILABLE",)
+    assert "PRIMARY_DIAGNOSIS_ABSENT" in validated.gaps
 
 
 # ---------------------------------------------------------------------------

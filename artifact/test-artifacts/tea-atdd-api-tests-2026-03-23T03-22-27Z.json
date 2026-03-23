@@ -1,0 +1,48 @@
+{
+  "success": true,
+  "subagent": "atdd-api-tests",
+  "tests": [
+    {
+      "file": "tests/atdd/test_story_3_4_persist_diagnosis_artifact_with_fallback_guarantees_red_phase.py",
+      "description": "ATDD backend acceptance tests for Story 3.4 diagnosis persistence hash-chain correlation and deterministic fallback observability guarantees (RED PHASE)",
+      "expected_to_fail": true,
+      "acceptance_criteria_covered": [
+        "Successful diagnosis persistence logs include full case-correlation context for hash-chain auditability",
+        "Timeout fallback persists deterministic diagnosis output with explicit primary diagnosis absence semantics",
+        "Transport-unavailable fallback persists deterministic diagnosis output with explicit primary diagnosis absence semantics",
+        "Schema-invalid fallback persists deterministic diagnosis output with explicit primary diagnosis absence semantics",
+        "Fallback persistence logs expose explicit primary diagnosis absence observability markers"
+      ],
+      "priority_coverage": {
+        "P0": 4,
+        "P1": 1,
+        "P2": 0,
+        "P3": 0
+      }
+    }
+  ],
+  "fixture_needs": [
+    "tests/atdd/fixtures/story_3_4_test_data.py"
+  ],
+  "knowledge_fragments_used": [
+    "data-factories",
+    "component-tdd",
+    "test-quality",
+    "test-healing-patterns",
+    "test-levels-framework",
+    "test-priorities-matrix",
+    "ci-burn-in",
+    "overview",
+    "api-request",
+    "auth-session",
+    "recurse",
+    "pactjs-utils-overview",
+    "pactjs-utils-consumer-helpers",
+    "pactjs-utils-provider-verifier",
+    "pactjs-utils-request-filter",
+    "pact-mcp"
+  ],
+  "test_count": 5,
+  "tdd_phase": "RED",
+  "summary": "Generated 5 failing backend ATDD tests for Story 3.4"
+}

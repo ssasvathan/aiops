@@ -9,16 +9,20 @@ from testcontainers.core.container import DockerContainer
 
 from aiops_triage_pipeline.contracts.action_decision import ActionDecisionV1
 from aiops_triage_pipeline.contracts.case_header_event import CaseHeaderEventV1
+from aiops_triage_pipeline.contracts.diagnosis_report import DiagnosisReportV1, EvidencePack
 from aiops_triage_pipeline.contracts.enums import (
     Action,
     CriticalityTier,
+    DiagnosisConfidence,
     Environment,
     EvidenceStatus,
 )
 from aiops_triage_pipeline.contracts.gate_input import Finding, GateInputV1
 from aiops_triage_pipeline.errors.exceptions import CriticalDependencyError
 from aiops_triage_pipeline.models.case_file import (
+    DIAGNOSIS_HASH_PLACEHOLDER,
     TRIAGE_HASH_PLACEHOLDER,
+    CaseFileDiagnosisV1,
     CaseFileEvidenceSnapshot,
     CaseFilePolicyVersions,
     CaseFileRoutingContext,
@@ -26,7 +30,9 @@ from aiops_triage_pipeline.models.case_file import (
     CaseFileTriageV1,
 )
 from aiops_triage_pipeline.pipeline.stages.casefile import (
+    load_casefile_diagnosis_stage_if_present,
     persist_casefile_and_prepare_outbox_ready,
+    persist_casefile_diagnosis_stage,
 )
 from aiops_triage_pipeline.pipeline.stages.outbox import (
     build_outbox_ready_record,
@@ -34,6 +40,7 @@ from aiops_triage_pipeline.pipeline.stages.outbox import (
     publish_case_header_after_confirmed_casefile,
 )
 from aiops_triage_pipeline.storage.casefile_io import (
+    compute_casefile_diagnosis_hash,
     compute_casefile_triage_hash,
     persist_casefile_triage_write_once,
     validate_casefile_triage_json,
@@ -132,6 +139,31 @@ def _sample_case_header_event(case_id: str) -> CaseHeaderEventV1:
         routing_key="OWN::Streaming::Payments::Topic",
         evaluation_ts=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
     )
+
+
+def _sample_diagnosis_casefile(triage_casefile: CaseFileTriageV1) -> CaseFileDiagnosisV1:
+    report = DiagnosisReportV1(
+        case_id=triage_casefile.case_id,
+        verdict="UNKNOWN",
+        fault_domain=None,
+        confidence=DiagnosisConfidence.LOW,
+        evidence_pack=EvidencePack(
+            facts=("lag trend elevated",),
+            missing_evidence=("PRIMARY_DIAGNOSIS_ABSENT",),
+            matched_rules=(),
+        ),
+        next_checks=("Inspect consumer group lag trend",),
+        gaps=("PRIMARY_DIAGNOSIS_ABSENT",),
+        reason_codes=("LLM_TIMEOUT",),
+        triage_hash=triage_casefile.triage_hash,
+    )
+    base = CaseFileDiagnosisV1(
+        case_id=triage_casefile.case_id,
+        diagnosis_report=report,
+        triage_hash=triage_casefile.triage_hash,
+        diagnosis_hash=DIAGNOSIS_HASH_PLACEHOLDER,
+    )
+    return base.model_copy(update={"diagnosis_hash": compute_casefile_diagnosis_hash(base)})
 
 
 @pytest.fixture
@@ -312,3 +344,32 @@ def test_invariant_a_publish_guardrail_runs_without_docker() -> None:
     assert publish_evidence.case_id == casefile.case_id
     assert publish_evidence.triage_hash == casefile.triage_hash
     assert len(publisher.published) == 1
+
+
+@pytest.mark.integration
+def test_diagnosis_stage_round_trip_reloads_with_valid_hash(
+    minio_object_store: tuple[BaseClient, S3ObjectStoreClient],
+) -> None:
+    _, object_store_client = minio_object_store
+    triage_casefile = _sample_casefile()
+    persist_casefile_triage_write_once(
+        object_store_client=object_store_client,
+        casefile=triage_casefile,
+    )
+    diagnosis_casefile = _sample_diagnosis_casefile(triage_casefile)
+
+    object_path = persist_casefile_diagnosis_stage(
+        casefile=diagnosis_casefile,
+        object_store_client=object_store_client,
+    )
+    loaded = load_casefile_diagnosis_stage_if_present(
+        case_id=triage_casefile.case_id,
+        object_store_client=object_store_client,
+    )
+
+    assert object_path.endswith("/diagnosis.json")
+    assert loaded is not None
+    assert loaded.case_id == triage_casefile.case_id
+    assert loaded.triage_hash == triage_casefile.triage_hash
+    assert loaded.diagnosis_hash == diagnosis_casefile.diagnosis_hash
+    assert compute_casefile_diagnosis_hash(loaded) == loaded.diagnosis_hash

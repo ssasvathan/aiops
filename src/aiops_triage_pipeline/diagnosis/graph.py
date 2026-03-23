@@ -48,6 +48,7 @@ from aiops_triage_pipeline.storage.casefile_io import (
 from aiops_triage_pipeline.storage.client import ObjectStoreClientProtocol
 
 _logger = get_logger("diagnosis.graph")
+_PRIMARY_DIAGNOSIS_ABSENT_GAP = "PRIMARY_DIAGNOSIS_ABSENT"
 
 
 def _emit_operational_alert(
@@ -120,13 +121,18 @@ def _make_and_persist_fallback(
     gaps: tuple[str, ...] = (),
 ) -> DiagnosisReportV1:
     """Build fallback DiagnosisReportV1, inject triage_hash/gaps, and persist diagnosis.json."""
+    fallback_gaps: list[str] = []
+    for gap in (_PRIMARY_DIAGNOSIS_ABSENT_GAP, *gaps):
+        if gap not in fallback_gaps:
+            fallback_gaps.append(gap)
+
     raw = build_fallback_report(reason_codes=reason_codes, case_id=case_id)
     report = DiagnosisReportV1.model_validate(
         {
             **raw.model_dump(mode="json"),
             "triage_hash": triage_hash,
             "case_id": case_id,
-            "gaps": list(gaps),
+            "gaps": fallback_gaps,
         }
     )
 
@@ -151,6 +157,9 @@ def _make_and_persist_fallback(
         "cold_path_fallback_diagnosis_json_written",
         case_id=case_id,
         reason_codes=reason_codes,
+        triage_hash=triage_hash,
+        diagnosis_hash=computed_hash,
+        primary_diagnosis_absent=True,
     )
     return report
 
@@ -214,6 +223,29 @@ async def run_cold_path_diagnosis(
                     error_type=error_type,
                 )
 
+    def _persist_fallback_and_record(
+        *,
+        reason_codes: tuple[str, ...],
+        fallback_reason: str,
+        error_type: str,
+        timeout: bool = False,
+        gaps: tuple[str, ...] = (),
+    ) -> DiagnosisReportV1:
+        report = _make_and_persist_fallback(
+            reason_codes=reason_codes,
+            case_id=case_id,
+            triage_hash=triage_hash,
+            object_store_client=object_store_client,
+            gaps=gaps,
+        )
+        _record_llm_completion(
+            result="fallback",
+            fallback_reason=fallback_reason,
+            error_type=error_type,
+            timeout=timeout,
+        )
+        return report
+
     try:
         graph = build_diagnosis_graph(llm_client)
         try:
@@ -235,17 +267,11 @@ async def run_cold_path_diagnosis(
                 case_id=case_id,
                 error_type="TimeoutError",
             )
-            _record_llm_completion(
-                result="fallback",
+            return _persist_fallback_and_record(
+                reason_codes=("LLM_TIMEOUT",),
                 fallback_reason="LLM_TIMEOUT",
                 error_type="TimeoutError",
                 timeout=True,
-            )
-            return _make_and_persist_fallback(
-                reason_codes=("LLM_TIMEOUT",),
-                case_id=case_id,
-                triage_hash=triage_hash,
-                object_store_client=object_store_client,
             )
         except pydantic.ValidationError:
             await health_registry.update(
@@ -258,16 +284,10 @@ async def run_cold_path_diagnosis(
                 case_id=case_id,
                 error_type="ValidationError",
             )
-            _record_llm_completion(
-                result="fallback",
+            return _persist_fallback_and_record(
+                reason_codes=("LLM_SCHEMA_INVALID",),
                 fallback_reason="LLM_SCHEMA_INVALID",
                 error_type="ValidationError",
-            )
-            return _make_and_persist_fallback(
-                reason_codes=("LLM_SCHEMA_INVALID",),
-                case_id=case_id,
-                triage_hash=triage_hash,
-                object_store_client=object_store_client,
                 gaps=("LLM output failed schema validation",),
             )
         except httpx.TransportError as exc:
@@ -281,16 +301,10 @@ async def run_cold_path_diagnosis(
                 case_id=case_id,
                 error_type=type(exc).__name__,
             )
-            _record_llm_completion(
-                result="fallback",
+            return _persist_fallback_and_record(
+                reason_codes=("LLM_UNAVAILABLE",),
                 fallback_reason="LLM_UNAVAILABLE",
                 error_type=type(exc).__name__,
-            )
-            return _make_and_persist_fallback(
-                reason_codes=("LLM_UNAVAILABLE",),
-                case_id=case_id,
-                triage_hash=triage_hash,
-                object_store_client=object_store_client,
             )
         except Exception as exc:
             await health_registry.update(
@@ -303,16 +317,10 @@ async def run_cold_path_diagnosis(
                 case_id=case_id,
                 error_type=type(exc).__name__,
             )
-            _record_llm_completion(
-                result="fallback",
+            return _persist_fallback_and_record(
+                reason_codes=("LLM_ERROR",),
                 fallback_reason="LLM_ERROR",
                 error_type=type(exc).__name__,
-            )
-            return _make_and_persist_fallback(
-                reason_codes=("LLM_ERROR",),
-                case_id=case_id,
-                triage_hash=triage_hash,
-                object_store_client=object_store_client,
             )
 
         try:
@@ -350,16 +358,10 @@ async def run_cold_path_diagnosis(
                 case_id=case_id,
                 error_type="ValidationError",
             )
-            _record_llm_completion(
-                result="fallback",
+            return _persist_fallback_and_record(
+                reason_codes=("LLM_SCHEMA_INVALID",),
                 fallback_reason="LLM_SCHEMA_INVALID",
                 error_type="ValidationError",
-            )
-            return _make_and_persist_fallback(
-                reason_codes=("LLM_SCHEMA_INVALID",),
-                case_id=case_id,
-                triage_hash=triage_hash,
-                object_store_client=object_store_client,
                 gaps=("LLM output failed schema validation",),
             )
         except Exception as exc:
@@ -373,16 +375,10 @@ async def run_cold_path_diagnosis(
                 case_id=case_id,
                 error_type=type(exc).__name__,
             )
-            _record_llm_completion(
-                result="fallback",
+            return _persist_fallback_and_record(
+                reason_codes=("LLM_ERROR",),
                 fallback_reason="LLM_ERROR",
                 error_type=type(exc).__name__,
-            )
-            return _make_and_persist_fallback(
-                reason_codes=("LLM_ERROR",),
-                case_id=case_id,
-                triage_hash=triage_hash,
-                object_store_client=object_store_client,
             )
 
         # Write diagnosis.json (AC4)
@@ -408,6 +404,7 @@ async def run_cold_path_diagnosis(
                 "cold_path_diagnosis_json_written",
                 case_id=case_id,
                 triage_hash=triage_hash,
+                diagnosis_hash=computed_hash,
             )
         except Exception as exc:
             # Fail loud for non-LLM failures in success path (e.g., persistence/invariant errors).

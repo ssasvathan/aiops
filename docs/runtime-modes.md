@@ -126,6 +126,10 @@ For each valid `CaseHeaderEventV1`, the processor boundary executes three steps:
      confidence calibration guidance, fault-domain hints, and deterministic few-shot guidance
    → LLM output is schema-validated through `DiagnosisReportV1.model_validate(...)`
    → schema-invalid outputs map to `LLM_SCHEMA_INVALID` fallback handling
+   → for timeout/transport/schema/generic invocation failures, deterministic fallback diagnosis is persisted to `diagnosis.json` with explicit `PRIMARY_DIAGNOSIS_ABSENT` gap and preserved `triage_hash` hash-chain linkage
+   → observability events distinguish success vs fallback persistence:
+     `cold_path_diagnosis_json_written` (includes `case_id`, `triage_hash`, `diagnosis_hash`) and
+     `cold_path_fallback_diagnosis_json_written` (includes `case_id`, `reason_codes`, `triage_hash`, `diagnosis_hash`, `primary_diagnosis_absent=true`)
 ```
 
 On retrieval or summary failure: logs `cold_path_context_retrieval_failed` /

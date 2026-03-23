@@ -1,0 +1,15 @@
+{
+  "story_id": "3-4-persist-diagnosis-artifact-with-fallback-guarantees",
+  "tdd_phase": "RED",
+  "total_tests": 5,
+  "api_tests": 5,
+  "e2e_tests": 0,
+  "fixtures_created": 1,
+  "expected_to_fail": true,
+  "subagent_execution": "SEQUENTIAL (API -> E2E)",
+  "performance_gain": "baseline (no parallel speedup)",
+  "evidence": {
+    "command": "uv run pytest -q tests/atdd/test_story_3_4_persist_diagnosis_artifact_with_fallback_guarantees_red_phase.py",
+    "result": "5 failed in 0.49s"
+  }
+}
