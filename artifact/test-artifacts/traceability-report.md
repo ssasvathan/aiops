@@ -9,36 +9,54 @@ lastStep: step-05-gate-decision
 lastSaved: '2026-03-23'
 workflowType: testarch-trace
 inputDocuments:
-  - artifact/implementation-artifacts/3-4-persist-diagnosis-artifact-with-fallback-guarantees.md
+  - artifact/implementation-artifacts/4-1-add-distributed-cycle-lock-with-fail-open-behavior.md
   - artifact/implementation-artifacts/sprint-status.yaml
-  - artifact/test-artifacts/atdd-checklist-3-4-persist-diagnosis-artifact-with-fallback-guarantees.md
-  - tests/atdd/test_story_3_4_persist_diagnosis_artifact_with_fallback_guarantees_red_phase.py
-  - tests/unit/diagnosis/test_graph.py
-  - tests/integration/test_casefile_write.py
+  - artifact/test-artifacts/atdd-checklist-4-1-add-distributed-cycle-lock-with-fail-open-behavior.md
+  - tests/atdd/test_story_4_1_add_distributed_cycle_lock_with_fail_open_behavior_red_phase.py
+  - tests/unit/coordination/test_cycle_lock.py
+  - tests/unit/test_main.py
+  - tests/unit/config/test_settings.py
+  - tests/unit/health/test_metrics.py
+  - tests/integration/coordination/test_cycle_lock_contention.py
 ---
 
-# Traceability Report - Story 3.4: Persist Diagnosis Artifact with Fallback Guarantees
+# Traceability Report - Story 4.1
 
 Full traceability artifact:
-`artifact/test-artifacts/traceability/traceability-3-4-persist-diagnosis-artifact-with-fallback-guarantees.md`
+`artifact/test-artifacts/traceability/traceability-4-1-add-distributed-cycle-lock-with-fail-open-behavior.md`
 
-## Gate Decision: PASS
+## Step 1 - Context
 
-Rationale: P0 coverage is 100%, P1 coverage is 100%, overall coverage is 100%, and no P0/P1 criteria are uncovered.
+- Acceptance criteria loaded from Story 4.1 artifact.
+- Knowledge fragments loaded: `test-priorities-matrix`, `risk-governance`, `probability-impact`, `test-quality`, `selective-testing`.
+- Related test-design context loaded from Story 4.1 ATDD checklist.
 
-## Coverage Summary
+## Step 2 - Test Discovery
 
-- Total criteria: 3
-- Fully covered: 3 (100%)
-- P0 coverage: 100%
-- P1 coverage: 100%
+- Story-relevant tests discovered across ATDD, unit, and integration suites.
+- Coverage heuristics inventory recorded:
+  - endpoint gaps: 0 (not applicable)
+  - auth negative-path gaps: 0 (not applicable)
+  - happy-path-only criteria: 0
+
+## Step 3 - Criteria Mapping
+
+- AC-1 mapped to 10 tests; coverage `FULL`.
+- AC-2 mapped to 6 tests; coverage `FULL`.
+
+## Step 4 - Gap Analysis
+
 - Critical gaps: 0
 - High gaps: 0
+- Coverage matrix JSON generated:
+  `/tmp/tea-trace-coverage-matrix-2026-03-23T12-32-47Z.json`
 
-## Gate Output
+## Step 5 - Gate Decision
 
-- Gate YAML: `artifact/test-artifacts/gate-decision-3-4-persist-diagnosis-artifact-with-fallback-guarantees.yaml`
-- Phase-1 matrix JSON: `/tmp/tea-trace-coverage-matrix-2026-03-23T03-48-36Z.json`
+- Decision: `PASS` (deterministic)
+- Rationale: P0 coverage 100%, effective P1 coverage 100%, overall coverage 100%, no uncovered P0/P1 criteria.
+- Gate YAML:
+  `artifact/test-artifacts/gate-decision-4-1-add-distributed-cycle-lock-with-fail-open-behavior.yaml`
 
 Generated: 2026-03-23
 Workflow: testarch-trace v5.0 (step-file execution)

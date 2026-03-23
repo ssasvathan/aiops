@@ -62,7 +62,7 @@ development_status:
   3-4-persist-diagnosis-artifact-with-fallback-guarantees: done
   epic-3-retrospective: done
   epic-4: in-progress
-  4-1-add-distributed-cycle-lock-with-fail-open-behavior: backlog
+  4-1-add-distributed-cycle-lock-with-fail-open-behavior: done
   4-2-coordinate-scope-shards-and-recover-from-pod-failure: backlog
   4-3-roll-out-distributed-coordination-incrementally: backlog
   epic-4-retrospective: optional

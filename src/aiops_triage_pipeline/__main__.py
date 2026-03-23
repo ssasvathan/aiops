@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import os
 import time
 from collections import deque
 from datetime import UTC, datetime
@@ -30,6 +31,8 @@ from aiops_triage_pipeline.config.settings import (
 from aiops_triage_pipeline.contracts.case_header_event import CaseHeaderEventV1
 from aiops_triage_pipeline.contracts.casefile_retention_policy import CasefileRetentionPolicyV1
 from aiops_triage_pipeline.contracts.outbox_policy import OutboxPolicyV1
+from aiops_triage_pipeline.coordination import RedisCycleLock
+from aiops_triage_pipeline.coordination.protocol import CycleLockProtocol, CycleLockStatus
 from aiops_triage_pipeline.denylist.loader import load_denylist
 from aiops_triage_pipeline.diagnosis.context_retrieval import retrieve_case_context_with_hash
 from aiops_triage_pipeline.diagnosis.evidence_summary import build_evidence_summary
@@ -39,6 +42,9 @@ from aiops_triage_pipeline.health.alerts import (
     load_operational_alert_policy,
 )
 from aiops_triage_pipeline.health.metrics import (
+    record_cycle_lock_acquired,
+    record_cycle_lock_fail_open,
+    record_cycle_lock_yielded,
     record_pipeline_peak_history_evictions,
     record_pipeline_peak_history_scope_count,
 )
@@ -342,6 +348,10 @@ def _run_hot_path() -> None:
         scheduler_interval_seconds=settings.HOT_PATH_SCHEDULER_INTERVAL_SECONDS,
         prometheus_url=settings.PROMETHEUS_URL,
     )
+    cycle_lock = RedisCycleLock(
+        redis_client=redis_client,
+        margin_seconds=settings.CYCLE_LOCK_MARGIN_SECONDS,
+    )
     asyncio.run(
         _hot_path_scheduler_loop(
             settings=settings,
@@ -361,6 +371,8 @@ def _run_hot_path() -> None:
             pd_client=pd_client,
             slack_client=slack_client,
             topology_loader=topology_loader,
+            cycle_lock=cycle_lock,
+            cycle_lock_owner_id=_resolve_cycle_lock_owner_id(),
         )
     )
 
@@ -384,6 +396,8 @@ async def _hot_path_scheduler_loop(
     pd_client: PagerDutyClient,
     slack_client: SlackClient,
     topology_loader: TopologyRegistryLoader,
+    cycle_lock: CycleLockProtocol,
+    cycle_lock_owner_id: str,
 ) -> None:
     """Async hot-path scheduler loop: evidence → peak → topology → gate → casefile → dispatch."""
     interval_seconds = settings.HOT_PATH_SCHEDULER_INTERVAL_SECONDS
@@ -395,6 +409,7 @@ async def _hot_path_scheduler_loop(
         max_idle_cycles=settings.STAGE2_PEAK_HISTORY_MAX_IDLE_CYCLES,
         logger=logger,
     )
+    coordination_registry = get_health_registry()
 
     while True:
         evaluation_time = datetime.now(UTC)
@@ -413,6 +428,76 @@ async def _hot_path_scheduler_loop(
             drift_seconds=tick.drift_seconds,
             missed_intervals=tick.missed_intervals,
         )
+
+        if settings.DISTRIBUTED_CYCLE_LOCK_ENABLED:
+            lock_outcome = cycle_lock.acquire(
+                interval_seconds=interval_seconds,
+                owner_id=cycle_lock_owner_id,
+            )
+            if lock_outcome.status == CycleLockStatus.acquired:
+                record_cycle_lock_acquired()
+                await coordination_registry.update(
+                    "coordination",
+                    HealthStatus.HEALTHY,
+                )
+                logger.info(
+                    "hot_path_cycle_lock_acquired",
+                    event_type="hot_path.coordination_lock_acquired",
+                    owner_id=cycle_lock_owner_id,
+                    lock_key=lock_outcome.key,
+                    lock_ttl_seconds=lock_outcome.ttl_seconds,
+                )
+            elif lock_outcome.status == CycleLockStatus.yielded:
+                record_cycle_lock_yielded()
+                await coordination_registry.update(
+                    "coordination",
+                    HealthStatus.HEALTHY,
+                )
+                logger.info(
+                    "hot_path_cycle_lock_yielded",
+                    event_type="hot_path.coordination_lock_yielded",
+                    owner_id=cycle_lock_owner_id,
+                    lock_key=lock_outcome.key,
+                    lock_ttl_seconds=lock_outcome.ttl_seconds,
+                    holder_id=lock_outcome.holder_id,
+                )
+                await emit_redis_degraded_mode_events(
+                    dedupe_store=dedupe_store,
+                    evaluation_time=evaluation_time,
+                    slack_client=slack_client,
+                    alert_evaluator=alert_evaluator,
+                )
+                sleep_seconds = max(
+                    0.0,
+                    (
+                        next_interval_boundary(evaluation_time, interval_seconds=interval_seconds)
+                        - datetime.now(UTC)
+                    ).total_seconds(),
+                )
+                logger.info(
+                    "hot_path_cycle_completed",
+                    event_type="hot_path.cycle_complete",
+                    evaluation_time=evaluation_time.isoformat(),
+                    produced_cases=0,
+                    sleep_seconds=round(sleep_seconds, 1),
+                )
+                await asyncio.sleep(sleep_seconds)
+                continue
+            elif lock_outcome.status == CycleLockStatus.fail_open:
+                record_cycle_lock_fail_open(reason=lock_outcome.reason)
+                await coordination_registry.update(
+                    "coordination",
+                    HealthStatus.DEGRADED,
+                    reason=lock_outcome.reason,
+                )
+                logger.warning(
+                    "hot_path_cycle_lock_fail_open",
+                    event_type="hot_path.coordination_lock_fail_open",
+                    owner_id=cycle_lock_owner_id,
+                    lock_key=lock_outcome.key,
+                    lock_ttl_seconds=lock_outcome.ttl_seconds,
+                    reason=lock_outcome.reason,
+                )
 
         decisions_by_scope: dict = {}
         try:
@@ -577,6 +662,17 @@ async def _hot_path_scheduler_loop(
             sleep_seconds=round(sleep_seconds, 1),
         )
         await asyncio.sleep(sleep_seconds)
+
+
+def _resolve_cycle_lock_owner_id() -> str:
+    """Resolve process identity used as Redis lock owner value."""
+    pod_name = os.getenv("POD_NAME")
+    if pod_name:
+        return pod_name
+    host_name = os.getenv("HOSTNAME")
+    if host_name:
+        return host_name
+    return "unknown-pod"
 
 
 def _peak_scopes_from_rows(rows: tuple[EvidenceRow, ...]) -> list[tuple[str, str, str]]:

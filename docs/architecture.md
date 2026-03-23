@@ -18,6 +18,9 @@
 - Primary style: layered backend service with event-driven pipeline core.
 - Reliability style: durable outbox + source-state-guarded SQL transitions.
 - Integration style: adapter modules with explicit runtime safety modes (`OFF|LOG|MOCK|LIVE`).
+- Coordination style: optional distributed hot-path cycle ownership with Redis `SET NX EX`
+  (`aiops:lock:cycle`), TTL expiry only (no unlock), and mandatory fail-open execution on
+  Redis lock failures.
 
 ## Data Architecture
 
@@ -49,6 +52,7 @@
 ## Component Overview
 
 - `pipeline/stages/`: stage computation and gating decisions
+- `coordination/`: distributed cycle lock protocol and Redis lock implementation
 - `outbox/`: durable publish sequencing and worker
 - `linkage/`: ServiceNow retry state and transition safety
 - `storage/`: casefile serialization, validation, object-store writes

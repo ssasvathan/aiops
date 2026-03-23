@@ -19,6 +19,12 @@
 - Environment files: `config/.env.<APP_ENV>`
 - Policy files: `config/policies/*.yaml`
 - Integration controls: `INTEGRATION_MODE_PD`, `INTEGRATION_MODE_SLACK`, `INTEGRATION_MODE_SN`, `INTEGRATION_MODE_LLM`
+- Hot-path coordination controls:
+  - `DISTRIBUTED_CYCLE_LOCK_ENABLED` (default `false`)
+  - `CYCLE_LOCK_MARGIN_SECONDS` (default `60`, must be `>0`)
+  - Effective lock TTL = `HOT_PATH_SCHEDULER_INTERVAL_SECONDS + CYCLE_LOCK_MARGIN_SECONDS`
+  - Lock key namespace: `aiops:lock:cycle` (`SET NX EX`, no explicit unlock)
+  - Redis lock errors fail open by design (cycle still executes; coordination health is degraded)
 
 ## Startup Command
 

@@ -76,6 +76,21 @@ _redis_dedupe_key_count = _meter.create_up_down_counter(
     description="Approximate in-process count of active AG5 dedupe keys",
     unit="1",
 )
+_coordination_cycle_lock_acquired_total = _meter.create_counter(
+    name="aiops.coordination.cycle_lock.acquired_total",
+    description="Total distributed cycle lock acquisitions",
+    unit="1",
+)
+_coordination_cycle_lock_yielded_total = _meter.create_counter(
+    name="aiops.coordination.cycle_lock.yielded_total",
+    description="Total distributed cycle lock yielded outcomes",
+    unit="1",
+)
+_coordination_cycle_lock_fail_open_total = _meter.create_counter(
+    name="aiops.coordination.cycle_lock.fail_open_total",
+    description="Total distributed cycle lock fail-open outcomes",
+    unit="1",
+)
 _evidence_interval_drift_seconds = _meter.create_histogram(
     name="aiops.evidence_builder.interval_drift_seconds",
     description="Observed scheduler interval drift in seconds",
@@ -239,6 +254,24 @@ def record_redis_dedupe_key_count_delta(*, delta: int) -> None:
         _redis_dedupe_key_count_value = new_value
     if applied_delta != 0:
         _redis_dedupe_key_count.add(applied_delta, attributes={"component": "redis"})
+
+
+def record_cycle_lock_acquired() -> None:
+    _coordination_cycle_lock_acquired_total.add(1, attributes={"component": "coordination"})
+
+
+def record_cycle_lock_yielded() -> None:
+    _coordination_cycle_lock_yielded_total.add(1, attributes={"component": "coordination"})
+
+
+def record_cycle_lock_fail_open(*, reason: str | None = None) -> None:
+    reason_code = "unknown"
+    if reason:
+        reason_code = reason.split(":", maxsplit=1)[0][:64]
+    _coordination_cycle_lock_fail_open_total.add(
+        1,
+        attributes={"component": "coordination", "reason": reason_code},
+    )
 
 
 def record_llm_invocation(*, result: str) -> None:

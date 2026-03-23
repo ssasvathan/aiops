@@ -1,0 +1,50 @@
+{
+  "success": true,
+  "subagent": "atdd-api-tests",
+  "tests": [
+    {
+      "file": "tests/atdd/test_story_4_1_add_distributed_cycle_lock_with_fail_open_behavior_red_phase.py",
+      "description": "ATDD backend acceptance tests for Story 4.1 distributed cycle lock ownership with fail-open behavior (RED PHASE)",
+      "expected_to_fail": true,
+      "acceptance_criteria_covered": [
+        "Settings expose distributed cycle lock feature flag and positive TTL margin controls",
+        "Coordination protocol exposes structured outcomes for acquired/yielded/fail_open states",
+        "Distributed cycle lock acquisition uses Redis SET NX EX with aiops:lock:cycle key and interval+margin TTL",
+        "Non-holder contenders yield interval ownership when lock contention occurs",
+        "Redis lock-attempt failures return fail_open outcomes with degraded reason context",
+        "Coordination observability metrics expose acquired/yielded/fail_open counters",
+        "Hot-path scheduler source contains distributed lock feature-flag gating and fail-open/yield branch handling"
+      ],
+      "priority_coverage": {
+        "P0": 5,
+        "P1": 2,
+        "P2": 0,
+        "P3": 0
+      }
+    }
+  ],
+  "fixture_needs": [
+    "tests/atdd/fixtures/story_4_1_test_data.py"
+  ],
+  "knowledge_fragments_used": [
+    "data-factories",
+    "component-tdd",
+    "test-quality",
+    "test-healing-patterns",
+    "test-levels-framework",
+    "test-priorities-matrix",
+    "ci-burn-in",
+    "overview",
+    "api-request",
+    "auth-session",
+    "recurse",
+    "pactjs-utils-overview",
+    "pactjs-utils-consumer-helpers",
+    "pactjs-utils-provider-verifier",
+    "pactjs-utils-request-filter",
+    "pact-mcp"
+  ],
+  "test_count": 7,
+  "tdd_phase": "RED",
+  "summary": "Generated 7 failing backend ATDD tests for Story 4.1"
+}

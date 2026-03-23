@@ -1,0 +1,15 @@
+{
+  "story_id": "4-1-add-distributed-cycle-lock-with-fail-open-behavior",
+  "tdd_phase": "RED",
+  "total_tests": 7,
+  "api_tests": 7,
+  "e2e_tests": 0,
+  "fixtures_created": 1,
+  "expected_to_fail": true,
+  "subagent_execution": "SEQUENTIAL (API -> E2E)",
+  "performance_gain": "baseline (no parallel speedup)",
+  "evidence": {
+    "command": "uv run pytest -q tests/atdd/test_story_4_1_add_distributed_cycle_lock_with_fail_open_behavior_red_phase.py",
+    "result": "7 failed in 0.73s"
+  }
+}

@@ -1,0 +1,49 @@
+target:
+  type: story
+  id: "4-1-add-distributed-cycle-lock-with-fail-open-behavior"
+  title: "Add Distributed Cycle Lock with Fail-Open Behavior"
+
+decision:
+  value: PASS
+  date: "2026-03-23T12:32:47Z"
+  mode: deterministic
+  rationale: >-
+    P0 coverage is 100% (required), effective P1 coverage is 100% (no explicit
+    P1 acceptance criteria), and overall coverage is 100% (minimum 80%), with
+    zero uncovered P0/P1 requirements.
+
+criteria:
+  p0_coverage_required_pct: 100
+  p0_coverage_actual_pct: 100
+  p1_coverage_target_pass_pct: 90
+  p1_coverage_minimum_pct: 80
+  p1_coverage_actual_pct: 100
+  overall_coverage_minimum_pct: 80
+  overall_coverage_actual_pct: 100
+  critical_gaps: 0
+  high_gaps: 0
+
+evidence:
+  phase1_matrix: "/tmp/tea-trace-coverage-matrix-2026-03-23T12-32-47Z.json"
+  traceability_report: "artifact/test-artifacts/traceability/traceability-4-1-add-distributed-cycle-lock-with-fail-open-behavior.md"
+  story_artifact: "artifact/implementation-artifacts/4-1-add-distributed-cycle-lock-with-fail-open-behavior.md"
+  sprint_status: "artifact/implementation-artifacts/sprint-status.yaml"
+  test_results:
+    source: "story completion notes"
+    command: "TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs"
+    targeted_regression:
+      unit_passed: 74
+      integration_passed: 2
+    full_regression:
+      skipped: 0
+
+quality_observations:
+  warnings:
+    - "tests/unit/test_main.py exceeds 300 lines (863)."
+    - "tests/unit/config/test_settings.py exceeds 300 lines (399)."
+    - "tests/unit/health/test_metrics.py exceeds 300 lines (364)."
+
+next_actions:
+  - "Proceed with normal release flow for Story 4.1 scope."
+  - "Track decomposition of oversized coordination-related test modules."
+  - "Optionally run /bmad:tea:test-review for focused maintainability follow-up."

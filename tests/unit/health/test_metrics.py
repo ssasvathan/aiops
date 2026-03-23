@@ -85,6 +85,27 @@ def test_record_redis_dedupe_key_count_delta_clamps_at_zero(monkeypatch) -> None
     ]
 
 
+def test_record_cycle_lock_metrics_emit_expected_attributes(monkeypatch) -> None:
+    from aiops_triage_pipeline.health import metrics
+
+    acquired = _RecordingInstrument()
+    yielded = _RecordingInstrument()
+    fail_open = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_coordination_cycle_lock_acquired_total", acquired)
+    monkeypatch.setattr(metrics, "_coordination_cycle_lock_yielded_total", yielded)
+    monkeypatch.setattr(metrics, "_coordination_cycle_lock_fail_open_total", fail_open)
+
+    metrics.record_cycle_lock_acquired()
+    metrics.record_cycle_lock_yielded()
+    metrics.record_cycle_lock_fail_open(reason="redis lock acquisition failed: timeout")
+
+    assert acquired.calls == [(1, {"component": "coordination"})]
+    assert yielded.calls == [(1, {"component": "coordination"})]
+    assert fail_open.calls == [
+        (1, {"component": "coordination", "reason": "redis lock acquisition failed"})
+    ]
+
+
 def test_record_llm_metrics_emit_expected_attributes(monkeypatch) -> None:
     from aiops_triage_pipeline.health import metrics
 

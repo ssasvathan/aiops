@@ -1,12 +1,15 @@
 from __future__ import annotations
 
+import asyncio
 import sys
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from aiops_triage_pipeline import __main__
+from aiops_triage_pipeline.coordination.protocol import CycleLockStatus
 from aiops_triage_pipeline.models.anomaly import AnomalyFinding
 
 
@@ -122,6 +125,7 @@ def test_run_hot_path_bootstraps_and_starts_scheduler(monkeypatch) -> None:
     settings_mock.INTEGRATION_MODE_PD.value = "LOG"
     settings_mock.INTEGRATION_MODE_SLACK.value = "LOG"
     settings_mock.APP_ENV.value = "local"
+    settings_mock.CYCLE_LOCK_MARGIN_SECONDS = 60
 
     def _fake_bootstrap_with_settings(mode: str):
         modes.append(mode)
@@ -673,3 +677,187 @@ async def test_process_cold_path_message_uses_async_processor_boundary(monkeypat
     )
 
     assert process_probe.await_count == 1
+
+
+def _hot_path_settings_for_coordination_tests(*, lock_enabled: bool) -> SimpleNamespace:
+    return SimpleNamespace(
+        HOT_PATH_SCHEDULER_INTERVAL_SECONDS=300,
+        STAGE2_PEAK_HISTORY_MAX_DEPTH=4,
+        STAGE2_PEAK_HISTORY_MAX_SCOPES=8,
+        STAGE2_PEAK_HISTORY_MAX_IDLE_CYCLES=2,
+        STAGE2_SUSTAINED_PARALLEL_MIN_KEYS=64,
+        STAGE2_SUSTAINED_PARALLEL_WORKERS=4,
+        STAGE2_SUSTAINED_PARALLEL_CHUNK_SIZE=32,
+        DISTRIBUTED_CYCLE_LOCK_ENABLED=lock_enabled,
+    )
+
+
+@pytest.mark.asyncio
+async def test_hot_path_scheduler_skips_stage_execution_when_cycle_lock_yielded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tick = SimpleNamespace(
+        expected_boundary=datetime(2026, 3, 23, 12, 0, tzinfo=UTC),
+        drift_seconds=0,
+        missed_intervals=0,
+    )
+    monkeypatch.setattr(__main__, "evaluate_scheduler_tick", lambda **_: tick)
+    monkeypatch.setattr(
+        __main__,
+        "next_interval_boundary",
+        lambda *_args, **_kwargs: datetime.now(UTC),
+    )
+    monkeypatch.setattr(__main__, "record_cycle_lock_yielded", MagicMock())
+    monkeypatch.setattr(__main__, "record_cycle_lock_acquired", MagicMock())
+    monkeypatch.setattr(__main__, "record_cycle_lock_fail_open", MagicMock())
+    monkeypatch.setattr(
+        __main__,
+        "emit_redis_degraded_mode_events",
+        AsyncMock(return_value=()),
+    )
+    monkeypatch.setattr(
+        __main__,
+        "run_evidence_stage_cycle",
+        AsyncMock(side_effect=AssertionError("yielded path must skip stage execution")),
+    )
+    monkeypatch.setattr(
+        __main__.asyncio,
+        "sleep",
+        AsyncMock(side_effect=asyncio.CancelledError()),
+    )
+    registry = MagicMock()
+    registry.update = AsyncMock()
+    monkeypatch.setattr(__main__, "get_health_registry", lambda: registry)
+
+    cycle_lock = MagicMock()
+    cycle_lock.acquire.return_value = SimpleNamespace(
+        status=CycleLockStatus.yielded,
+        key="aiops:lock:cycle",
+        ttl_seconds=360,
+        holder_id="pod-b",
+    )
+    topology_loader = MagicMock()
+
+    with pytest.raises(asyncio.CancelledError):
+        await __main__._hot_path_scheduler_loop(
+            settings=_hot_path_settings_for_coordination_tests(lock_enabled=True),
+            logger=MagicMock(),
+            alert_evaluator=MagicMock(),
+            prometheus_client=MagicMock(),
+            metric_queries={},
+            peak_policy=MagicMock(),
+            rulebook_policy=MagicMock(),
+            redis_ttl_policy=MagicMock(),
+            prometheus_metrics_contract=MagicMock(),
+            denylist=MagicMock(),
+            redis_client=MagicMock(),
+            dedupe_store=MagicMock(),
+            object_store_client=MagicMock(),
+            outbox_repository=MagicMock(),
+            pd_client=MagicMock(),
+            slack_client=MagicMock(),
+            topology_loader=topology_loader,
+            cycle_lock=cycle_lock,
+            cycle_lock_owner_id="pod-a",
+        )
+
+    cycle_lock.acquire.assert_called_once_with(interval_seconds=300, owner_id="pod-a")
+    assert topology_loader.reload_if_changed.call_count == 0
+    __main__.record_cycle_lock_yielded.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_hot_path_scheduler_fail_open_continues_to_pipeline_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tick = SimpleNamespace(
+        expected_boundary=datetime(2026, 3, 23, 12, 0, tzinfo=UTC),
+        drift_seconds=0,
+        missed_intervals=0,
+    )
+    monkeypatch.setattr(__main__, "evaluate_scheduler_tick", lambda **_: tick)
+    monkeypatch.setattr(__main__, "record_cycle_lock_fail_open", MagicMock())
+    monkeypatch.setattr(__main__, "record_cycle_lock_yielded", MagicMock())
+    monkeypatch.setattr(__main__, "record_cycle_lock_acquired", MagicMock())
+
+    registry = MagicMock()
+    registry.update = AsyncMock()
+    monkeypatch.setattr(__main__, "get_health_registry", lambda: registry)
+
+    cycle_lock = MagicMock()
+    cycle_lock.acquire.return_value = SimpleNamespace(
+        status=CycleLockStatus.fail_open,
+        key="aiops:lock:cycle",
+        ttl_seconds=360,
+        reason="redis unavailable",
+    )
+    topology_loader = MagicMock()
+    topology_loader.reload_if_changed.side_effect = asyncio.CancelledError()
+
+    with pytest.raises(asyncio.CancelledError):
+        await __main__._hot_path_scheduler_loop(
+            settings=_hot_path_settings_for_coordination_tests(lock_enabled=True),
+            logger=MagicMock(),
+            alert_evaluator=MagicMock(),
+            prometheus_client=MagicMock(),
+            metric_queries={},
+            peak_policy=MagicMock(),
+            rulebook_policy=MagicMock(),
+            redis_ttl_policy=MagicMock(),
+            prometheus_metrics_contract=MagicMock(),
+            denylist=MagicMock(),
+            redis_client=MagicMock(),
+            dedupe_store=MagicMock(),
+            object_store_client=MagicMock(),
+            outbox_repository=MagicMock(),
+            pd_client=MagicMock(),
+            slack_client=MagicMock(),
+            topology_loader=topology_loader,
+            cycle_lock=cycle_lock,
+            cycle_lock_owner_id="pod-a",
+        )
+
+    cycle_lock.acquire.assert_called_once_with(interval_seconds=300, owner_id="pod-a")
+    assert topology_loader.reload_if_changed.call_count == 1
+    __main__.record_cycle_lock_fail_open.assert_called_once_with(reason="redis unavailable")
+
+
+@pytest.mark.asyncio
+async def test_hot_path_scheduler_does_not_attempt_lock_when_feature_flag_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tick = SimpleNamespace(
+        expected_boundary=datetime(2026, 3, 23, 12, 0, tzinfo=UTC),
+        drift_seconds=0,
+        missed_intervals=0,
+    )
+    monkeypatch.setattr(__main__, "evaluate_scheduler_tick", lambda **_: tick)
+    topology_loader = MagicMock()
+    topology_loader.reload_if_changed.side_effect = asyncio.CancelledError()
+
+    cycle_lock = MagicMock()
+
+    with pytest.raises(asyncio.CancelledError):
+        await __main__._hot_path_scheduler_loop(
+            settings=_hot_path_settings_for_coordination_tests(lock_enabled=False),
+            logger=MagicMock(),
+            alert_evaluator=MagicMock(),
+            prometheus_client=MagicMock(),
+            metric_queries={},
+            peak_policy=MagicMock(),
+            rulebook_policy=MagicMock(),
+            redis_ttl_policy=MagicMock(),
+            prometheus_metrics_contract=MagicMock(),
+            denylist=MagicMock(),
+            redis_client=MagicMock(),
+            dedupe_store=MagicMock(),
+            object_store_client=MagicMock(),
+            outbox_repository=MagicMock(),
+            pd_client=MagicMock(),
+            slack_client=MagicMock(),
+            topology_loader=topology_loader,
+            cycle_lock=cycle_lock,
+            cycle_lock_owner_id="pod-a",
+        )
+
+    cycle_lock.acquire.assert_not_called()

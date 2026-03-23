@@ -36,6 +36,7 @@ Runtime clients initialised at startup:
 
 - Prometheus HTTP client
 - Redis client + `RedisActionDedupeStore`
+- Distributed cycle lock client (`RedisCycleLock`) using shared Redis connection
 - S3 object store client
 - Postgres engine — outbox schema ensured (`outbox` table)
 - PagerDuty client (mode: `INTEGRATION_MODE_PD`)
@@ -48,28 +49,38 @@ Each scheduler tick executes these stages in sequence:
 
 ```mermaid
 flowchart TD
-    A[Reload topology if changed] --> B[Stage 1: Evidence<br>Query Prometheus]
-    B --> C[Stage 2: Peak<br>Classify anomaly patterns]
-    C --> D[Stage 3: Topology<br>Resolve scope and routing]
-    D --> E[Stage 4: Gate Inputs<br>Assemble per scope]
-    E --> F[Stage 5: Gate Decisions<br>Apply rulebook + deduplicate]
-    F --> G{Decisions?}
-    G -->|yes| H[Assemble CaseFile<br>Persist to S3]
-    H --> I[Insert outbox row<br>PENDING → READY]
-    I --> J[Dispatch action<br>PD / Slack]
-    G -->|no| K[Emit Redis degraded-mode events]
-    J --> K
+    A{Distributed cycle lock enabled?} -->|no| B[Reload topology if changed]
+    A -->|yes| A1[Acquire lock: SET NX EX aiops:lock:cycle]
+    A1 -->|acquired| B
+    A1 -->|yielded| K[Emit Redis degraded-mode events]
+    A1 -->|fail_open| B
+    B --> C[Stage 1: Evidence<br>Query Prometheus]
+    C --> D[Stage 2: Peak<br>Classify anomaly patterns]
+    D --> E[Stage 3: Topology<br>Resolve scope and routing]
+    E --> F[Stage 4: Gate Inputs<br>Assemble per scope]
+    F --> G[Stage 5: Gate Decisions<br>Apply rulebook + deduplicate]
+    G --> H{Decisions?}
+    H -->|yes| I[Assemble CaseFile<br>Persist to S3]
+    I --> J[Insert outbox row<br>PENDING → READY]
+    J --> M[Dispatch action<br>PD / Slack]
+    H -->|no| K[Emit Redis degraded-mode events]
+    M --> K
     K --> L[Sleep to next interval boundary]
 ```
 
 - Per-case errors are caught and logged without killing the loop.
 - Cycle-level errors are caught and logged; the loop continues.
 - Redis degraded-mode events are emitted every cycle regardless of case output.
+- If lock coordination is enabled:
+  - `acquired`: pod runs full interval stages.
+  - `yielded`: pod skips stage execution for that interval and sleeps to next boundary.
+  - `fail_open`: pod continues stage execution and emits degraded coordination health/metrics.
 
 ### Notes
 
 - Hot-path never publishes to Kafka directly. It writes a `READY` outbox row; the `outbox-publisher` process handles Kafka delivery.
 - `TOPOLOGY_REGISTRY_PATH` must be set — hot-path exits at startup if missing.
+- Safe rollout default keeps distributed lock disabled (`DISTRIBUTED_CYCLE_LOCK_ENABLED=false`).
 - `--once` is not supported for this mode.
 
 ---

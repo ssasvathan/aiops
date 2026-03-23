@@ -220,6 +220,8 @@ def test_stage2_parallel_and_retention_settings_have_safe_defaults() -> None:
     assert settings.STAGE2_PEAK_HISTORY_MAX_DEPTH > 0
     assert settings.STAGE2_PEAK_HISTORY_MAX_SCOPES > 0
     assert settings.STAGE2_PEAK_HISTORY_MAX_IDLE_CYCLES > 0
+    assert settings.DISTRIBUTED_CYCLE_LOCK_ENABLED is False
+    assert settings.CYCLE_LOCK_MARGIN_SECONDS > 0
 
 
 def test_stage2_parallel_and_retention_settings_reject_invalid_values() -> None:
@@ -234,6 +236,21 @@ def test_stage2_parallel_and_retention_settings_reject_invalid_values() -> None:
             S3_SECRET_KEY="secret",
             S3_BUCKET="bucket",
             STAGE2_SUSTAINED_PARALLEL_WORKERS=0,
+        )
+
+
+def test_cycle_lock_margin_rejects_non_positive_values() -> None:
+    with pytest.raises((ValueError, ValidationError), match="CYCLE_LOCK_MARGIN_SECONDS"):
+        Settings(
+            _env_file=None,
+            KAFKA_BOOTSTRAP_SERVERS="localhost:9092",
+            DATABASE_URL="postgresql+psycopg://u:p@h/db",
+            REDIS_URL="redis://localhost:6379/0",
+            S3_ENDPOINT_URL="http://localhost:9000",
+            S3_ACCESS_KEY="key",
+            S3_SECRET_KEY="secret",
+            S3_BUCKET="bucket",
+            CYCLE_LOCK_MARGIN_SECONDS=0,
         )
 
 

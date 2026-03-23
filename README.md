@@ -118,6 +118,10 @@ flowchart TD
 
 Hot-path orchestration is in `pipeline/scheduler.py`.
 
+When `DISTRIBUTED_CYCLE_LOCK_ENABLED=true`, hot-path interval ownership is coordinated through
+Redis `SET NX EX` on `aiops:lock:cycle`. Non-owners yield the interval; Redis lock failures
+explicitly fail open (cycle execution continues with degraded coordination health signaling).
+
 **Gate engine (AG0–AG6):**
 
 | Gate | Responsibility |
@@ -338,6 +342,13 @@ config/.env.docker
 | `peak-policy-v1.yaml` | `PeakPolicyV1` |
 
 **Denylist:** `config/denylist.yaml` — enforced at every outbound publish and notification boundary.
+
+**Hot-path coordination flags:**
+
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `DISTRIBUTED_CYCLE_LOCK_ENABLED` | `false` | Enables distributed interval ownership coordination |
+| `CYCLE_LOCK_MARGIN_SECONDS` | `60` | Added to `HOT_PATH_SCHEDULER_INTERVAL_SECONDS` to compute lock TTL (`>0`) |
 
 ---
 
