@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import sys
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -159,18 +159,65 @@ def test_run_hot_path_raises_when_topology_registry_not_configured(monkeypatch) 
         __main__._run_hot_path()
 
 
-def test_run_cold_path_bootstraps_and_logs_warning(monkeypatch) -> None:
+def _build_cold_path_settings_for_unit() -> SimpleNamespace:
+    """Minimal settings object for cold-path unit tests."""
+    return SimpleNamespace(
+        APP_ENV=SimpleNamespace(value="dev"),
+        KAFKA_CASE_HEADER_TOPIC="aiops-case-header",
+        KAFKA_COLD_PATH_CONSUMER_GROUP="aiops-cold-path-diagnosis",
+        KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=1.0,
+    )
+
+
+def _make_async_health_registry() -> MagicMock:
+    """Return a MagicMock health registry with an async update method."""
+    registry = MagicMock()
+    registry.update = AsyncMock()
+    return registry
+
+
+def test_run_cold_path_is_no_longer_stub_and_logs_mode_started(monkeypatch) -> None:
+    """_run_cold_path() no longer exits as a stub; it logs cold_path_mode_started."""
     modes: list[str] = []
-    fake_bootstrap, logger = _make_mock_bootstrap(modes)
-    monkeypatch.setattr(__main__, "_bootstrap_mode", fake_bootstrap)
+    logger = MagicMock()
+    settings = _build_cold_path_settings_for_unit()
+
+    def _fake_bootstrap(mode: str):
+        modes.append(mode)
+        return settings, logger, MagicMock()
+
+    monkeypatch.setattr(__main__, "_bootstrap_mode", _fake_bootstrap)
+    monkeypatch.setattr(
+        __main__, "get_health_registry", lambda: _make_async_health_registry(), raising=False
+    )
 
     __main__._run_cold_path()
 
     assert modes == ["cold-path"]
-    logger.warning.assert_called_once()
-    call_args = logger.warning.call_args
-    assert call_args[0][0] == "cold_path_mode_exiting"
-    assert call_args[1]["event_type"] == "runtime.mode_stub"
+    info_events = [c.args[0] for c in logger.info.call_args_list if c.args]
+    assert "cold_path_mode_started" in info_events
+    # Stub warning must NOT appear
+    warning_events = [c.args[0] for c in logger.warning.call_args_list if c.args]
+    assert "cold_path_mode_exiting" not in warning_events
+
+
+def test_run_cold_path_startup_log_includes_consumer_group_and_topic(monkeypatch) -> None:
+    """cold_path_mode_started log must include consumer_group and topic."""
+    logger = MagicMock()
+    settings = _build_cold_path_settings_for_unit()
+
+    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
+    monkeypatch.setattr(
+        __main__, "get_health_registry", lambda: _make_async_health_registry(), raising=False
+    )
+
+    __main__._run_cold_path()
+
+    start_call = next(
+        c for c in logger.info.call_args_list if c.args and c.args[0] == "cold_path_mode_started"
+    )
+    assert start_call.kwargs["consumer_group"] == "aiops-cold-path-diagnosis"
+    assert start_call.kwargs["topic"] == "aiops-case-header"
 
 
 def test_run_casefile_lifecycle_logs_policy_path_and_governance_ref(monkeypatch) -> None:

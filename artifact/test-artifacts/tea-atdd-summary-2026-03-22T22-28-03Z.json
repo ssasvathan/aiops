@@ -1,0 +1,15 @@
+{
+  "story_id": "3-1-implement-cold-path-kafka-consumer-runtime-mode",
+  "tdd_phase": "RED",
+  "total_tests": 4,
+  "api_tests": 4,
+  "e2e_tests": 0,
+  "fixtures_created": 1,
+  "expected_to_fail": true,
+  "subagent_execution": "SEQUENTIAL (API -> E2E)",
+  "performance_gain": "baseline (no parallel speedup)",
+  "evidence": {
+    "command": "uv run pytest -q tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py",
+    "result": "4 failed in 0.65s"
+  }
+}

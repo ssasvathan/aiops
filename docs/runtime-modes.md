@@ -76,15 +76,51 @@ flowchart TD
 
 ## cold-path
 
-**Status: stub — not yet implemented.**
+Consumes `CaseHeaderEventV1` events from Kafka and runs downstream diagnosis processing
+sequentially per event. Designed to be decoupled from the hot path — never blocks or
+overrides deterministic gating outcomes.
 
-Runs the common bootstrap and exits with a warning log:
+### Startup initialisation
+
+Configuration loaded at startup (from `Settings`):
+
+- `KAFKA_COLD_PATH_CONSUMER_GROUP` (default: `aiops-cold-path-diagnosis`)
+- `KAFKA_CASE_HEADER_TOPIC` (default: `aiops-case-header`)
+- `KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS` (default: `1.0`)
+
+### Consumer lifecycle
 
 ```
-cold-path diagnosis loop not yet wired in __main__
+bootstrap → log cold_path_mode_started → subscribe(aiops-case-header) →
+poll loop → [process event] → graceful shutdown → commit offsets → close
 ```
 
-Reserved for the async LLM diagnosis loop (LangGraph, Stage 8) and ServiceNow linkage (Stage 9). Neither blocks the hot path.
+1. Joins consumer group `aiops-cold-path-diagnosis` and subscribes to `aiops-case-header`.
+2. Processes messages sequentially (no batching or concurrency in this mode).
+3. Decodes each message as `CaseHeaderEventV1`; malformed payloads are structured-logged and skipped.
+4. On shutdown (SIGINT/SIGTERM), commits final offsets synchronously before close.
+
+### Health state transitions
+
+The cold-path consumer publishes health signals to `HealthRegistry` at each lifecycle stage:
+
+| Component | Transitions |
+|---|---|
+| `kafka_cold_path_connected` | `DEGRADED` (connecting) → `HEALTHY` (joined) / `UNAVAILABLE` (error) |
+| `kafka_cold_path_poll` | `HEALTHY` (polled) / `UNAVAILABLE` (error) |
+| `kafka_cold_path_commit` | `HEALTHY` (committed) / `UNAVAILABLE` (commit failed or consumer not initialized) |
+
+### Processor boundary
+
+The `_cold_path_process_event()` function in `__main__.py` is the designated plug-in point
+for Story 3.2 (case reconstruction / evidence summary) — no refactor needed to wire in
+downstream processing.
+
+### Notes
+
+- Requires Kafka (bootstrap servers, consumer group, topic) — see dependency matrix below.
+- `--once` is not supported for this mode.
+- Sequential consumption is deliberate (architecture decision D6) — concurrency is not introduced in this story.
 
 ---
 
@@ -162,6 +198,6 @@ APP_ENV=local uv run python -m aiops_triage_pipeline --mode casefile-lifecycle -
 | Mode | Redis | Postgres | Kafka | S3 | Prometheus | Topology registry |
 |---|---|---|---|---|---|---|
 | `hot-path` | yes | yes (outbox) | no | yes | yes | yes |
-| `cold-path` | — | — | — | — | — | — |
+| `cold-path` | no | no | yes (consumer) | no | no | no |
 | `outbox-publisher` | no | yes (outbox) | yes | yes | no | no |
 | `casefile-lifecycle` | no | no | no | yes | no | no |

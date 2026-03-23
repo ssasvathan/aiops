@@ -6,7 +6,7 @@ import time
 from collections import deque
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Mapping
+from typing import Any, Mapping
 
 import redis as redis_lib
 import structlog
@@ -22,6 +22,7 @@ from aiops_triage_pipeline.cache.peak_cache import (
     persist_peak_profiles,
 )
 from aiops_triage_pipeline.config.settings import Settings, get_settings, load_policy_yaml
+from aiops_triage_pipeline.contracts.case_header_event import CaseHeaderEventV1
 from aiops_triage_pipeline.contracts.casefile_retention_policy import CasefileRetentionPolicyV1
 from aiops_triage_pipeline.contracts.outbox_policy import OutboxPolicyV1
 from aiops_triage_pipeline.denylist.loader import load_denylist
@@ -34,7 +35,12 @@ from aiops_triage_pipeline.health.metrics import (
     record_pipeline_peak_history_scope_count,
 )
 from aiops_triage_pipeline.health.otlp import configure_otlp_metrics
+from aiops_triage_pipeline.health.registry import get_health_registry
 from aiops_triage_pipeline.integrations.kafka import ConfluentKafkaCaseEventPublisher
+from aiops_triage_pipeline.integrations.kafka_consumer import (
+    ConfluentKafkaCaseHeaderConsumer,
+    KafkaConsumerAdapterProtocol,
+)
 from aiops_triage_pipeline.integrations.pagerduty import PagerDutyClient, PagerDutyIntegrationMode
 from aiops_triage_pipeline.integrations.prometheus import (
     MetricQueryDefinition,
@@ -45,6 +51,7 @@ from aiops_triage_pipeline.integrations.prometheus import (
 from aiops_triage_pipeline.integrations.slack import SlackClient, SlackIntegrationMode
 from aiops_triage_pipeline.logging.setup import configure_logging, get_logger
 from aiops_triage_pipeline.models.evidence import EvidenceRow
+from aiops_triage_pipeline.models.health import HealthStatus
 from aiops_triage_pipeline.outbox.repository import OutboxSqlRepository
 from aiops_triage_pipeline.outbox.worker import OutboxPublisherWorker
 from aiops_triage_pipeline.pipeline.baseline_store import load_metric_baselines
@@ -641,7 +648,7 @@ def _load_peak_baseline_windows(
 
 def _run_cold_path() -> None:
     try:
-        _, logger, _ = _bootstrap_mode("cold-path")
+        settings, logger, _ = _bootstrap_mode("cold-path")
     except Exception:
         get_logger("__main__").critical(
             "cold_path_bootstrap_failed",
@@ -650,10 +657,154 @@ def _run_cold_path() -> None:
             exc_info=True,
         )
         raise
-    logger.warning(
-        "cold_path_mode_exiting",
-        event_type="runtime.mode_stub",
-        reason="cold-path diagnosis loop not yet wired in __main__",
+
+    registry = get_health_registry()
+    consumer_group = settings.KAFKA_COLD_PATH_CONSUMER_GROUP
+    topic = settings.KAFKA_CASE_HEADER_TOPIC
+
+    logger.info(
+        "cold_path_mode_started",
+        event_type="cold_path.mode_start",
+        consumer_group=consumer_group,
+        topic=topic,
+        poll_timeout_seconds=settings.KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS,
+        app_env=settings.APP_ENV.value,
+    )
+
+    asyncio.run(
+        _cold_path_consumer_loop(
+            settings=settings,
+            logger=logger,
+            registry=registry,
+            consumer_group=consumer_group,
+            topic=topic,
+        )
+    )
+
+
+async def _cold_path_consumer_loop(
+    *,
+    settings: Any,
+    logger: structlog.BoundLogger,
+    registry: Any,
+    consumer_group: str,
+    topic: str,
+) -> None:
+    """Sequential cold-path consume loop: subscribe → poll → process → commit on shutdown."""
+    poll_timeout: float = settings.KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS
+    adapter: KafkaConsumerAdapterProtocol | None = None
+
+    # Signal connecting state before attempting consumer construction.
+    await registry.update(
+        "kafka_cold_path_connected",
+        HealthStatus.DEGRADED,
+        reason="connecting",
+    )
+
+    try:
+        adapter = _build_cold_path_consumer_adapter(settings, consumer_group)
+        adapter.subscribe([topic])
+        await registry.update("kafka_cold_path_connected", HealthStatus.HEALTHY)
+
+        while True:
+            msg = adapter.poll(timeout=poll_timeout)
+            await registry.update("kafka_cold_path_poll", HealthStatus.HEALTHY)
+            if msg is None:
+                continue
+            _process_cold_path_message(msg, logger)
+
+    except (KeyboardInterrupt, SystemExit):
+        logger.info(
+            "cold_path_shutdown_requested",
+            event_type="cold_path.shutdown",
+        )
+
+    except Exception as exc:  # noqa: BLE001
+        await registry.update(
+            "kafka_cold_path_connected",
+            HealthStatus.UNAVAILABLE,
+            reason=str(exc),
+        )
+        await registry.update(
+            "kafka_cold_path_poll",
+            HealthStatus.UNAVAILABLE,
+            reason=str(exc),
+        )
+        logger.error(
+            "cold_path_consumer_error",
+            event_type="cold_path.consumer_error",
+            exc_info=True,
+        )
+
+    finally:
+        if adapter is not None:
+            try:
+                adapter.commit()
+                await registry.update("kafka_cold_path_commit", HealthStatus.HEALTHY)
+            except Exception as commit_exc:  # noqa: BLE001
+                await registry.update(
+                    "kafka_cold_path_commit",
+                    HealthStatus.UNAVAILABLE,
+                    reason=str(commit_exc),
+                )
+                logger.warning(
+                    "cold_path_commit_failed",
+                    event_type="cold_path.commit_error",
+                    exc_info=True,
+                )
+            try:
+                adapter.close()
+            except Exception:  # noqa: BLE001
+                pass
+        else:
+            await registry.update(
+                "kafka_cold_path_commit",
+                HealthStatus.UNAVAILABLE,
+                reason="consumer not initialized",
+            )
+
+
+def _build_cold_path_consumer_adapter(
+    settings: Any,
+    consumer_group: str,
+) -> KafkaConsumerAdapterProtocol:
+    """Build and return the confluent-kafka consumer adapter for cold-path."""
+    return ConfluentKafkaCaseHeaderConsumer(
+        consumer_group=consumer_group,
+        settings=settings,
+    )
+
+
+def _process_cold_path_message(msg: Any, logger: structlog.BoundLogger) -> None:
+    """Decode and validate a cold-path Kafka message; route to processor boundary."""
+    if msg.error():
+        logger.warning(
+            "cold_path_message_error",
+            event_type="cold_path.message_error",
+            error=str(msg.error()),
+        )
+        return
+    try:
+        event = CaseHeaderEventV1.model_validate_json(msg.value())
+        _cold_path_process_event(event, logger)
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "cold_path_message_validation_failed",
+            event_type="cold_path.validation_error",
+            exc_info=True,
+        )
+
+
+def _cold_path_process_event(
+    event: CaseHeaderEventV1,
+    logger: structlog.BoundLogger,
+) -> None:
+    """Processor boundary for Story 3.2 case reconstruction plug-in."""
+    logger.debug(
+        "cold_path_event_received",
+        event_type="cold_path.event_received",
+        case_id=event.case_id,
+        schema_version=event.schema_version,
     )
 
 

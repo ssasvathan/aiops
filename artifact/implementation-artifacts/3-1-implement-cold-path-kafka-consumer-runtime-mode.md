@@ -1,6 +1,6 @@
 # Story 3.1: Implement Cold-Path Kafka Consumer Runtime Mode
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -26,37 +26,37 @@ so that diagnosis processing is decoupled from hot-path execution.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add cold-path Kafka consumer adapter boundary (AC: 1, 2)
-  - [ ] Add `src/aiops_triage_pipeline/integrations/kafka_consumer.py` with a thin protocol: `subscribe`, `poll`, `commit`, `close`.
-  - [ ] Implement `confluent-kafka`-backed adapter using `Settings`; require and validate `group.id` and topic wiring.
-  - [ ] Decode/validate consumed payloads as `CaseHeaderEventV1`; malformed messages are structured-log + continue.
+- [x] Task 1: Add cold-path Kafka consumer adapter boundary (AC: 1, 2)
+  - [x] Add `src/aiops_triage_pipeline/integrations/kafka_consumer.py` with a thin protocol: `subscribe`, `poll`, `commit`, `close`.
+  - [x] Implement `confluent-kafka`-backed adapter using `Settings`; require and validate `group.id` and topic wiring.
+  - [x] Decode/validate consumed payloads as `CaseHeaderEventV1`; malformed messages are structured-log + continue.
 
-- [ ] Task 2: Replace cold-path runtime stub with sequential consume loop (AC: 1, 2)
-  - [ ] Update `src/aiops_triage_pipeline/__main__.py` `_run_cold_path()` to run a real poll-process-commit loop.
-  - [ ] Keep processing strictly sequential (no batching/concurrency in this story).
-  - [ ] Add a small processor boundary for Story 3.2 to plug in reconstruction/summary without refactor.
-  - [ ] Ensure shutdown path commits offsets and closes consumer.
+- [x] Task 2: Replace cold-path runtime stub with sequential consume loop (AC: 1, 2)
+  - [x] Update `src/aiops_triage_pipeline/__main__.py` `_run_cold_path()` to run a real poll-process-commit loop.
+  - [x] Keep processing strictly sequential (no batching/concurrency in this story).
+  - [x] Add a small processor boundary for Story 3.2 to plug in reconstruction/summary without refactor.
+  - [x] Ensure shutdown path commits offsets and closes consumer.
 
-- [ ] Task 3: Add cold-path health state transitions (AC: 2)
-  - [ ] Update `HealthRegistry` entries for connected/disconnected, poll state, and commit success/failure.
-  - [ ] Preserve existing `/health` shape (component map); add cold-path component fields only.
+- [x] Task 3: Add cold-path health state transitions (AC: 2)
+  - [x] Update `HealthRegistry` entries for connected/disconnected, poll state, and commit success/failure.
+  - [x] Preserve existing `/health` shape (component map); add cold-path component fields only.
 
-- [ ] Task 4: Extend configuration for consumer runtime mode (AC: 1, 2)
-  - [ ] Add settings for cold-path consumer group and poll timeout with safe defaults.
-  - [ ] Add settings validation (`>0` constraints and non-empty strings where required).
-  - [ ] Update runtime startup config log output (secret-safe).
-  - [ ] Update `config/.env.local`, `config/.env.dev`, `config/.env.docker`, `config/.env.uat.template`, `config/.env.prod.template`.
+- [x] Task 4: Extend configuration for consumer runtime mode (AC: 1, 2)
+  - [x] Add settings for cold-path consumer group and poll timeout with safe defaults.
+  - [x] Add settings validation (`>0` constraints and non-empty strings where required).
+  - [x] Update runtime startup config log output (secret-safe).
+  - [x] Update `config/.env.local`, `config/.env.dev`, `config/.env.docker`, `config/.env.uat.template`, `config/.env.prod.template`.
 
-- [ ] Task 5: Add unit and integration coverage (AC: 1, 2)
-  - [ ] Add `tests/unit/integrations/test_kafka_consumer.py` for adapter behavior, poll handling, commit/close paths.
-  - [ ] Update `tests/unit/test_main.py` to assert `cold-path` no longer exits as bootstrap stub.
-  - [ ] Add `tests/integration/cold_path/test_consumer_lifecycle.py` for real Kafka lifecycle: subscribe, sequential consume, graceful close.
-  - [ ] Keep sprint quality gate at zero skips.
+- [x] Task 5: Add unit and integration coverage (AC: 1, 2)
+  - [x] Add `tests/unit/integrations/test_kafka_consumer.py` for adapter behavior, poll handling, commit/close paths.
+  - [x] Update `tests/unit/test_main.py` to assert `cold-path` no longer exits as bootstrap stub.
+  - [x] Add `tests/integration/cold_path/test_consumer_lifecycle.py` for real Kafka lifecycle: subscribe, sequential consume, graceful close.
+  - [x] Keep sprint quality gate at zero skips.
 
-- [ ] Task 6: Update runtime-mode documentation (AC: 1, 2)
-  - [ ] Update `docs/runtime-modes.md` cold-path section from stub to live consumer runtime mode.
-  - [ ] Update `docs/local-development.md` runtime mode status and local run guidance.
-  - [ ] Update `README.md` runtime mode table for cold-path activation.
+- [x] Task 6: Update runtime-mode documentation (AC: 1, 2)
+  - [x] Update `docs/runtime-modes.md` cold-path section from stub to live consumer runtime mode.
+  - [x] Update `docs/local-development.md` runtime mode status and local run guidance.
+  - [x] Update `README.md` runtime mode table for cold-path activation.
 
 ## Dev Notes
 
@@ -184,26 +184,56 @@ Applied `archive/project-context.md` guidance:
 
 ### Agent Model Used
 
-gpt-5-codex
+claude-sonnet-4-6
 
 ### Debug Log References
 
-- Workflow executed: `bmad-bmm-create-story` (automated mode)
-- Target story: `3-1-implement-cold-path-kafka-consumer-runtime-mode`
-- Story source status file: `artifact/implementation-artifacts/sprint-status.yaml`
+- ATDD red phase: 4 failing tests created by `bmad-tea-testarch-atdd` (2026-03-22)
+- Implementation: `bmad-bmm-dev-story` (2026-03-22)
+- Entry point: `ready-for-dev` with ATDD already complete
 
 ### Completion Notes List
 
-- Story context regenerated for Story 3.1 using Epic 3 + architecture + PRD constraints.
-- Scope and boundaries explicitly aligned to CR-07/D6 and current repository baseline.
-- Latest technical context validated against Confluent docs and PyPI on 2026-03-22.
+- Created `src/aiops_triage_pipeline/integrations/kafka_consumer.py` with `KafkaConsumerAdapterProtocol` (runtime_checkable) and `ConfluentKafkaCaseHeaderConsumer` including SASL_SSL/GSSAPI support and graceful `_NO_OFFSET` handling in `commit()`.
+- Replaced `_run_cold_path()` stub in `__main__.py` with full sequential consume loop. Added `_cold_path_consumer_loop()` async function, `_build_cold_path_consumer_adapter()` factory, `_process_cold_path_message()` decoder, and `_cold_path_process_event()` processor boundary for Story 3.2.
+- Emits `kafka_cold_path_connected`, `kafka_cold_path_poll`, `kafka_cold_path_commit` health transitions at each lifecycle stage (AC 2 satisfied).
+- Added `KAFKA_COLD_PATH_CONSUMER_GROUP` and `KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS` to `Settings` with `>0` validation and secret-safe `log_active_config` output.
+- Updated all 5 env files (local, dev, docker, uat.template, prod.template).
+- 11 new unit tests in `test_kafka_consumer.py`; 2 new tests replacing stub test in `test_main.py`; 4 integration tests in `cold_path/test_consumer_lifecycle.py`.
+- All 4 ATDD red-phase tests now GREEN.
+- Final gate: 955 passed, 0 skipped, ruff clean.
 
 ### File List
 
-- `artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md`
-- `artifact/implementation-artifacts/sprint-status.yaml`
+- `src/aiops_triage_pipeline/integrations/kafka_consumer.py` (new)
+- `src/aiops_triage_pipeline/__main__.py` (modified)
+- `src/aiops_triage_pipeline/config/settings.py` (modified)
+- `tests/unit/integrations/test_kafka_consumer.py` (new)
+- `tests/unit/test_main.py` (modified)
+- `tests/integration/cold_path/__init__.py` (new)
+- `tests/integration/cold_path/test_consumer_lifecycle.py` (new)
+- `tests/atdd/fixtures/story_3_1_test_data.py` (pre-existing ATDD fixture)
+- `tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py` (pre-existing ATDD test)
+- `artifact/test-artifacts/atdd-checklist-3-1-implement-cold-path-kafka-consumer-runtime-mode.md` (pre-existing)
+- `artifact/test-artifacts/tea-atdd-api-tests-2026-03-22T22-28-03Z.json` (pre-existing)
+- `artifact/test-artifacts/tea-atdd-e2e-tests-2026-03-22T22-28-03Z.json` (pre-existing)
+- `artifact/test-artifacts/tea-atdd-summary-2026-03-22T22-28-03Z.json` (pre-existing)
+- `config/.env.local` (modified)
+- `config/.env.dev` (modified)
+- `config/.env.docker` (modified)
+- `config/.env.uat.template` (modified)
+- `config/.env.prod.template` (modified)
+- `docs/runtime-modes.md` (modified)
+- `docs/local-development.md` (modified)
+- `README.md` (modified)
+- `artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md` (this file)
+- `artifact/implementation-artifacts/sprint-status.yaml` (modified)
+
+## Change Log
+
+- 2026-03-22: Implemented cold-path Kafka consumer runtime mode (Story 3.1). Replaced bootstrap stub with live sequential consumer loop, added adapter boundary, health transitions, configuration, tests, and documentation.
 
 ## Story Completion Status
 
-- Story status: `ready-for-dev`
-- Completion note: Ultimate context engine analysis completed - comprehensive developer guide created.
+- Story status: `review`
+- Completion note: All 6 tasks complete. 4 ATDD tests GREEN, 955 regression tests passed (0 skipped), ruff clean.

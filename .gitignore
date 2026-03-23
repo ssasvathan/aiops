@@ -42,3 +42,6 @@ htmlcov/
 .ruff_cache/
 .worktrees/
 artifact/test-artifacts/atdd-temp/
+
+# BMAD runner logs
+artifact/implementation-artifacts/runner-logs/

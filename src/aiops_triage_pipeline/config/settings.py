@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     KAFKA_CASE_HEADER_TOPIC: str = "aiops-case-header"
     KAFKA_TRIAGE_EXCERPT_TOPIC: str = "aiops-triage-excerpt"
 
+    # Cold-path consumer
+    KAFKA_COLD_PATH_CONSUMER_GROUP: str = "aiops-cold-path-diagnosis"
+    KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS: float = 1.0
+
     # Postgres
     DATABASE_URL: str = "postgresql+psycopg://aiops:aiops@localhost:5432/aiops"
 
@@ -150,6 +154,8 @@ class Settings(BaseSettings):
                 )
             if not Path(self.KRB5_CONF_PATH).exists():
                 raise ValueError(f"KRB5 config file not found: {self.KRB5_CONF_PATH}")
+        if self.KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS <= 0:
+            raise ValueError("KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS must be > 0")
         if self.CASEFILE_LIFECYCLE_POLL_INTERVAL_SECONDS <= 0:
             raise ValueError("CASEFILE_LIFECYCLE_POLL_INTERVAL_SECONDS must be > 0")
         if not 1 <= self.CASEFILE_LIFECYCLE_DELETE_BATCH_SIZE <= 1000:
@@ -192,6 +198,8 @@ class Settings(BaseSettings):
             APP_ENV=self.APP_ENV.value,
             KAFKA_BOOTSTRAP_SERVERS=self.KAFKA_BOOTSTRAP_SERVERS,
             KAFKA_SECURITY_PROTOCOL=self.KAFKA_SECURITY_PROTOCOL,
+            KAFKA_COLD_PATH_CONSUMER_GROUP=self.KAFKA_COLD_PATH_CONSUMER_GROUP,
+            KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=self.KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS,
             DATABASE_URL=self._mask_url(self.DATABASE_URL),
             REDIS_URL=self._mask_url(self.REDIS_URL),
             S3_ENDPOINT_URL=self.S3_ENDPOINT_URL,

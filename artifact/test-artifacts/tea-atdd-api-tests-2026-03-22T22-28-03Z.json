@@ -1,0 +1,42 @@
+{
+  "success": true,
+  "subagent": "atdd-api-tests",
+  "tests": [
+    {
+      "file": "tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py",
+      "description": "ATDD backend acceptance tests for Story 3.1 cold-path Kafka consumer runtime activation (RED PHASE)",
+      "expected_to_fail": true,
+      "acceptance_criteria_covered": [
+        "Cold-path runtime joins consumer group aiops-cold-path-diagnosis on topic aiops-case-header",
+        "Cold-path processing path is no longer a bootstrap stub and exposes startup wiring",
+        "Cold-path shutdown path commits offsets and reports health transition signals",
+        "Consumer adapter boundary exists with subscribe/poll/commit/close contract"
+      ],
+      "priority_coverage": {
+        "P0": 2,
+        "P1": 2,
+        "P2": 0,
+        "P3": 0
+      }
+    }
+  ],
+  "fixture_needs": [
+    "tests/atdd/fixtures/story_3_1_test_data.py"
+  ],
+  "knowledge_fragments_used": [
+    "data-factories",
+    "component-tdd",
+    "test-quality",
+    "test-healing-patterns",
+    "test-levels-framework",
+    "test-priorities-matrix",
+    "ci-burn-in",
+    "overview",
+    "api-request",
+    "auth-session",
+    "recurse"
+  ],
+  "test_count": 4,
+  "tdd_phase": "RED",
+  "summary": "Generated 4 failing backend ATDD tests for Story 3.1"
+}

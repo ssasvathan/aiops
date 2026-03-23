@@ -302,8 +302,8 @@ The entry point (`__main__.py`) dispatches to one of four modes via `--mode`.
 
 | Mode | Status | Description |
 |------|--------|-------------|
-| `hot-path` | Bootstrap only | Loads settings, OTLP, and alert policy; runtime scheduler wiring uses a dedicated orchestration entrypoint |
-| `cold-path` | Bootstrap only | Same bootstrap; cold-path invocation wired through dedicated entrypoint |
+| `hot-path` | Fully wired | Loads policies, connects to all runtime clients, runs the deterministic triage scheduler loop |
+| `cold-path` | Fully wired | Subscribes to `aiops-case-header`, consumes `CaseHeaderEventV1` events sequentially, commits on shutdown |
 | `outbox-publisher` | Fully wired | Polls the `outbox` table for `READY` records and publishes to Kafka |
 | `casefile-lifecycle` | Fully wired | Runs the retention policy against object storage; purges expired CaseFiles |
 

@@ -100,7 +100,13 @@ Runtime mode status:
 | `outbox-publisher` | Fully wired | Runs `OutboxPublisherWorker` with policy, denylist, and alert evaluation |
 | `casefile-lifecycle` | Fully wired | Runs `CasefileLifecycleRunner` against object storage |
 | `hot-path` | Fully wired | Loads all policies and runtime clients; runs the complete `_hot_path_scheduler_loop` async triage cycle |
-| `cold-path` | Bootstrap stub | `__main__.py` entrypoint logs a warning and exits; domain modules (`diagnosis/`, `linkage/`) are implemented but not yet orchestrated |
+| `cold-path` | Fully wired | Subscribes to `aiops-case-header`, consumes `CaseHeaderEventV1` events sequentially, commits offsets on shutdown |
+
+To run the cold-path consumer locally (requires Kafka from `docker compose up`):
+
+```bash
+APP_ENV=local uv run python -m aiops_triage_pipeline --mode cold-path
+```
 
 ## Environment Configuration
 

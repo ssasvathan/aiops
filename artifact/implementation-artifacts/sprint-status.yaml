@@ -56,7 +56,7 @@ development_status:
   2-5-run-casefile-lifecycle-retention-purge: done
   epic-2-retrospective: done
   epic-3: in-progress
-  3-1-implement-cold-path-kafka-consumer-runtime-mode: ready-for-dev
+  3-1-implement-cold-path-kafka-consumer-runtime-mode: review
   3-2-reconstruct-case-context-and-build-deterministic-evidence-summary: backlog
   3-3-invoke-llm-for-all-cases-with-enriched-prompt-and-schema-validation: backlog
   3-4-persist-diagnosis-artifact-with-fallback-guarantees: backlog
