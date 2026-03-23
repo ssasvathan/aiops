@@ -7,6 +7,7 @@ import pytest
 from aiops_triage_pipeline.contracts import (
     Action,
     ActionDecisionV1,
+    AnomalyDetectionPolicyV1,
     CasefileRetentionPolicy,
     CasefileRetentionPolicyV1,
     CaseHeaderEventV1,
@@ -300,3 +301,8 @@ def minimal_local_dev() -> LocalDevContractV1:
 @pytest.fixture()
 def minimal_topology_registry() -> TopologyRegistryLoaderRulesV1:
     return TopologyRegistryLoaderRulesV1()
+
+
+@pytest.fixture()
+def minimal_anomaly_detection_policy() -> AnomalyDetectionPolicyV1:
+    return AnomalyDetectionPolicyV1()

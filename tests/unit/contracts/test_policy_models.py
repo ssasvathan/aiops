@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from aiops_triage_pipeline.config.settings import load_policy_yaml
 from aiops_triage_pipeline.contracts import (
     AG5DedupeTtlConfig,
+    AnomalyDetectionPolicyV1,
     CasefileRetentionPolicyV1,
     GateEffects,
     GateSpec,
@@ -22,6 +23,13 @@ from aiops_triage_pipeline.contracts import (
 )
 
 # ── Immutability tests ────────────────────────────────────────────────────────
+
+
+def test_anomaly_detection_policy_is_frozen(
+    minimal_anomaly_detection_policy: AnomalyDetectionPolicyV1,
+) -> None:
+    with pytest.raises(ValidationError):
+        minimal_anomaly_detection_policy.lag_buildup_min_lag = 999.0  # type: ignore[misc]
 
 
 def test_rulebook_is_frozen(minimal_rulebook: RulebookV1) -> None:
@@ -76,6 +84,14 @@ def test_topology_registry_is_frozen(
 
 
 # ── Round-trip serialization tests ────────────────────────────────────────────
+
+
+def test_anomaly_detection_policy_round_trip(
+    minimal_anomaly_detection_policy: AnomalyDetectionPolicyV1,
+) -> None:
+    json_str = minimal_anomaly_detection_policy.model_dump_json()
+    reconstructed = AnomalyDetectionPolicyV1.model_validate_json(json_str)
+    assert minimal_anomaly_detection_policy == reconstructed
 
 
 def test_rulebook_round_trip(minimal_rulebook: RulebookV1) -> None:
@@ -142,6 +158,7 @@ def test_topology_registry_round_trip(
 
 
 def test_all_policy_contracts_have_schema_version_v1(
+    minimal_anomaly_detection_policy: AnomalyDetectionPolicyV1,
     minimal_rulebook: RulebookV1,
     minimal_peak_policy: PeakPolicyV1,
     minimal_prometheus_metrics: PrometheusMetricsContractV1,
@@ -153,6 +170,7 @@ def test_all_policy_contracts_have_schema_version_v1(
     minimal_topology_registry: TopologyRegistryLoaderRulesV1,
 ) -> None:
     contracts = [
+        minimal_anomaly_detection_policy,
         minimal_rulebook,
         minimal_peak_policy,
         minimal_prometheus_metrics,

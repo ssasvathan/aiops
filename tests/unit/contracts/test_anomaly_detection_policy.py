@@ -46,14 +46,22 @@ def test_default_values_match_anomaly_stage_constants() -> None:
 
 
 def test_invalid_threshold_raises() -> None:
-    with pytest.raises(ValidationError):
-        AnomalyDetectionPolicyV1(lag_buildup_min_lag=-1.0)
-
-    with pytest.raises(ValidationError):
-        AnomalyDetectionPolicyV1(lag_buildup_min_lag=0.0)
-
-    with pytest.raises(ValidationError):
-        AnomalyDetectionPolicyV1(volume_drop_max_current_messages_in_per_sec=0.0)
+    # Verify every field covered by _validate_positive rejects zero and negative values.
+    positive_fields = [
+        "lag_buildup_min_lag",
+        "lag_buildup_min_growth",
+        "lag_buildup_max_offset_progress",
+        "throughput_min_messages_per_sec",
+        "throughput_min_total_produce_requests_per_sec",
+        "volume_drop_max_current_messages_in_per_sec",
+        "volume_drop_min_baseline_messages_in_per_sec",
+        "volume_drop_min_expected_requests_per_sec",
+    ]
+    for field in positive_fields:
+        with pytest.raises(ValidationError):
+            AnomalyDetectionPolicyV1(**{field: 0.0})
+        with pytest.raises(ValidationError):
+            AnomalyDetectionPolicyV1(**{field: -1.0})
 
 
 def test_failure_ratio_out_of_range_raises() -> None:
