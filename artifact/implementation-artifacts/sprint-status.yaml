@@ -64,7 +64,7 @@ development_status:
   epic-4: in-progress
   4-1-add-distributed-cycle-lock-with-fail-open-behavior: done
   4-2-coordinate-scope-shards-and-recover-from-pod-failure: done
-  4-3-roll-out-distributed-coordination-incrementally: review
+  4-3-roll-out-distributed-coordination-incrementally: done
   epic-4-retrospective: optional
   epic-5: backlog
   5-1-load-and-validate-policies-at-startup: backlog
