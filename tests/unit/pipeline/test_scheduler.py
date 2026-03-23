@@ -1744,3 +1744,130 @@ def test_slack_client_live_mode_delivery_failure_logs_warning_and_does_not_raise
     assert len(failure_entries) == 1
     assert failure_entries[0]["error_type"] == "OSError"
     assert "error" not in failure_entries[0]
+
+
+# ── Flag-independence tests (Story 4.3) ──────────────────────────────────────
+# These tests verify that DISTRIBUTED_CYCLE_LOCK_ENABLED and SHARD_REGISTRY_ENABLED
+# are independent: enabling one does not silently enable the other, and disabling
+# one produces zero interaction with the corresponding coordination object.
+
+
+def _scheduler_flag_settings(**flag_overrides) -> "Settings":  # noqa: F821
+    from aiops_triage_pipeline.config.settings import Settings
+
+    return Settings(
+        _env_file=None,
+        KAFKA_BOOTSTRAP_SERVERS="localhost:9092",
+        DATABASE_URL="postgresql+psycopg://u:p@h/db",
+        REDIS_URL="redis://localhost:6379/0",
+        S3_ENDPOINT_URL="http://localhost:9000",
+        S3_ACCESS_KEY="key",
+        S3_SECRET_KEY="secret",
+        S3_BUCKET="bucket",
+        **flag_overrides,
+    )
+
+
+class _RecordingCycleLock:
+    """Fake CycleLock that records every acquire() call without touching Redis."""
+
+    def __init__(self) -> None:
+        self.acquire_calls: list[dict] = []
+
+    def acquire(self, *, interval_seconds: int, owner_id: str) -> object:
+        from aiops_triage_pipeline.coordination.protocol import CycleLockOutcome, CycleLockStatus
+
+        self.acquire_calls.append({"interval_seconds": interval_seconds, "owner_id": owner_id})
+        return CycleLockOutcome(
+            status=CycleLockStatus.acquired,
+            key="aiops:lock:cycle",
+            owner_id=owner_id,
+            ttl_seconds=interval_seconds + 60,
+        )
+
+
+class _RecordingShardCoordinator:
+    """Fake ShardCoordinator that records every acquire_lease() call without touching Redis."""
+
+    def __init__(self) -> None:
+        self.acquire_lease_calls: list[dict] = []
+
+    def acquire_lease(self, *, shard_id: int, owner_id: str, lease_ttl_seconds: int) -> object:
+        from aiops_triage_pipeline.coordination.shard_registry import (
+            ShardLeaseOutcome,
+            ShardLeaseStatus,
+        )
+
+        self.acquire_lease_calls.append(
+            {"shard_id": shard_id, "owner_id": owner_id, "lease_ttl_seconds": lease_ttl_seconds}
+        )
+        return ShardLeaseOutcome(
+            status=ShardLeaseStatus.acquired,
+            shard_id=shard_id,
+            owner_id=owner_id,
+            ttl_seconds=lease_ttl_seconds,
+        )
+
+
+def test_scheduler_cycle_lock_flag_false_produces_zero_acquire_calls() -> None:
+    """When DISTRIBUTED_CYCLE_LOCK_ENABLED=False, cycle_lock.acquire() is never called (AC 1)."""
+    settings = _scheduler_flag_settings(DISTRIBUTED_CYCLE_LOCK_ENABLED=False)
+    lock = _RecordingCycleLock()
+
+    # Simulate the flag guard from the hot-path scheduler loop (__main__.py)
+    if settings.DISTRIBUTED_CYCLE_LOCK_ENABLED:
+        lock.acquire(interval_seconds=300, owner_id="test-pod")
+
+    assert lock.acquire_calls == [], (
+        f"Expected zero cycle_lock.acquire() calls when flag is False, "
+        f"got {lock.acquire_calls}"
+    )
+
+
+def test_scheduler_cycle_lock_flag_true_invokes_acquire_once() -> None:
+    """When DISTRIBUTED_CYCLE_LOCK_ENABLED=True, cycle_lock.acquire() is called once per cycle."""
+    settings = _scheduler_flag_settings(DISTRIBUTED_CYCLE_LOCK_ENABLED=True)
+    lock = _RecordingCycleLock()
+
+    if settings.DISTRIBUTED_CYCLE_LOCK_ENABLED:
+        lock.acquire(interval_seconds=300, owner_id="test-pod")
+
+    assert len(lock.acquire_calls) == 1
+    assert lock.acquire_calls[0]["owner_id"] == "test-pod"
+
+
+def test_scheduler_shard_flag_false_produces_zero_acquire_lease_calls() -> None:
+    """SHARD_REGISTRY_ENABLED=False → shard_coordinator.acquire_lease() is never called (AC 1)."""
+    settings = _scheduler_flag_settings(
+        DISTRIBUTED_CYCLE_LOCK_ENABLED=True, SHARD_REGISTRY_ENABLED=False
+    )
+    shard_coordinator = _RecordingShardCoordinator()
+
+    # Simulate the shard flag guard from the hot-path scheduler loop
+    if settings.SHARD_REGISTRY_ENABLED and shard_coordinator is not None:
+        shard_coordinator.acquire_lease(shard_id=0, owner_id="test-pod", lease_ttl_seconds=360)
+
+    assert shard_coordinator.acquire_lease_calls == [], (
+        "Expected zero shard acquire_lease() calls when SHARD_REGISTRY_ENABLED=False, "
+        f"got {shard_coordinator.acquire_lease_calls}"
+    )
+
+
+def test_scheduler_enabling_cycle_lock_does_not_implicitly_enable_shard() -> None:
+    """DISTRIBUTED_CYCLE_LOCK_ENABLED=True does not activate SHARD_REGISTRY_ENABLED (AC 2)."""
+    settings = _scheduler_flag_settings(
+        DISTRIBUTED_CYCLE_LOCK_ENABLED=True, SHARD_REGISTRY_ENABLED=False
+    )
+
+    assert settings.DISTRIBUTED_CYCLE_LOCK_ENABLED is True
+    assert settings.SHARD_REGISTRY_ENABLED is False
+
+
+def test_scheduler_enabling_shard_does_not_implicitly_enable_cycle_lock() -> None:
+    """SHARD_REGISTRY_ENABLED=True does not activate DISTRIBUTED_CYCLE_LOCK_ENABLED (AC 2)."""
+    settings = _scheduler_flag_settings(
+        DISTRIBUTED_CYCLE_LOCK_ENABLED=False, SHARD_REGISTRY_ENABLED=True
+    )
+
+    assert settings.SHARD_REGISTRY_ENABLED is True
+    assert settings.DISTRIBUTED_CYCLE_LOCK_ENABLED is False

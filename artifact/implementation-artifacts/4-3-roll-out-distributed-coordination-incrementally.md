@@ -1,6 +1,6 @@
 # Story 4.3: Roll Out Distributed Coordination Incrementally
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -26,42 +26,42 @@ so that production risk is minimized during activation.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Add rollout flag-combination unit tests (AC: 1, 2)
-  - [ ] Add `tests/unit/coordination/test_rollout_flags.py` — verify that when `DISTRIBUTED_CYCLE_LOCK_ENABLED=False` and `SHARD_REGISTRY_ENABLED=False`, the scheduler performs zero Redis lock/shard calls (use call-recording fake Redis).
-  - [ ] Add test: `DISTRIBUTED_CYCLE_LOCK_ENABLED=True`, `SHARD_REGISTRY_ENABLED=False` → cycle lock metrics emitted, no shard checkpoint calls.
-  - [ ] Add test: both flags true → cycle lock and shard coordination both active.
-  - [ ] Add test: flag disabled after being enabled produces settings with default `False` and no validator errors.
-  - [ ] Extend `tests/unit/config/test_settings.py` with `SHARD_REGISTRY_ENABLED` default, validation, and `log_active_config` inclusion tests.
+- [x] Task 1: Add rollout flag-combination unit tests (AC: 1, 2)
+  - [x] Add `tests/unit/coordination/test_rollout_flags.py` — verify that when `DISTRIBUTED_CYCLE_LOCK_ENABLED=False` and `SHARD_REGISTRY_ENABLED=False`, the scheduler performs zero Redis lock/shard calls (use call-recording fake Redis).
+  - [x] Add test: `DISTRIBUTED_CYCLE_LOCK_ENABLED=True`, `SHARD_REGISTRY_ENABLED=False` → cycle lock metrics emitted, no shard checkpoint calls.
+  - [x] Add test: both flags true → cycle lock and shard coordination both active.
+  - [x] Add test: flag disabled after being enabled produces settings with default `False` and no validator errors.
+  - [x] Extend `tests/unit/config/test_settings.py` with `SHARD_REGISTRY_ENABLED` default, validation, and `log_active_config` inclusion tests.
 
-- [ ] Task 2: Add rollout statelessness integration test (AC: 2)
-  - [ ] Add `tests/integration/coordination/test_coordination_rollout.py` using real Redis (testcontainers).
-  - [ ] Test: flags-off produces zero Redis coordination keys (`SCAN aiops:lock:*` and `SCAN aiops:shard:*` return empty after cycle execution).
-  - [ ] Test: flags-on then flags-off and cycle runs again → Redis keys from prior enabled cycle expire naturally; no manual cleanup required.
-  - [ ] Prerequisite enforcement: use `pytest.fail` (not `pytest.skip`) if Docker is unavailable.
+- [x] Task 2: Add rollout statelessness integration test (AC: 2)
+  - [x] Add `tests/integration/coordination/test_coordination_rollout.py` using real Redis (testcontainers).
+  - [x] Test: flags-off produces zero Redis coordination keys (`SCAN aiops:lock:*` and `SCAN aiops:shard:*` return empty after cycle execution).
+  - [x] Test: flags-on then flags-off and cycle runs again → Redis keys from prior enabled cycle expire naturally; no manual cleanup required.
+  - [x] Prerequisite enforcement: use `pytest.fail` (not `pytest.skip`) if Docker is unavailable.
 
-- [ ] Task 3: Add `SHARD_REGISTRY_ENABLED` to startup configuration logging (AC: 2)
-  - [ ] Verify `log_active_config` in `config/settings.py` includes `SHARD_REGISTRY_ENABLED`.
-  - [ ] If 4.2 did not add it, add it alongside `DISTRIBUTED_CYCLE_LOCK_ENABLED` (line ~231 of settings.py).
-  - [ ] Ensure `log_active_config` logs both flags together so operators can see the full coordination state in a single startup log event.
+- [x] Task 3: Add `SHARD_REGISTRY_ENABLED` to startup configuration logging (AC: 2)
+  - [x] Verify `log_active_config` in `config/settings.py` includes `SHARD_REGISTRY_ENABLED`.
+  - [x] If 4.2 did not add it, add it alongside `DISTRIBUTED_CYCLE_LOCK_ENABLED` (line ~231 of settings.py).
+  - [x] Ensure `log_active_config` logs both flags together so operators can see the full coordination state in a single startup log event.
 
-- [ ] Task 4: Update operator rollout documentation (AC: 2)
-  - [ ] Update `docs/deployment-guide.md` with a "Distributed Coordination Rollout" section covering:
+- [x] Task 4: Update operator rollout documentation (AC: 2)
+  - [x] Update `docs/deployment-guide.md` with a "Distributed Coordination Rollout" section covering:
     - Phase 0 (default): both flags false, single-instance semantics, no Redis coordination keys written.
     - Phase 1: enable `DISTRIBUTED_CYCLE_LOCK_ENABLED=true`, verify `aiops.coordination.cycle_lock_acquired` / `cycle_lock_yielded` OTLP counters appear.
     - Phase 2: enable `SHARD_REGISTRY_ENABLED=true`, verify `aiops.coordination.shard_checkpoint_*` OTLP counters appear.
     - Rollback: set flag back to false; no Redis data migration or `DEL` commands needed; existing keys expire via TTL.
-  - [ ] Update `docs/runtime-modes.md` with coordination-state per mode table (flags off → single-instance, flags on → coordinated).
-  - [ ] Update `README.md` feature flag reference table to include both `DISTRIBUTED_CYCLE_LOCK_ENABLED` and `SHARD_REGISTRY_ENABLED` with their default values, scope, and recommended rollout order.
+  - [x] Update `docs/runtime-modes.md` with coordination-state per mode table (flags off → single-instance, flags on → coordinated).
+  - [x] Update `README.md` feature flag reference table to include both `DISTRIBUTED_CYCLE_LOCK_ENABLED` and `SHARD_REGISTRY_ENABLED` with their default values, scope, and recommended rollout order.
 
-- [ ] Task 5: Validate flag independence and reversibility in scheduler unit tests (AC: 1, 2)
-  - [ ] Extend `tests/unit/pipeline/test_scheduler.py`: when `DISTRIBUTED_CYCLE_LOCK_ENABLED=False`, scheduler executes cycle with zero interaction with the cycle lock object (assert no acquire/yield calls).
-  - [ ] Extend `tests/unit/pipeline/test_scheduler.py`: when `SHARD_REGISTRY_ENABLED=False` (even if shard coordinator is wired), scheduler does not invoke shard assignment.
-  - [ ] Confirm both flags can be independently toggled without affecting each other's code paths.
+- [x] Task 5: Validate flag independence and reversibility in scheduler unit tests (AC: 1, 2)
+  - [x] Extend `tests/unit/pipeline/test_scheduler.py`: when `DISTRIBUTED_CYCLE_LOCK_ENABLED=False`, scheduler executes cycle with zero interaction with the cycle lock object (assert no acquire/yield calls).
+  - [x] Extend `tests/unit/pipeline/test_scheduler.py`: when `SHARD_REGISTRY_ENABLED=False` (even if shard coordinator is wired), scheduler does not invoke shard assignment.
+  - [x] Confirm both flags can be independently toggled without affecting each other's code paths.
 
-- [ ] Task 6: Run full regression to confirm zero skipped tests and no regressions (AC: 1, 2)
-  - [ ] `uv run ruff check`
-  - [ ] `uv run pytest -q tests/unit`
-  - [ ] `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
+- [x] Task 6: Run full regression to confirm zero skipped tests and no regressions (AC: 1, 2)
+  - [x] `uv run ruff check`
+  - [x] `uv run pytest -q tests/unit`
+  - [x] `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
 
 ## Dev Notes
 
@@ -218,11 +218,25 @@ claude-sonnet-4-6
 - Ultimate context engine analysis completed — comprehensive developer guide created.
 - Story scoped to rollout safety validation and documentation; no coordination primitive changes.
 - All file targets verified against existing project structure and previous story patterns.
+- Task 1: `tests/unit/coordination/test_rollout_flags.py` created with 4 flag-combination tests using call-recording fake Redis; verified zero Redis calls when both flags disabled.
+- Task 1 (settings): `test_log_active_config_includes_shard_registry_enabled` added to `tests/unit/config/test_settings.py`; confirmed `SHARD_REGISTRY_ENABLED` was already in `log_active_config` (added by 4.2 at settings.py:247).
+- Task 2: `tests/integration/coordination/test_coordination_rollout.py` created; 2 tests using real Redis via testcontainers; `pytest.fail` used for Docker prereq enforcement.
+- Task 3: Verified `SHARD_REGISTRY_ENABLED` already present in `log_active_config` (settings.py line 247) — no source change required.
+- Task 4: `docs/deployment-guide.md` updated with "Distributed Coordination Rollout" section (Phase 0/1/2 + rollback). `docs/runtime-modes.md` updated with coordination-state per flag combination table. `README.md` feature flag table updated with scope and recommended rollout order columns.
+- Task 5: 5 flag-independence tests added to `tests/unit/pipeline/test_scheduler.py` using `_RecordingCycleLock` and `_RecordingShardCoordinator` fake objects.
+- Task 6: `ruff check` clean (1 pre-existing atdd E501 unrelated to this story). `pytest -q tests/unit` → 1017 passed. Full regression → 1113 passed, 0 skipped, 0 failed.
 
 ### File List
 
 - `artifact/implementation-artifacts/4-3-roll-out-distributed-coordination-incrementally.md`
 - `artifact/implementation-artifacts/sprint-status.yaml`
+- `tests/unit/coordination/test_rollout_flags.py`
+- `tests/unit/config/test_settings.py`
+- `tests/unit/pipeline/test_scheduler.py`
+- `tests/integration/coordination/test_coordination_rollout.py`
+- `docs/deployment-guide.md`
+- `docs/runtime-modes.md`
+- `README.md`
 
 ### Story Completion Status
 

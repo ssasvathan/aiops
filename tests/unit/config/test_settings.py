@@ -424,3 +424,20 @@ def test_kafka_cold_path_consumer_group_whitespace_raises() -> None:
     """KAFKA_COLD_PATH_CONSUMER_GROUP cannot be a whitespace-only string."""
     with pytest.raises((ValueError, Exception), match="KAFKA_COLD_PATH_CONSUMER_GROUP"):
         Settings(**{**_base_settings_kwargs(), "KAFKA_COLD_PATH_CONSUMER_GROUP": "   "})
+
+
+def test_log_active_config_includes_shard_registry_enabled() -> None:
+    """log_active_config includes SHARD_REGISTRY_ENABLED for full coordination state visibility."""
+    settings = Settings(**_base_settings_kwargs())
+    with structlog.testing.capture_logs() as cap_logs:
+        settings.log_active_config(structlog.get_logger())
+
+    assert len(cap_logs) == 1
+    event = cap_logs[0]
+    assert "SHARD_REGISTRY_ENABLED" in event, (
+        "SHARD_REGISTRY_ENABLED must appear in log_active_config output"
+    )
+    assert event["SHARD_REGISTRY_ENABLED"] is False  # default value
+    assert "DISTRIBUTED_CYCLE_LOCK_ENABLED" in event, (
+        "Both coordination flags must be logged together"
+    )

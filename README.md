@@ -350,14 +350,16 @@ config/.env.docker
 
 **Hot-path coordination flags:**
 
-| Variable | Default | Notes |
-|----------|---------|-------|
-| `DISTRIBUTED_CYCLE_LOCK_ENABLED` | `false` | Enables distributed interval ownership coordination |
-| `CYCLE_LOCK_MARGIN_SECONDS` | `60` | Added to `HOT_PATH_SCHEDULER_INTERVAL_SECONDS` to compute lock TTL (`>0`) |
-| `SHARD_REGISTRY_ENABLED` | `false` | Enables shard-level scope distribution across pods |
-| `SHARD_COORDINATION_SHARD_COUNT` | `4` | Number of shards (`>0`) |
-| `SHARD_LEASE_TTL_SECONDS` | `360` | Shard lease TTL in seconds (`>0`) |
-| `SHARD_CHECKPOINT_TTL_SECONDS` | `660` | Checkpoint key TTL in seconds (`>0`) |
+| Variable | Default | Scope | Recommended rollout order |
+|----------|---------|-------|--------------------------|
+| `DISTRIBUTED_CYCLE_LOCK_ENABLED` | `false` | hot-path mode only | **Phase 1** — enable first; verify `aiops.coordination.cycle_lock_*` OTLP counters |
+| `CYCLE_LOCK_MARGIN_SECONDS` | `60` | hot-path mode only | Tune before enabling Phase 1 (`>0`; lock TTL = interval + margin) |
+| `SHARD_REGISTRY_ENABLED` | `false` | hot-path mode only | **Phase 2** — enable after Phase 1 is stable; verify `aiops.coordination.shard_checkpoint_*` counters |
+| `SHARD_COORDINATION_SHARD_COUNT` | `4` | hot-path mode only | Configure before enabling Phase 2 (`>0`) |
+| `SHARD_LEASE_TTL_SECONDS` | `360` | hot-path mode only | Configure before enabling Phase 2 (`>0`) |
+| `SHARD_CHECKPOINT_TTL_SECONDS` | `660` | hot-path mode only | Configure before enabling Phase 2 (`>0`) |
+
+Rollback for either flag: set to `false`. Existing Redis keys expire via their TTL — no `DEL` commands or data migration required. See [Distributed Coordination Rollout](docs/deployment-guide.md#distributed-coordination-rollout) for step-by-step guidance.
 
 ---
 

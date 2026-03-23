@@ -104,6 +104,17 @@ to allow incremental rollout.
 
 **Rollback:** Set `SHARD_REGISTRY_ENABLED=false` to revert to single-pod full-scope processing instantly.
 
+### Coordination state per flag combination
+
+| `DISTRIBUTED_CYCLE_LOCK_ENABLED` | `SHARD_REGISTRY_ENABLED` | Mode | Redis keys written | Behaviour |
+|---|---|---|---|---|
+| `false` (default) | `false` (default) | Single-instance | None | All pods process full scope set; no coordination overhead |
+| `true` | `false` | Coordinated (lock only) | `aiops:lock:cycle` | One pod per interval wins lock; others yield and sleep |
+| `true` | `true` | Coordinated (lock + shards) | `aiops:lock:cycle`, `aiops:shard:lease:<id>`, `aiops:shard:checkpoint:<id>:<bucket>` | Lock controls interval ownership; shards distribute scope workload across pods |
+| `false` | `true` | Shard-only (not recommended) | `aiops:shard:lease:<id>`, `aiops:shard:checkpoint:<id>:<bucket>` | Shard distribution active but no interval deduplication; use only during staged rollout |
+
+All coordination keys expire via Redis TTL — no manual cleanup required for any rollback path.
+
 ### Notes
 
 - Hot-path never publishes to Kafka directly. It writes a `READY` outbox row; the `outbox-publisher` process handles Kafka delivery.
