@@ -1,6 +1,6 @@
 # Story 5.2: Enforce Security-Critical Integration Configuration
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -314,6 +314,16 @@ claude-sonnet-4-6
 - Added 11 unit tests to `tests/unit/config/test_settings.py` following the `_PROD_SETTINGS_BASE` fixture pattern: 6 raises tests (MOCK/OFF for PD, Slack, SN), 4 succeeds tests (LIVE/LOG for PD and SN, LIVE for Slack), 1 non-prod succeeds test.
 - Full regression: 1134 tests pass, 0 skipped, 0 failures. Unit suite: 1038 tests (+11 new). Ruff lint clean.
 - `validate_llm_prod_mode`, `validate_kerberos_files`, and `log_active_config` left unmodified per story constraints.
+
+### Code Review Fixes (2026-03-23)
+
+- Renamed `_critical` local variable to `critical_fields` in `validate_critical_integrations_prod_mode` (L1: unconventional underscore prefix on method-local variable).
+- Refactored validator to collect all failing fields before raising a single `ValueError` listing all errors (L3: previously only first failing field was reported; now all failing integrations are surfaced in one startup error).
+- Added `test_prod_slack_log_succeeds` and `test_prod_sn_log_succeeds` to cover the LOG-allowed path for Slack and SN symmetrically with PD (M1: asymmetric LOG coverage).
+- Added `APP_ENV.value == "prod"` assertion to all four prod "succeeds" tests, consistent with LLM equivalents (M2: missing defensive assertion).
+- Added `get_settings.cache_clear()` to all 11 new prod/non-prod tests for consistency with existing LLM test pattern (L2: inconsistency).
+- Added `test_local_slack_mock_succeeds` and `test_local_sn_mock_succeeds` to verify the non-prod bypass is symmetric across all three critical integrations (L4: only PD was tested for non-prod).
+- Full regression after fixes: 1042 unit tests pass, 0 skipped. Ruff lint clean.
 
 ### File List
 

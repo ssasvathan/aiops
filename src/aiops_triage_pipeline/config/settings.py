@@ -151,17 +151,20 @@ class Settings(BaseSettings):
         """Reject MOCK and OFF for PD, Slack, SN in prod — each requires LIVE (or LOG)."""
         if self.APP_ENV != AppEnv.prod:
             return self
-        _critical: list[tuple[str, IntegrationMode]] = [
+        critical_fields: list[tuple[str, IntegrationMode]] = [
             ("INTEGRATION_MODE_PD", self.INTEGRATION_MODE_PD),
             ("INTEGRATION_MODE_SLACK", self.INTEGRATION_MODE_SLACK),
             ("INTEGRATION_MODE_SN", self.INTEGRATION_MODE_SN),
         ]
-        for field_name, mode in _critical:
+        errors: list[str] = []
+        for field_name, mode in critical_fields:
             if mode in (IntegrationMode.OFF, IntegrationMode.MOCK):
-                raise ValueError(
+                errors.append(
                     f"{field_name} must be LIVE or LOG in prod environment; "
                     f"got {mode.value}"
                 )
+        if errors:
+            raise ValueError("\n".join(errors))
         return self
 
     @model_validator(mode="after")

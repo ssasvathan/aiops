@@ -446,66 +446,97 @@ def test_log_active_config_includes_shard_registry_enabled() -> None:
 
 def test_prod_pd_mock_raises_validation_error() -> None:
     """APP_ENV=prod + INTEGRATION_MODE_PD=MOCK raises ValidationError at startup."""
+    get_settings.cache_clear()
     with pytest.raises((ValueError, ValidationError), match="INTEGRATION_MODE_PD"):
         Settings(**{**_PROD_SETTINGS_BASE, "INTEGRATION_MODE_PD": "MOCK"})
 
 
 def test_prod_pd_off_raises_validation_error() -> None:
     """APP_ENV=prod + INTEGRATION_MODE_PD=OFF raises ValidationError at startup."""
+    get_settings.cache_clear()
     with pytest.raises((ValueError, ValidationError), match="INTEGRATION_MODE_PD"):
         Settings(**{**_PROD_SETTINGS_BASE, "INTEGRATION_MODE_PD": "OFF"})
 
 
 def test_prod_pd_live_succeeds() -> None:
     """APP_ENV=prod + INTEGRATION_MODE_PD=LIVE creates Settings successfully."""
+    get_settings.cache_clear()
     settings = Settings(**{**_PROD_SETTINGS_BASE, "INTEGRATION_MODE_PD": "LIVE"})
     assert settings.INTEGRATION_MODE_PD.value == "LIVE"
+    assert settings.APP_ENV.value == "prod"
 
 
 def test_prod_pd_log_succeeds() -> None:
     """APP_ENV=prod + INTEGRATION_MODE_PD=LOG is allowed (safe non-destructive default)."""
+    get_settings.cache_clear()
     settings = Settings(**{**_PROD_SETTINGS_BASE, "INTEGRATION_MODE_PD": "LOG"})
     assert settings.INTEGRATION_MODE_PD.value == "LOG"
+    assert settings.APP_ENV.value == "prod"
 
 
 def test_prod_slack_mock_raises_validation_error() -> None:
     """APP_ENV=prod + INTEGRATION_MODE_SLACK=MOCK raises ValidationError at startup."""
+    get_settings.cache_clear()
     with pytest.raises((ValueError, ValidationError), match="INTEGRATION_MODE_SLACK"):
         Settings(**{**_PROD_SETTINGS_BASE, "INTEGRATION_MODE_SLACK": "MOCK"})
 
 
 def test_prod_slack_off_raises_validation_error() -> None:
     """APP_ENV=prod + INTEGRATION_MODE_SLACK=OFF raises ValidationError at startup."""
+    get_settings.cache_clear()
     with pytest.raises((ValueError, ValidationError), match="INTEGRATION_MODE_SLACK"):
         Settings(**{**_PROD_SETTINGS_BASE, "INTEGRATION_MODE_SLACK": "OFF"})
 
 
 def test_prod_slack_live_succeeds() -> None:
     """APP_ENV=prod + INTEGRATION_MODE_SLACK=LIVE creates Settings successfully."""
+    get_settings.cache_clear()
     settings = Settings(**{**_PROD_SETTINGS_BASE, "INTEGRATION_MODE_SLACK": "LIVE"})
     assert settings.INTEGRATION_MODE_SLACK.value == "LIVE"
+    assert settings.APP_ENV.value == "prod"
+
+
+def test_prod_slack_log_succeeds() -> None:
+    """APP_ENV=prod + INTEGRATION_MODE_SLACK=LOG is allowed (safe non-destructive default)."""
+    get_settings.cache_clear()
+    settings = Settings(**{**_PROD_SETTINGS_BASE, "INTEGRATION_MODE_SLACK": "LOG"})
+    assert settings.INTEGRATION_MODE_SLACK.value == "LOG"
+    assert settings.APP_ENV.value == "prod"
 
 
 def test_prod_sn_mock_raises_validation_error() -> None:
     """APP_ENV=prod + INTEGRATION_MODE_SN=MOCK raises ValidationError at startup."""
+    get_settings.cache_clear()
     with pytest.raises((ValueError, ValidationError), match="INTEGRATION_MODE_SN"):
         Settings(**{**_PROD_SETTINGS_BASE, "INTEGRATION_MODE_SN": "MOCK"})
 
 
 def test_prod_sn_off_raises_validation_error() -> None:
     """APP_ENV=prod + INTEGRATION_MODE_SN=OFF raises ValidationError at startup."""
+    get_settings.cache_clear()
     with pytest.raises((ValueError, ValidationError), match="INTEGRATION_MODE_SN"):
         Settings(**{**_PROD_SETTINGS_BASE, "INTEGRATION_MODE_SN": "OFF"})
 
 
 def test_prod_sn_live_succeeds() -> None:
     """APP_ENV=prod + INTEGRATION_MODE_SN=LIVE creates Settings successfully."""
+    get_settings.cache_clear()
     settings = Settings(**{**_PROD_SETTINGS_BASE, "INTEGRATION_MODE_SN": "LIVE"})
     assert settings.INTEGRATION_MODE_SN.value == "LIVE"
+    assert settings.APP_ENV.value == "prod"
+
+
+def test_prod_sn_log_succeeds() -> None:
+    """APP_ENV=prod + INTEGRATION_MODE_SN=LOG is allowed (safe non-destructive default)."""
+    get_settings.cache_clear()
+    settings = Settings(**{**_PROD_SETTINGS_BASE, "INTEGRATION_MODE_SN": "LOG"})
+    assert settings.INTEGRATION_MODE_SN.value == "LOG"
+    assert settings.APP_ENV.value == "prod"
 
 
 def test_local_pd_mock_succeeds() -> None:
     """APP_ENV=local + INTEGRATION_MODE_PD=MOCK is allowed (non-prod environment)."""
+    get_settings.cache_clear()
     settings = Settings(
         _env_file=None,
         APP_ENV="local",
@@ -519,6 +550,44 @@ def test_local_pd_mock_succeeds() -> None:
         INTEGRATION_MODE_PD="MOCK",
     )
     assert settings.INTEGRATION_MODE_PD.value == "MOCK"
+    assert settings.APP_ENV.value == "local"
+
+
+def test_local_slack_mock_succeeds() -> None:
+    """APP_ENV=local + INTEGRATION_MODE_SLACK=MOCK is allowed (non-prod environment)."""
+    get_settings.cache_clear()
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="local",
+        KAFKA_BOOTSTRAP_SERVERS="localhost:9092",
+        DATABASE_URL="postgresql+psycopg://u:p@h/db",
+        REDIS_URL="redis://localhost:6379/0",
+        S3_ENDPOINT_URL="http://localhost:9000",
+        S3_ACCESS_KEY="key",
+        S3_SECRET_KEY="secret",
+        S3_BUCKET="bucket",
+        INTEGRATION_MODE_SLACK="MOCK",
+    )
+    assert settings.INTEGRATION_MODE_SLACK.value == "MOCK"
+    assert settings.APP_ENV.value == "local"
+
+
+def test_local_sn_mock_succeeds() -> None:
+    """APP_ENV=local + INTEGRATION_MODE_SN=MOCK is allowed (non-prod environment)."""
+    get_settings.cache_clear()
+    settings = Settings(
+        _env_file=None,
+        APP_ENV="local",
+        KAFKA_BOOTSTRAP_SERVERS="localhost:9092",
+        DATABASE_URL="postgresql+psycopg://u:p@h/db",
+        REDIS_URL="redis://localhost:6379/0",
+        S3_ENDPOINT_URL="http://localhost:9000",
+        S3_ACCESS_KEY="key",
+        S3_SECRET_KEY="secret",
+        S3_BUCKET="bucket",
+        INTEGRATION_MODE_SN="MOCK",
+    )
+    assert settings.INTEGRATION_MODE_SN.value == "MOCK"
     assert settings.APP_ENV.value == "local"
 
 
