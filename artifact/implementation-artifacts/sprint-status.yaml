@@ -55,13 +55,13 @@ development_status:
   2-4-dispatch-pagerduty-and-slack-actions-with-denylist-safety: done
   2-5-run-casefile-lifecycle-retention-purge: done
   epic-2-retrospective: done
-  epic-3: in-progress
+  epic-3: done
   3-1-implement-cold-path-kafka-consumer-runtime-mode: done
   3-2-reconstruct-case-context-and-build-deterministic-evidence-summary: done
   3-3-invoke-llm-for-all-cases-with-enriched-prompt-and-schema-validation: done
   3-4-persist-diagnosis-artifact-with-fallback-guarantees: done
-  epic-3-retrospective: optional
-  epic-4: backlog
+  epic-3-retrospective: done
+  epic-4: in-progress
   4-1-add-distributed-cycle-lock-with-fail-open-behavior: backlog
   4-2-coordinate-scope-shards-and-recover-from-pod-failure: backlog
   4-3-roll-out-distributed-coordination-incrementally: backlog
