@@ -100,13 +100,23 @@ Runtime mode status:
 | `outbox-publisher` | Fully wired | Runs `OutboxPublisherWorker` with policy, denylist, and alert evaluation |
 | `casefile-lifecycle` | Fully wired | Runs `CasefileLifecycleRunner` against object storage |
 | `hot-path` | Fully wired | Loads all policies and runtime clients; runs the complete `_hot_path_scheduler_loop` async triage cycle |
-| `cold-path` | Fully wired | Subscribes to `aiops-case-header`, consumes `CaseHeaderEventV1` events sequentially, commits offsets on shutdown |
+| `cold-path` | Fully wired | Subscribes to `aiops-case-header`, consumes `CaseHeaderEventV1` events sequentially. Per-event: retrieves `triage.json` from S3 (`retrieve_case_context`), builds deterministic evidence summary (`build_evidence_summary`), and invokes LLM diagnosis for every case (no env/tier/sustained gating). Commits offsets on shutdown. |
 
-To run the cold-path consumer locally (requires Kafka from `docker compose up`):
+To run the cold-path consumer locally (requires Kafka and MinIO from `docker compose up`):
 
 ```bash
 APP_ENV=local uv run python -m aiops_triage_pipeline --mode cold-path
 ```
+
+The cold-path mode now requires S3/MinIO in addition to Kafka. Ensure MinIO is running and
+the `S3_ENDPOINT_URL`, `S3_ACCESS_KEY`, `S3_SECRET_KEY`, and `S3_BUCKET` settings are
+configured in `config/.env.local` before running cold-path locally.
+
+Local diagnosis behavior by `INTEGRATION_MODE_LLM`:
+
+- `LOG`: cold-path invokes diagnosis for all cases, but returns deterministic stub reports (no outbound LLM call).
+- `MOCK`: cold-path invokes diagnosis for all cases with deterministic mock outputs/failure modes.
+- `LIVE`: cold-path invokes diagnosis for all cases and calls the configured `LLM_BASE_URL`.
 
 ## Environment Configuration
 

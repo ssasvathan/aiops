@@ -88,10 +88,14 @@ Configuration loaded at startup (from `Settings`):
 - `KAFKA_CASE_HEADER_TOPIC` (default: `aiops-case-header`)
 - `KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS` (default: `1.0`)
 
+Runtime clients initialised at startup:
+
+- S3 object store client (via `build_s3_object_store_client_from_settings`) — required for triage artifact retrieval
+
 ### Consumer lifecycle
 
 ```
-bootstrap → log cold_path_mode_started → subscribe(aiops-case-header) →
+bootstrap → build S3 client → log cold_path_mode_started → subscribe(aiops-case-header) →
 poll loop → [process event] → graceful shutdown → commit offsets → close
 ```
 
@@ -99,6 +103,39 @@ poll loop → [process event] → graceful shutdown → commit offsets → close
 2. Processes messages sequentially (no batching or concurrency in this mode).
 3. Decodes each message as `CaseHeaderEventV1`; malformed payloads are structured-logged and skipped.
 4. On shutdown (SIGINT/SIGTERM), commits final offsets synchronously before close.
+
+### Per-event processing (Story 3.3)
+
+For each valid `CaseHeaderEventV1`, the processor boundary executes three steps:
+
+```
+1. retrieve_case_context(case_id, object_store_client)
+   → reads cases/{case_id}/triage.json from S3
+   → validates triage_hash chain integrity (Invariant A)
+   → reconstructs TriageExcerptV1 from CaseFileTriageV1 fields
+
+2. build_evidence_summary(triage_excerpt)
+   → pure function: TriageExcerptV1 → str
+   → byte-stable output (sorted keys, fixed section order)
+   → four sections: Case Context, Evidence Status, Anomaly Findings, Temporal Context
+   → all four EvidenceStatus values (PRESENT, UNKNOWN, ABSENT, STALE) explicitly labeled
+
+3. run_cold_path_diagnosis(...)
+   → invoked for **every** consumed case (no env/tier/sustained eligibility gating)
+   → prompt includes full finding fields, routing context (`topic_role`, `routing_key`),
+     confidence calibration guidance, fault-domain hints, and deterministic few-shot guidance
+   → LLM output is schema-validated through `DiagnosisReportV1.model_validate(...)`
+   → schema-invalid outputs map to `LLM_SCHEMA_INVALID` fallback handling
+```
+
+On retrieval or summary failure: logs `cold_path_context_retrieval_failed` /
+`cold_path_evidence_summary_failed` warning with `exc_info=True` and skips to the
+next message. The consumer loop is never crashed by per-message errors.
+
+**Invariant A:** `triage.json` is guaranteed to exist in S3 before a `CaseHeaderEventV1`
+is published by the hot-path. If missing, `retrieve_case_context()` raises
+`CaseTriageNotFoundError` (a typed invariant violation), which is caught by the error
+handler and logged as a warning.
 
 ### Health state transitions
 
@@ -112,15 +149,17 @@ The cold-path consumer publishes health signals to `HealthRegistry` at each life
 
 ### Processor boundary
 
-The `_cold_path_process_event()` function in `__main__.py` is the designated plug-in point
-for Story 3.2 (case reconstruction / evidence summary) — no refactor needed to wire in
-downstream processing.
+`_cold_path_process_event(event, logger, *, object_store_client, ...)` in `__main__.py` is the
+composition point for context retrieval, evidence summary generation, and diagnosis invocation.
+Case-level diagnosis failures are logged (`cold_path_diagnosis_invocation_failed`) and skipped
+without terminating the consumer loop.
 
 ### Notes
 
-- Requires Kafka (bootstrap servers, consumer group, topic) — see dependency matrix below.
+- Requires Kafka (bootstrap servers, consumer group, topic) AND S3 — see dependency matrix below.
 - `--once` is not supported for this mode.
 - Sequential consumption is deliberate (architecture decision D6) — concurrency is not introduced in this story.
+- `object_store_client` is constructed once at startup and injected through the call chain: `_run_cold_path()` → `_cold_path_consumer_loop()` → `_process_cold_path_message()` → `_cold_path_process_event()`. It is never built inside the loop.
 
 ---
 
@@ -198,6 +237,6 @@ APP_ENV=local uv run python -m aiops_triage_pipeline --mode casefile-lifecycle -
 | Mode | Redis | Postgres | Kafka | S3 | Prometheus | Topology registry |
 |---|---|---|---|---|---|---|
 | `hot-path` | yes | yes (outbox) | no | yes | yes | yes |
-| `cold-path` | no | no | yes (consumer) | no | no | no |
+| `cold-path` | no | no | yes (consumer) | yes (triage retrieval) | no | no |
 | `outbox-publisher` | no | yes (outbox) | yes | yes | no | no |
 | `casefile-lifecycle` | no | no | no | yes | no | no |

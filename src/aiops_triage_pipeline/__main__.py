@@ -21,11 +21,19 @@ from aiops_triage_pipeline.cache.peak_cache import (
     load_peak_profiles,
     persist_peak_profiles,
 )
-from aiops_triage_pipeline.config.settings import Settings, get_settings, load_policy_yaml
+from aiops_triage_pipeline.config.settings import (
+    IntegrationMode,
+    Settings,
+    get_settings,
+    load_policy_yaml,
+)
 from aiops_triage_pipeline.contracts.case_header_event import CaseHeaderEventV1
 from aiops_triage_pipeline.contracts.casefile_retention_policy import CasefileRetentionPolicyV1
 from aiops_triage_pipeline.contracts.outbox_policy import OutboxPolicyV1
 from aiops_triage_pipeline.denylist.loader import load_denylist
+from aiops_triage_pipeline.diagnosis.context_retrieval import retrieve_case_context_with_hash
+from aiops_triage_pipeline.diagnosis.evidence_summary import build_evidence_summary
+from aiops_triage_pipeline.diagnosis.graph import run_cold_path_diagnosis
 from aiops_triage_pipeline.health.alerts import (
     OperationalAlertEvaluator,
     load_operational_alert_policy,
@@ -41,6 +49,7 @@ from aiops_triage_pipeline.integrations.kafka_consumer import (
     ConfluentKafkaCaseHeaderConsumer,
     KafkaConsumerAdapterProtocol,
 )
+from aiops_triage_pipeline.integrations.llm import LLMClient
 from aiops_triage_pipeline.integrations.pagerduty import PagerDutyClient, PagerDutyIntegrationMode
 from aiops_triage_pipeline.integrations.prometheus import (
     MetricQueryDefinition,
@@ -648,7 +657,7 @@ def _load_peak_baseline_windows(
 
 def _run_cold_path() -> None:
     try:
-        settings, logger, _ = _bootstrap_mode("cold-path")
+        settings, logger, alert_evaluator = _bootstrap_mode("cold-path")
     except Exception:
         get_logger("__main__").critical(
             "cold_path_bootstrap_failed",
@@ -671,6 +680,26 @@ def _run_cold_path() -> None:
         app_env=settings.APP_ENV.value,
     )
 
+    object_store_client = build_s3_object_store_client_from_settings(settings)
+    llm_mode = getattr(settings, "INTEGRATION_MODE_LLM", IntegrationMode.LOG)
+    if not isinstance(llm_mode, IntegrationMode):
+        llm_mode = IntegrationMode(str(llm_mode))
+    llm_client = LLMClient(
+        mode=llm_mode,
+        base_url=getattr(settings, "LLM_BASE_URL", None),
+        api_key=getattr(settings, "LLM_API_KEY", None),
+    )
+    denylist = load_denylist(_DENYLIST_PATH)
+    llm_timeout_seconds = float(getattr(settings, "LLM_TIMEOUT_SECONDS", 60.0))
+    if llm_timeout_seconds <= 0:
+        logger.warning(
+            "cold_path_invalid_llm_timeout_config",
+            event_type="cold_path.config_warning",
+            configured_timeout_seconds=llm_timeout_seconds,
+            fallback_timeout_seconds=60.0,
+        )
+        llm_timeout_seconds = 60.0
+
     asyncio.run(
         _cold_path_consumer_loop(
             settings=settings,
@@ -678,6 +707,11 @@ def _run_cold_path() -> None:
             registry=registry,
             consumer_group=consumer_group,
             topic=topic,
+            object_store_client=object_store_client,
+            llm_client=llm_client,
+            denylist=denylist,
+            llm_timeout_seconds=llm_timeout_seconds,
+            alert_evaluator=alert_evaluator,
         )
     )
 
@@ -689,6 +723,11 @@ async def _cold_path_consumer_loop(
     registry: Any,
     consumer_group: str,
     topic: str,
+    object_store_client: Any,
+    llm_client: LLMClient,
+    denylist: Any,
+    llm_timeout_seconds: float,
+    alert_evaluator: OperationalAlertEvaluator,
 ) -> None:
     """Sequential cold-path consume loop: subscribe → poll → process → commit on shutdown."""
     poll_timeout: float = settings.KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS
@@ -711,7 +750,16 @@ async def _cold_path_consumer_loop(
             await registry.update("kafka_cold_path_poll", HealthStatus.HEALTHY)
             if msg is None:
                 continue
-            _process_cold_path_message(msg, logger)
+            await _process_cold_path_message(
+                msg,
+                logger,
+                object_store_client=object_store_client,
+                llm_client=llm_client,
+                denylist=denylist,
+                health_registry=registry,
+                llm_timeout_seconds=llm_timeout_seconds,
+                alert_evaluator=alert_evaluator,
+            )
 
     except (KeyboardInterrupt, SystemExit):
         logger.info(
@@ -775,7 +823,17 @@ def _build_cold_path_consumer_adapter(
     )
 
 
-def _process_cold_path_message(msg: Any, logger: structlog.BoundLogger) -> None:
+async def _process_cold_path_message(
+    msg: Any,
+    logger: structlog.BoundLogger,
+    *,
+    object_store_client: Any,
+    llm_client: LLMClient,
+    denylist: Any,
+    health_registry: Any,
+    llm_timeout_seconds: float,
+    alert_evaluator: OperationalAlertEvaluator,
+) -> None:
     """Decode and validate a cold-path Kafka message; route to processor boundary."""
     if msg.error():
         logger.warning(
@@ -786,7 +844,16 @@ def _process_cold_path_message(msg: Any, logger: structlog.BoundLogger) -> None:
         return
     try:
         event = CaseHeaderEventV1.model_validate_json(msg.value())
-        _cold_path_process_event(event, logger)
+        await _cold_path_process_event_async(
+            event,
+            logger,
+            object_store_client=object_store_client,
+            llm_client=llm_client,
+            denylist=denylist,
+            health_registry=health_registry,
+            llm_timeout_seconds=llm_timeout_seconds,
+            alert_evaluator=alert_evaluator,
+        )
     except Exception:  # noqa: BLE001
         logger.warning(
             "cold_path_message_validation_failed",
@@ -798,13 +865,126 @@ def _process_cold_path_message(msg: Any, logger: structlog.BoundLogger) -> None:
 def _cold_path_process_event(
     event: CaseHeaderEventV1,
     logger: structlog.BoundLogger,
+    *,
+    object_store_client: Any,
+    llm_client: LLMClient | None = None,
+    denylist: Any | None = None,
+    health_registry: Any | None = None,
+    llm_timeout_seconds: float = 60.0,
+    alert_evaluator: OperationalAlertEvaluator | None = None,
 ) -> None:
-    """Processor boundary for Story 3.2 case reconstruction plug-in."""
+    """Sync compatibility wrapper around the async cold-path processor boundary.
+
+    This keeps sync test call sites stable while the runtime path awaits the
+    async implementation directly from the active event loop.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        asyncio.run(
+            _cold_path_process_event_async(
+                event,
+                logger,
+                object_store_client=object_store_client,
+                llm_client=llm_client,
+                denylist=denylist,
+                health_registry=health_registry,
+                llm_timeout_seconds=llm_timeout_seconds,
+                alert_evaluator=alert_evaluator,
+            )
+        )
+        return
+
+    raise RuntimeError(
+        "_cold_path_process_event() cannot be used from an active asyncio loop; "
+        "await _cold_path_process_event_async() instead."
+    )
+
+
+async def _cold_path_process_event_async(
+    event: CaseHeaderEventV1,
+    logger: structlog.BoundLogger,
+    *,
+    object_store_client: Any,
+    llm_client: LLMClient | None = None,
+    denylist: Any | None = None,
+    health_registry: Any | None = None,
+    llm_timeout_seconds: float = 60.0,
+    alert_evaluator: OperationalAlertEvaluator | None = None,
+) -> None:
+    """Processor boundary: reconstruct context, build summary, and invoke diagnosis."""
     logger.debug(
         "cold_path_event_received",
         event_type="cold_path.event_received",
         case_id=event.case_id,
         schema_version=event.schema_version,
+    )
+
+    # Step (a): Reconstruct TriageExcerptV1 from persisted triage artifact
+    try:
+        retrieved_context = retrieve_case_context_with_hash(
+            case_id=event.case_id,
+            object_store_client=object_store_client,
+        )
+        triage_excerpt = retrieved_context.excerpt
+        triage_hash = retrieved_context.triage_hash
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "cold_path_context_retrieval_failed",
+            event_type="cold_path.context_retrieval_failed",
+            case_id=event.case_id,
+            exc_info=True,
+        )
+        return
+
+    # Step (b): Build deterministic evidence summary
+    try:
+        evidence_summary = build_evidence_summary(triage_excerpt)
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "cold_path_evidence_summary_failed",
+            event_type="cold_path.evidence_summary_failed",
+            case_id=event.case_id,
+            exc_info=True,
+        )
+        return
+
+    if llm_client is None:
+        llm_client = LLMClient(mode=IntegrationMode.LOG)
+    if denylist is None:
+        denylist = load_denylist(_DENYLIST_PATH)
+    if health_registry is None:
+        health_registry = get_health_registry()
+    if llm_timeout_seconds <= 0:
+        llm_timeout_seconds = 60.0
+
+    try:
+        await run_cold_path_diagnosis(
+            case_id=event.case_id,
+            triage_excerpt=triage_excerpt,
+            evidence_summary=evidence_summary,
+            llm_client=llm_client,
+            denylist=denylist,
+            health_registry=health_registry,
+            object_store_client=object_store_client,
+            triage_hash=triage_hash,
+            timeout_seconds=llm_timeout_seconds,
+            alert_evaluator=alert_evaluator,
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "cold_path_diagnosis_invocation_failed",
+            event_type="cold_path.diagnosis_invocation_failed",
+            case_id=event.case_id,
+            exc_info=True,
+        )
+        return
+
+    logger.debug(
+        "cold_path_diagnosis_invoked",
+        event_type="cold_path.diagnosis_invoked",
+        case_id=event.case_id,
+        evidence_summary_length=len(evidence_summary),
     )
 
 

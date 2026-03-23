@@ -1,0 +1,47 @@
+{
+  "success": true,
+  "subagent": "atdd-api-tests",
+  "tests": [
+    {
+      "file": "tests/atdd/test_story_3_3_invoke_llm_for_all_cases_with_enriched_prompt_and_schema_validation_red_phase.py",
+      "description": "ATDD backend acceptance tests for Story 3.3 all-case invocation, enriched prompt content, and schema-failure invocation handling (RED PHASE)",
+      "expected_to_fail": true,
+      "acceptance_criteria_covered": [
+        "Invocation path runs for every cold-path case regardless of environment, criticality tier, or sustained flag",
+        "Prompt includes complete finding semantics plus topology/routing context",
+        "Prompt includes confidence calibration guidance, fault-domain hints, and deterministic few-shot guidance",
+        "Cold-path processing boundary is wired to invoke diagnosis after context retrieval and evidence summary generation"
+      ],
+      "priority_coverage": {
+        "P0": 3,
+        "P1": 2,
+        "P2": 0,
+        "P3": 0
+      }
+    }
+  ],
+  "fixture_needs": [
+    "tests/atdd/fixtures/story_3_3_test_data.py"
+  ],
+  "knowledge_fragments_used": [
+    "data-factories",
+    "component-tdd",
+    "test-quality",
+    "test-healing-patterns",
+    "test-levels-framework",
+    "test-priorities-matrix",
+    "ci-burn-in",
+    "overview",
+    "api-request",
+    "auth-session",
+    "recurse",
+    "pactjs-utils-overview",
+    "pactjs-utils-consumer-helpers",
+    "pactjs-utils-provider-verifier",
+    "pactjs-utils-request-filter",
+    "pact-mcp"
+  ],
+  "test_count": 5,
+  "tdd_phase": "RED",
+  "summary": "Generated 5 failing backend ATDD tests for Story 3.3"
+}

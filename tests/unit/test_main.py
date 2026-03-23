@@ -190,6 +190,9 @@ def test_run_cold_path_is_no_longer_stub_and_logs_mode_started(monkeypatch) -> N
     monkeypatch.setattr(
         __main__, "get_health_registry", lambda: _make_async_health_registry(), raising=False
     )
+    monkeypatch.setattr(
+        __main__, "build_s3_object_store_client_from_settings", lambda _: MagicMock()
+    )
 
     __main__._run_cold_path()
 
@@ -209,6 +212,9 @@ def test_run_cold_path_startup_log_includes_consumer_group_and_topic(monkeypatch
     monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
     monkeypatch.setattr(
         __main__, "get_health_registry", lambda: _make_async_health_registry(), raising=False
+    )
+    monkeypatch.setattr(
+        __main__, "build_s3_object_store_client_from_settings", lambda _: MagicMock()
     )
 
     __main__._run_cold_path()
@@ -451,3 +457,219 @@ def test_peak_history_retention_skips_over_cap_scopes_without_active_scope_churn
     assert cycle2[scope_a] == (1.0, 10.0)
     assert cycle2[scope_b] == (2.0, 20.0)
     assert scope_c not in retention._history_by_scope
+
+
+# ---------------------------------------------------------------------------
+# Story 3.2/3.3 — _cold_path_process_event() wiring regression tests
+# ---------------------------------------------------------------------------
+
+
+def _make_case_header_event(case_id: str = "case-main-test-001"):
+    """Minimal valid CaseHeaderEventV1 for cold-path processing tests."""
+    from datetime import UTC, datetime
+
+    from aiops_triage_pipeline.contracts.case_header_event import CaseHeaderEventV1
+    from aiops_triage_pipeline.contracts.enums import Action, CriticalityTier, Environment
+
+    return CaseHeaderEventV1(
+        case_id=case_id,
+        env=Environment.DEV,
+        cluster_id="cluster-unit-test",
+        stream_id="stream-unit-test",
+        topic="unit-test.events",
+        anomaly_family="CONSUMER_LAG",
+        criticality_tier=CriticalityTier.TIER_1,
+        final_action=Action.NOTIFY,
+        routing_key="OWN::Test::Team",
+        evaluation_ts=datetime(2026, 3, 22, 18, 0, 0, tzinfo=UTC),
+    )
+
+
+class TestColdPathProcessEventWiring:
+    """Story 3.2 AC1+AC2 and Story 3.3 wiring regression coverage."""
+
+    def test_cold_path_process_event_accepts_object_store_client_parameter(
+        self, monkeypatch
+    ) -> None:
+        """3.2-UNIT-201: _cold_path_process_event() accepts object_store_client kwarg."""
+        import inspect
+
+        sig = inspect.signature(__main__._cold_path_process_event)
+        assert "object_store_client" in sig.parameters, (
+            "_cold_path_process_event must accept 'object_store_client' parameter "
+            "(Story 3.2 wiring task)"
+        )
+
+    def test_cold_path_process_event_calls_retrieve_case_context(
+        self, monkeypatch
+    ) -> None:
+        """3.2-UNIT-202: _cold_path_process_event() calls retrieve_case_context_with_hash()."""
+        from unittest.mock import MagicMock, patch
+
+        event = _make_case_header_event(case_id="case-wiring-test-001")
+
+        fake_store = MagicMock()
+        logger = MagicMock()
+        retrieve_calls: list = []
+
+        with patch.object(
+            __main__,
+            "retrieve_case_context_with_hash",
+            side_effect=lambda **kwargs: retrieve_calls.append(kwargs)
+            or SimpleNamespace(excerpt=MagicMock(), triage_hash="a" * 64),
+        ):
+            __main__._cold_path_process_event(
+                event, logger, object_store_client=fake_store
+            )
+
+        assert len(retrieve_calls) == 1, (
+            "_cold_path_process_event must call retrieve_case_context_with_hash once per event"
+        )
+        assert retrieve_calls[0].get("case_id") == "case-wiring-test-001"
+
+    def test_cold_path_process_event_calls_build_evidence_summary(
+        self, monkeypatch
+    ) -> None:
+        """3.2-UNIT-203: _cold_path_process_event() calls build_evidence_summary()."""
+        from unittest.mock import MagicMock, patch
+
+        event = _make_case_header_event(case_id="case-summary-wiring-001")
+
+        fake_store = MagicMock()
+        logger = MagicMock()
+        summary_calls: list = []
+
+        fake_excerpt = MagicMock()
+
+        with patch.object(
+            __main__,
+            "retrieve_case_context_with_hash",
+            return_value=SimpleNamespace(excerpt=fake_excerpt, triage_hash="a" * 64),
+        ):
+            with patch.object(
+                __main__,
+                "build_evidence_summary",
+                side_effect=lambda excerpt: summary_calls.append(excerpt) or "fake-summary",
+            ):
+                __main__._cold_path_process_event(
+                    event, logger, object_store_client=fake_store
+                )
+
+        assert len(summary_calls) == 1, (
+            "_cold_path_process_event must call build_evidence_summary once per event"
+        )
+        assert summary_calls[0] is fake_excerpt
+
+    def test_cold_path_process_event_invokes_diagnosis_after_context_and_summary(
+        self, monkeypatch
+    ) -> None:
+        """Story 3.3 wiring: diagnosis is invoked after retrieval + evidence summary."""
+        from unittest.mock import MagicMock, patch
+
+        event = _make_case_header_event(case_id="case-diagnosis-wiring-001")
+        fake_store = MagicMock()
+        logger = MagicMock()
+        fake_excerpt = MagicMock()
+        run_probe = AsyncMock(return_value=MagicMock())
+
+        with patch.object(
+            __main__,
+            "retrieve_case_context_with_hash",
+            return_value=SimpleNamespace(excerpt=fake_excerpt, triage_hash="b" * 64),
+        ):
+            with patch.object(__main__, "build_evidence_summary", return_value="summary"):
+                with patch.object(__main__, "run_cold_path_diagnosis", run_probe):
+                    __main__._cold_path_process_event(
+                        event,
+                        logger,
+                        object_store_client=fake_store,
+                    )
+
+        assert run_probe.call_count == 1
+        assert run_probe.call_args.kwargs["triage_hash"] == "b" * 64
+
+    def test_cold_path_process_event_logs_warning_on_retrieval_failure(
+        self, monkeypatch
+    ) -> None:
+        """3.2-UNIT-204: On retrieval failure, log warning + skip (do not raise)."""
+        from unittest.mock import MagicMock, patch
+
+        event = _make_case_header_event(case_id="case-failure-test-001")
+
+        fake_store = MagicMock()
+        logger = MagicMock()
+
+        with patch.object(
+            __main__,
+            "retrieve_case_context_with_hash",
+            side_effect=RuntimeError("triage.json missing"),
+        ):
+            # Must NOT raise — must log warning and skip
+            __main__._cold_path_process_event(
+                event, logger, object_store_client=fake_store
+            )
+
+        warning_events = [c.args[0] for c in logger.warning.call_args_list if c.args]
+        assert "cold_path_context_retrieval_failed" in warning_events, (
+            "Must log 'cold_path_context_retrieval_failed' on retrieval failure"
+        )
+
+    def test_cold_path_process_event_logs_warning_on_evidence_summary_failure(
+        self, monkeypatch
+    ) -> None:
+        """3.2-UNIT-205: On evidence summary failure, log warning + skip (do not raise).
+
+        Covers the build_evidence_summary() failure path in _cold_path_process_event.
+        """
+        from unittest.mock import MagicMock, patch
+
+        event = _make_case_header_event(case_id="case-summary-failure-001")
+
+        fake_store = MagicMock()
+        logger = MagicMock()
+        fake_excerpt = MagicMock()
+
+        with patch.object(
+            __main__,
+            "retrieve_case_context_with_hash",
+            return_value=SimpleNamespace(excerpt=fake_excerpt, triage_hash="a" * 64),
+        ):
+            with patch.object(
+                __main__,
+                "build_evidence_summary",
+                side_effect=RuntimeError("summary build failed"),
+            ):
+                # Must NOT raise — must log warning and skip
+                __main__._cold_path_process_event(
+                    event, logger, object_store_client=fake_store
+                )
+
+        warning_events = [c.args[0] for c in logger.warning.call_args_list if c.args]
+        assert "cold_path_evidence_summary_failed" in warning_events, (
+            "Must log 'cold_path_evidence_summary_failed' on build_evidence_summary() failure"
+        )
+
+
+@pytest.mark.asyncio
+async def test_process_cold_path_message_uses_async_processor_boundary(monkeypatch) -> None:
+    """Consumer loop awaits the async processor boundary inside an active event loop."""
+    event = _make_case_header_event(case_id="case-async-boundary-001")
+    msg = MagicMock()
+    msg.error.return_value = None
+    msg.value.return_value = event.model_dump_json().encode("utf-8")
+    logger = MagicMock()
+    process_probe = AsyncMock(return_value=None)
+    monkeypatch.setattr(__main__, "_cold_path_process_event_async", process_probe)
+
+    await __main__._process_cold_path_message(
+        msg,
+        logger,
+        object_store_client=MagicMock(),
+        llm_client=MagicMock(),
+        denylist=MagicMock(),
+        health_registry=MagicMock(),
+        llm_timeout_seconds=60.0,
+        alert_evaluator=MagicMock(),
+    )
+
+    assert process_probe.await_count == 1

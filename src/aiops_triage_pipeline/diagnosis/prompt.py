@@ -20,6 +20,16 @@ EVIDENCE CITATION RULES:
 - The evidence_pack.missing_evidence field must list any evidence with UNKNOWN/ABSENT/STALE status
 - The evidence_pack.matched_rules field cites Rulebook finding IDs
 
+CONFIDENCE CALIBRATION GUIDANCE:
+- Use HIGH only when primary anomalous findings are strongly supported by PRESENT evidence.
+- Use MEDIUM when evidence is mixed and at least one important signal is UNKNOWN/ABSENT/STALE.
+- Use LOW when evidence is sparse, conflicting, or mostly unavailable.
+
+FAULT-DOMAIN HINTS:
+- CONSUMER_LAG often maps to CONSUMER_GROUP, DOWNSTREAM_DEPENDENCY, or BROKER_PRESSURE.
+- VOLUME_DROP often maps to UPSTREAM_PRODUCER, ROUTING_MISCONFIGURATION, or SOURCE_OUTAGE.
+- THROUGHPUT_CONSTRAINED_PROXY often maps to BROKER_CAPACITY, THROTTLING_POLICY, or NETWORK_PATH.
+
 DIAGNOSISREPORTV1 JSON SCHEMA:
 {
   "schema_version": "v1",
@@ -51,9 +61,16 @@ def build_llm_prompt(triage_excerpt: TriageExcerptV1, evidence_summary: str) -> 
     evidence_lines = "\n".join(
         f"  {key}: {status.value}" for key, status in triage_excerpt.evidence_status_map.items()
     )
-    # Format findings
+    # Format findings with all explicit fields required by FR40.
     findings_lines = "\n".join(
-        f"  [{f.finding_id}] {f.name} (anomalous={f.is_anomalous})"
+        "  - "
+        f"finding_id={f.finding_id}; "
+        f"name={f.name}; "
+        f"severity={f.severity}; "
+        f"reason_codes={list(f.reason_codes)}; "
+        f"evidence_required={list(f.evidence_required)}; "
+        f"is_primary={f.is_primary}; "
+        f"is_anomalous={f.is_anomalous}"
         for f in triage_excerpt.findings
     )
 
@@ -65,6 +82,8 @@ CASE CONTEXT:
   cluster_id: {triage_excerpt.cluster_id}
   stream_id: {triage_excerpt.stream_id}
   criticality_tier: {triage_excerpt.criticality_tier.value}
+  topic_role: {triage_excerpt.topic_role}
+  routing_key: {triage_excerpt.routing_key}
   sustained: {triage_excerpt.sustained}
   peak: {triage_excerpt.peak}
   env: {triage_excerpt.env.value}
@@ -77,6 +96,19 @@ FINDINGS:
 
 EVIDENCE SUMMARY:
 {evidence_summary}
+
+FEW-SHOT EXAMPLE (deterministic, single canonical reference):
+Input pattern:
+  anomaly_family=CONSUMER_LAG
+  topic_role=SHARED_TOPIC
+  routing_key=OWN::Streaming::Payments
+  findings include primary lag growth with PRESENT lag evidence and UNKNOWN throughput evidence
+Expected output pattern:
+  verdict="CONSUMER_LAG_LIKELY"
+  fault_domain="CONSUMER_GROUP"
+  confidence="MEDIUM"
+  evidence_pack.matched_rules includes relevant finding_id values only
+  gaps include UNKNOWN evidence that blocks HIGH confidence
 """.strip()
 
     return f"{_SYSTEM_INSTRUCTION}\n\n{case_context}"

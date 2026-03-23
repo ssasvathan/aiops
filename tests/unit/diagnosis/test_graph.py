@@ -97,13 +97,13 @@ def _make_read_timeout_error() -> httpx.ReadTimeout:
 
 
 async def test_meets_invocation_criteria_prod_tier0_sustained_returns_true() -> None:
-    """prod + TIER_0 + sustained=True → True."""
+    """All-case invocation semantics: prod + TIER_0 + sustained=True → True."""
     excerpt = _make_eligible_excerpt()
     assert meets_invocation_criteria(excerpt, AppEnv.prod) is True
 
 
-async def test_meets_invocation_criteria_local_env_returns_false() -> None:
-    """Non-prod (local) → False regardless of tier/sustained."""
+async def test_meets_invocation_criteria_local_env_returns_true() -> None:
+    """All-case invocation semantics: non-prod (local) still returns True."""
     excerpt = TriageExcerptV1(
         case_id="test-001",
         env=Environment.LOCAL,
@@ -119,11 +119,11 @@ async def test_meets_invocation_criteria_local_env_returns_false() -> None:
         findings=(),
         triage_timestamp=datetime(2026, 3, 7, 12, 0, 0, tzinfo=timezone.utc),
     )
-    assert meets_invocation_criteria(excerpt, AppEnv.local) is False
+    assert meets_invocation_criteria(excerpt, AppEnv.local) is True
 
 
-async def test_meets_invocation_criteria_prod_tier1_returns_false() -> None:
-    """prod + TIER_1 → False (only TIER_0 qualifies)."""
+async def test_meets_invocation_criteria_prod_tier1_returns_true() -> None:
+    """All-case invocation semantics: prod + TIER_1 still returns True."""
     excerpt = TriageExcerptV1(
         case_id="test-001",
         env=Environment.PROD,
@@ -139,11 +139,11 @@ async def test_meets_invocation_criteria_prod_tier1_returns_false() -> None:
         findings=(),
         triage_timestamp=datetime(2026, 3, 7, 12, 0, 0, tzinfo=timezone.utc),
     )
-    assert meets_invocation_criteria(excerpt, AppEnv.prod) is False
+    assert meets_invocation_criteria(excerpt, AppEnv.prod) is True
 
 
-async def test_meets_invocation_criteria_prod_tier0_not_sustained_returns_false() -> None:
-    """prod + TIER_0 + sustained=False → False."""
+async def test_meets_invocation_criteria_prod_tier0_not_sustained_returns_true() -> None:
+    """All-case invocation semantics: sustained=False still returns True."""
     excerpt = TriageExcerptV1(
         case_id="test-001",
         env=Environment.PROD,
@@ -159,7 +159,7 @@ async def test_meets_invocation_criteria_prod_tier0_not_sustained_returns_false(
         findings=(),
         triage_timestamp=datetime(2026, 3, 7, 12, 0, 0, tzinfo=timezone.utc),
     )
-    assert meets_invocation_criteria(excerpt, AppEnv.prod) is False
+    assert meets_invocation_criteria(excerpt, AppEnv.prod) is True
 
 
 # ---------------------------------------------------------------------------
@@ -167,8 +167,8 @@ async def test_meets_invocation_criteria_prod_tier0_not_sustained_returns_false(
 # ---------------------------------------------------------------------------
 
 
-async def test_spawn_ineligible_returns_none() -> None:
-    """Ineligible case (local env) → spawn returns None, no task spawned."""
+async def test_spawn_local_env_returns_asyncio_task() -> None:
+    """All-case invocation semantics: local env still spawns diagnosis task."""
     registry = HealthRegistry()
     task = spawn_cold_path_diagnosis_task(
         case_id="test-001",
@@ -181,7 +181,9 @@ async def test_spawn_ineligible_returns_none() -> None:
         triage_hash=_FAKE_TRIAGE_HASH,
         app_env=AppEnv.local,
     )
-    assert task is None
+    assert isinstance(task, asyncio.Task)
+    report = await task
+    assert report.schema_version == "v1"
 
 
 async def test_spawn_eligible_returns_asyncio_task() -> None:

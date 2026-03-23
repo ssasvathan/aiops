@@ -6,80 +6,46 @@ stepsCompleted:
   - step-04-analyze-gaps
   - step-05-gate-decision
 lastStep: step-05-gate-decision
-lastSaved: '2026-03-22'
+lastSaved: '2026-03-23'
 workflowType: testarch-trace
 inputDocuments:
-  - artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md
-  - artifact/test-artifacts/atdd-checklist-3-1-implement-cold-path-kafka-consumer-runtime-mode.md
-  - tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
-  - tests/unit/integrations/test_kafka_consumer.py
+  - artifact/implementation-artifacts/3-3-invoke-llm-for-all-cases-with-enriched-prompt-and-schema-validation.md
+  - artifact/implementation-artifacts/sprint-status.yaml
+  - artifact/test-artifacts/atdd-checklist-3-3-invoke-llm-for-all-cases-with-enriched-prompt-and-schema-validation.md
+  - tests/atdd/test_story_3_3_invoke_llm_for_all_cases_with_enriched_prompt_and_schema_validation_red_phase.py
   - tests/unit/test_main.py
-  - tests/unit/config/test_settings.py
-  - tests/integration/cold_path/test_consumer_lifecycle.py
+  - tests/unit/diagnosis/test_prompt.py
+  - tests/unit/diagnosis/test_graph.py
+  - tests/unit/integrations/test_llm.py
 ---
 
-# Traceability Report - Story 3.1: Implement Cold-Path Kafka Consumer Runtime Mode
+# Traceability Report - Story 3.3: Invoke LLM for All Cases with Enriched Prompt and Schema Validation
 
 > Full traceability matrix and gate decision stored at:
-> `artifact/test-artifacts/traceability/traceability-3-1-implement-cold-path-kafka-consumer-runtime-mode.md`
+> `artifact/test-artifacts/traceability/traceability-3-3-invoke-llm-for-all-cases-with-enriched-prompt-and-schema-validation.md`
 
 ## Gate Decision: PASS ✅
 
-**Rationale:** All P0 criteria met with 100% coverage and 100% pass rates. All P1 criteria exceeded thresholds — P1 coverage 100%, overall pass rate 100%. No security issues. No critical NFR failures — NFR-I4 graceful shutdown commit validated at unit and integration level. No flaky tests observed. Stub behavior fully replaced by live sequential consumer loop. All 4 ATDD red-phase tests turned GREEN. Code review findings resolved. Feature is ready for production deployment with standard monitoring.
+**Rationale:** P0 coverage is 100% and P1 coverage is 100%, with full mapped coverage for all Story 3.3 criteria and zero uncovered P0/P1 gaps. Story completion notes record full regression as 1042 passed and 0 skipped, satisfying deterministic gate thresholds.
 
 ## Coverage Summary
 
-- Total Requirements: 4 (2 P0, 2 P1)
-- Fully Covered: 4 (100%)
+- Total Requirements: 3
+- Fully Covered: 3 (100%)
 - P0 Coverage: 100% ✅
 - P1 Coverage: 100% ✅
 - Critical Gaps: 0
 - High Priority Gaps: 0
 
-## Traceability Matrix
+## Quality Notes
 
-| AC | Description | Priority | Coverage | Test Count |
-| -- | ----------- | -------- | -------- | ---------- |
-| AC-1a | Cold-path runtime joins `aiops-cold-path-diagnosis` on `aiops-case-header` at startup | P0 | FULL ✅ | 7 |
-| AC-1b | Messages processed sequentially through testable consumer adapter | P0 | FULL ✅ | 8 |
-| AC-2a | Offsets committed gracefully before consumer close on shutdown | P1 | FULL ✅ | 6 |
-| AC-2b | Health status reflects connected/poll/commit state transitions | P1 | FULL ✅ | 2 |
+- Maintainability warnings only: three relevant test files exceed 300-line quality guideline.
+- No coverage blockers identified for this story.
 
-## Gaps & Recommendations
+## Gate Output
 
-No blocking gaps identified.
+- Gate YAML: `artifact/test-artifacts/gate-decision-3-3-invoke-llm-for-all-cases-with-enriched-prompt-and-schema-validation.yaml`
+- Phase-1 matrix JSON: `/tmp/tea-trace-coverage-matrix-2026-03-23T03-03-29Z.json`
 
-**Short-term (This Milestone):**
-- Strengthen partition-disjoint assertion in `test_two_consumers_same_group_get_disjoint_partitions`
-
-**Long-term (Backlog):**
-- Add burn-in run for integration tests in CI nightly job
-
-## Next Actions
-
-1. Merge Story 3.1 — gate PASS, no blockers
-2. Begin Story 3.2 — processor boundary slot ready
-3. Verify cold-path pod health in staging after deployment
-
----
-
-## Gate Decision Summary
-
-```
-GATE DECISION: PASS ✅
-
-Coverage Analysis:
-- P0 Coverage: 100% (Required: 100%) → MET
-- P1 Coverage: 100% (PASS target: 90%, minimum: 80%) → MET
-- Overall Coverage: 100% (Minimum: 80%) → MET
-
-Critical Gaps: 0
-
-Decision: PASS - Release approved, coverage meets standards
-Full Report: artifact/test-artifacts/traceability/traceability-3-1-implement-cold-path-kafka-consumer-runtime-mode.md
-```
-
-**Generated:** 2026-03-22
-**Workflow:** testarch-trace v5.0 (Step-File Architecture)
-
-<!-- Powered by BMAD-CORE™ -->
+**Generated:** 2026-03-23
+**Workflow:** testarch-trace v5.0 (step-file execution)

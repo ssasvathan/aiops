@@ -101,3 +101,26 @@ def test_build_llm_prompt_contains_finding_id() -> None:
     result = build_llm_prompt(excerpt, "summary")
     # finding_id "F1" from the helper's Finding must appear in the prompt
     assert excerpt.findings[0].finding_id in result
+
+
+def test_build_llm_prompt_contains_full_finding_fields() -> None:
+    """Prompt includes all explicit finding fields required by Story 3.3 FR40."""
+    result = build_llm_prompt(_make_excerpt(), "summary")
+    assert "finding_id=" in result
+    assert "name=" in result
+    assert "severity=" in result
+    assert "reason_codes=" in result
+    assert "evidence_required=" in result
+    assert "is_primary=" in result
+    assert "is_anomalous=" in result
+
+
+def test_build_llm_prompt_contains_routing_context_and_guidance_blocks() -> None:
+    """Prompt includes routing/topology context plus confidence + few-shot guidance."""
+    result = build_llm_prompt(_make_excerpt(), "summary")
+    lower_result = result.lower()
+    assert "topic_role" in result
+    assert "routing_key" in result
+    assert "fault-domain hints" in lower_result
+    assert "confidence calibration guidance" in lower_result
+    assert "few-shot example" in lower_result

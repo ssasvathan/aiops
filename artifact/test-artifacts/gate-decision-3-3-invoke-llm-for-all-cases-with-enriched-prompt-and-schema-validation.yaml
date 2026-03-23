@@ -1,0 +1,46 @@
+target:
+  type: story
+  id: "3-3-invoke-llm-for-all-cases-with-enriched-prompt-and-schema-validation"
+  title: "Invoke LLM for All Cases with Enriched Prompt and Schema Validation"
+
+decision:
+  value: PASS
+  date: "2026-03-23T03:03:29Z"
+  mode: deterministic
+  rationale: >-
+    P0 coverage is 100% (required), P1 coverage is 100% (PASS target 90%), and
+    overall coverage is 100% (minimum 80%), with no uncovered P0/P1 criteria.
+
+criteria:
+  p0_coverage_required_pct: 100
+  p0_coverage_actual_pct: 100
+  p1_coverage_target_pass_pct: 90
+  p1_coverage_minimum_pct: 80
+  p1_coverage_actual_pct: 100
+  overall_coverage_minimum_pct: 80
+  overall_coverage_actual_pct: 100
+  critical_gaps: 0
+  high_gaps: 0
+
+evidence:
+  phase1_matrix: "/tmp/tea-trace-coverage-matrix-2026-03-23T03-03-29Z.json"
+  traceability_report: "artifact/test-artifacts/traceability/traceability-3-3-invoke-llm-for-all-cases-with-enriched-prompt-and-schema-validation.md"
+  story_artifact: "artifact/implementation-artifacts/3-3-invoke-llm-for-all-cases-with-enriched-prompt-and-schema-validation.md"
+  sprint_status: "artifact/implementation-artifacts/sprint-status.yaml"
+  test_results:
+    source: "story completion notes"
+    command: "TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs"
+    passed: 1042
+    failed: 0
+    skipped: 0
+
+quality_observations:
+  warnings:
+    - "tests/unit/diagnosis/test_graph.py exceeds 300 lines (1089)."
+    - "tests/unit/test_main.py exceeds 300 lines (675)."
+    - "tests/unit/integrations/test_llm.py exceeds 300 lines (363)."
+
+next_actions:
+  - "Proceed with normal release flow for Story 3.3 scope."
+  - "Track decomposition of oversized diagnosis/main/llm test files as maintainability debt."
+  - "Optionally run /bmad:tea:test-review for focused quality-maintenance follow-up."

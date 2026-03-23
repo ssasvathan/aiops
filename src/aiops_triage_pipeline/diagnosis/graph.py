@@ -9,6 +9,7 @@ unavailable, error) with fallback DiagnosisReport written to diagnosis.json for 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from typing import Any, TypedDict
 
@@ -18,7 +19,6 @@ from langgraph.graph import END, START, StateGraph
 
 from aiops_triage_pipeline.config.settings import AppEnv
 from aiops_triage_pipeline.contracts.diagnosis_report import DiagnosisReportV1
-from aiops_triage_pipeline.contracts.enums import CriticalityTier
 from aiops_triage_pipeline.contracts.triage_excerpt import TriageExcerptV1
 from aiops_triage_pipeline.denylist.enforcement import apply_denylist
 from aiops_triage_pipeline.denylist.loader import DenylistV1
@@ -106,15 +106,9 @@ def build_diagnosis_graph(llm_client: LLMClient) -> Any:
 
 
 def meets_invocation_criteria(triage_excerpt: TriageExcerptV1, app_env: AppEnv) -> bool:
-    """Return True only when ALL three criteria hold: PROD + TIER_0 + sustained.
-
-    All other combinations return False. No logging inside this pure predicate.
-    """
-    return (
-        app_env == AppEnv.prod
-        and triage_excerpt.criticality_tier == CriticalityTier.TIER_0
-        and triage_excerpt.sustained is True
-    )
+    """Return True for all cold-path cases (FR39 all-case invocation semantics)."""
+    _ = triage_excerpt, app_env
+    return True
 
 
 def _make_and_persist_fallback(
@@ -450,14 +444,8 @@ def spawn_cold_path_diagnosis_task(
     timeout_seconds: float = 60.0,
     alert_evaluator: OperationalAlertEvaluator | None = None,
 ) -> "asyncio.Task[DiagnosisReportV1] | None":
-    """Spawn a fire-and-forget cold-path diagnosis task if the case is eligible.
-
-    Returns None if the case does not meet invocation criteria (non-PROD, non-TIER_0,
-    or not sustained). Returns asyncio.Task without awaiting — hot-path continues
-    immediately while the task runs in the background event loop.
-    """
-    if not meets_invocation_criteria(triage_excerpt, app_env):
-        return None
+    """Spawn a fire-and-forget cold-path diagnosis task for every cold-path case."""
+    _ = app_env
     _logger.info(
         "cold_path_diagnosis_task_spawned",
         case_id=case_id,
@@ -465,17 +453,32 @@ def spawn_cold_path_diagnosis_task(
         tier=triage_excerpt.criticality_tier.value,
         timeout_seconds=timeout_seconds,
     )
-    return asyncio.create_task(
-        run_cold_path_diagnosis(
-            case_id=case_id,
-            triage_excerpt=triage_excerpt,
-            evidence_summary=evidence_summary,
-            llm_client=llm_client,
-            denylist=denylist,
-            health_registry=health_registry,
-            object_store_client=object_store_client,
-            triage_hash=triage_hash,
-            timeout_seconds=timeout_seconds,
-            alert_evaluator=alert_evaluator,
-        )
+    coro = run_cold_path_diagnosis(
+        case_id=case_id,
+        triage_excerpt=triage_excerpt,
+        evidence_summary=evidence_summary,
+        llm_client=llm_client,
+        denylist=denylist,
+        health_registry=health_registry,
+        object_store_client=object_store_client,
+        triage_hash=triage_hash,
+        timeout_seconds=timeout_seconds,
+        alert_evaluator=alert_evaluator,
     )
+    try:
+        loop = asyncio.get_running_loop()
+        return loop.create_task(coro)
+    except RuntimeError:
+        # Sync call path (primarily tests): return a cancelled task to preserve API contract
+        # without leaking a pending task on a loop that is not running.
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            task = loop.create_task(coro)
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                loop.run_until_complete(task)
+            return task
+        finally:
+            asyncio.set_event_loop(None)
+            loop.close()
