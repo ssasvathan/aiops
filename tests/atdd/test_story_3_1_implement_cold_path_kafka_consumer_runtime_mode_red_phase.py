@@ -51,6 +51,9 @@ def test_p0_cold_path_runtime_logs_consumer_group_and_topic_on_start(monkeypatch
     consumer_group, topic = expected_consumer_binding()
 
     monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
+    monkeypatch.setattr(
+        __main__, "build_s3_object_store_client_from_settings", lambda _: MagicMock()
+    )
 
     __main__._run_cold_path()
 
@@ -73,6 +76,9 @@ def test_p1_cold_path_runtime_reports_connected_poll_and_commit_health_transitio
 
     monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
     monkeypatch.setattr(__main__, "get_health_registry", lambda: health_registry, raising=False)
+    monkeypatch.setattr(
+        __main__, "build_s3_object_store_client_from_settings", lambda _: MagicMock()
+    )
 
     __main__._run_cold_path()
 

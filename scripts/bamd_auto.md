@@ -27,7 +27,6 @@ Execution model:
 - Each step must run in its own fresh context.
 - Do not start the next step until the previous step completes successfully.
 - If any step fails, stop the entire pipeline immediately and report the failure.
-- If any worker reports usage limit, quota exhaustion, rate limit, or similar capacity failure, stop immediately and report partial progress.
 - Do not continue after any such limit error.
 
 Worker lifecycle and stuck detection rules:
