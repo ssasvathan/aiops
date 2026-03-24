@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from threading import Lock
 
@@ -56,14 +57,19 @@ def configure_otlp_metrics(settings: Settings) -> OtlpBootstrapResult:
             exporter=exporter,
             export_interval_millis=settings.OTLP_METRICS_EXPORT_INTERVAL_MILLIS,
         )
+        _resource_attrs: dict[str, str] = {
+            "service.name": settings.OTLP_SERVICE_NAME,
+            "service.version": settings.OTLP_SERVICE_VERSION,
+            "deployment.environment": settings.OTLP_DEPLOYMENT_ENVIRONMENT,
+        }
+        _pod_name = os.getenv("POD_NAME")
+        _pod_namespace = os.getenv("POD_NAMESPACE")
+        if _pod_name:
+            _resource_attrs["k8s.pod.name"] = _pod_name
+        if _pod_namespace:
+            _resource_attrs["k8s.namespace.name"] = _pod_namespace
         provider = MeterProvider(
-            resource=Resource.create(
-                {
-                    "service.name": settings.OTLP_SERVICE_NAME,
-                    "service.version": settings.OTLP_SERVICE_VERSION,
-                    "deployment.environment": settings.OTLP_DEPLOYMENT_ENVIRONMENT,
-                }
-            ),
+            resource=Resource.create(_resource_attrs),
             metric_readers=[reader],
         )
         metrics.set_meter_provider(provider)

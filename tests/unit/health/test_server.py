@@ -108,3 +108,28 @@ async def test_server_survives_abrupt_client_disconnect(patched_registry):
         # Server must still be alive and serve a valid response
         _, body = await _http_get("127.0.0.1", port)
         assert json.loads(body) == {}
+
+
+async def test_server_includes_coordination_info_when_fn_provided(patched_registry):
+    """_coordination key appears in body when coordination_info_fn is supplied."""
+    server = await start_health_server(
+        host="127.0.0.1",
+        port=0,
+        coordination_info_fn=lambda: {"is_lock_holder": True, "lock_ttl_seconds": 120},
+    )
+    port = server.sockets[0].getsockname()[1]
+    async with server:
+        _, body = await _http_get("127.0.0.1", port)
+    data = json.loads(body)
+    assert "_coordination" in data
+    assert data["_coordination"]["is_lock_holder"] is True
+    assert data["_coordination"]["lock_ttl_seconds"] == 120
+
+
+async def test_server_excludes_coordination_key_when_fn_is_none(patched_registry):
+    """_coordination key is absent from body when coordination_info_fn is None."""
+    server = await start_health_server(host="127.0.0.1", port=0)
+    port = server.sockets[0].getsockname()[1]
+    async with server:
+        _, body = await _http_get("127.0.0.1", port)
+    assert "_coordination" not in json.loads(body)

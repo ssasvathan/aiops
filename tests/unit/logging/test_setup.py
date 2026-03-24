@@ -2,6 +2,8 @@ import asyncio
 import io
 import json
 
+import structlog
+
 from aiops_triage_pipeline.logging.setup import (
     bind_correlation_id,
     clear_correlation_id,
@@ -132,3 +134,33 @@ async def test_async_context_propagation():
     # asyncio.create_task() copies the current contextvars context to the child
     result = await asyncio.create_task(child_coroutine())
     assert result == "case-async-propagation-test"
+
+
+def test_configure_logging_binds_pod_name_when_env_var_set(monkeypatch):
+    """configure_logging() binds pod_name from POD_NAME env var to structlog context."""
+    structlog.contextvars.clear_contextvars()
+    monkeypatch.setenv("POD_NAME", "test-pod-1")
+    structlog.reset_defaults()
+    configure_logging()
+    assert structlog.contextvars.get_contextvars().get("pod_name") == "test-pod-1"
+    structlog.contextvars.clear_contextvars()
+
+
+def test_configure_logging_binds_pod_namespace_when_env_var_set(monkeypatch):
+    """configure_logging() binds pod_namespace from POD_NAMESPACE env var to structlog context."""
+    structlog.contextvars.clear_contextvars()
+    monkeypatch.setenv("POD_NAMESPACE", "aiops-system")
+    structlog.reset_defaults()
+    configure_logging()
+    assert structlog.contextvars.get_contextvars().get("pod_namespace") == "aiops-system"
+    structlog.contextvars.clear_contextvars()
+
+
+def test_configure_logging_does_not_bind_pod_name_when_env_var_absent(monkeypatch):
+    """configure_logging() does not bind pod_name when POD_NAME is not set."""
+    structlog.contextvars.clear_contextvars()
+    monkeypatch.delenv("POD_NAME", raising=False)
+    structlog.reset_defaults()
+    configure_logging()
+    assert "pod_name" not in structlog.contextvars.get_contextvars()
+    structlog.contextvars.clear_contextvars()

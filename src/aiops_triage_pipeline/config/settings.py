@@ -119,6 +119,9 @@ class Settings(BaseSettings):
     STAGE2_PEAK_HISTORY_MAX_SCOPES: int = 2000
     STAGE2_PEAK_HISTORY_MAX_IDLE_CYCLES: int = 3
 
+    HEALTH_SERVER_HOST: str = "0.0.0.0"  # bind all interfaces for K8s liveness probes
+    HEALTH_SERVER_PORT: int = 8080
+
     OTLP_METRICS_ENDPOINT: str | None = None
     OTLP_METRICS_PROTOCOL: str = "http/protobuf"  # allowed: "http/protobuf", "grpc"
     OTLP_METRICS_HEADERS: str | None = None
@@ -218,6 +221,8 @@ class Settings(BaseSettings):
             raise ValueError("STAGE2_PEAK_HISTORY_MAX_SCOPES must be > 0")
         if self.STAGE2_PEAK_HISTORY_MAX_IDLE_CYCLES <= 0:
             raise ValueError("STAGE2_PEAK_HISTORY_MAX_IDLE_CYCLES must be > 0")
+        if not 1 <= self.HEALTH_SERVER_PORT <= 65535:
+            raise ValueError("HEALTH_SERVER_PORT must be between 1 and 65535")
         if self.SHARD_COORDINATION_SHARD_COUNT <= 0:
             raise ValueError("SHARD_COORDINATION_SHARD_COUNT must be > 0")
         if self.SHARD_LEASE_TTL_SECONDS <= 0:
@@ -276,6 +281,8 @@ class Settings(BaseSettings):
             STAGE2_PEAK_HISTORY_MAX_DEPTH=self.STAGE2_PEAK_HISTORY_MAX_DEPTH,
             STAGE2_PEAK_HISTORY_MAX_SCOPES=self.STAGE2_PEAK_HISTORY_MAX_SCOPES,
             STAGE2_PEAK_HISTORY_MAX_IDLE_CYCLES=self.STAGE2_PEAK_HISTORY_MAX_IDLE_CYCLES,
+            HEALTH_SERVER_HOST=self.HEALTH_SERVER_HOST,
+            HEALTH_SERVER_PORT=self.HEALTH_SERVER_PORT,
             OTLP_METRICS_ENDPOINT=self.OTLP_METRICS_ENDPOINT or "[NOT SET]",
             OTLP_METRICS_PROTOCOL=self.OTLP_METRICS_PROTOCOL,
             OTLP_METRICS_HEADERS=(

@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import os
+import threading
 import time
 from collections import deque
 from datetime import UTC, datetime
@@ -61,6 +62,7 @@ from aiops_triage_pipeline.health.metrics import (
 )
 from aiops_triage_pipeline.health.otlp import configure_otlp_metrics
 from aiops_triage_pipeline.health.registry import get_health_registry
+from aiops_triage_pipeline.health.server import start_health_server
 from aiops_triage_pipeline.integrations.kafka import ConfluentKafkaCaseEventPublisher
 from aiops_triage_pipeline.integrations.kafka_consumer import (
     ConfluentKafkaCaseHeaderConsumer,
@@ -294,6 +296,50 @@ def _bootstrap_mode(mode: str) -> tuple[Settings, structlog.BoundLogger, Operati
     return settings, logger, alert_evaluator
 
 
+class _HotPathCoordinationState:
+    """Coordination state snapshot for the hot-path health endpoint (FR55).
+
+    Written from the asyncio event loop each cycle. Read by the health server
+    handler on the same event loop — no concurrent mutation.
+    Field semantics match the cycle-lock protocol outcomes.
+    """
+
+    def __init__(self, *, enabled: bool = False) -> None:
+        self.enabled = enabled
+        self.is_lock_holder: bool = False
+        self.lock_holder_id: str | None = None
+        self.lock_ttl_seconds: int | None = None
+        self.last_cycle_time_utc: str | None = None
+
+    def snapshot(self) -> dict[str, Any]:
+        return {
+            "enabled": self.enabled,
+            "is_lock_holder": self.is_lock_holder,
+            "lock_holder_id": self.lock_holder_id,
+            "lock_ttl_seconds": self.lock_ttl_seconds,
+            "last_cycle_time_utc": self.last_cycle_time_utc,
+        }
+
+
+def _start_health_server_background(host: str, port: int) -> None:
+    """Start health server in a background daemon thread (for sync runtime modes).
+
+    Uses a new event loop in a daemon thread — exits when the main thread exits.
+    Not used for async modes (hot-path, cold-path) which use asyncio.create_task.
+    """
+    async def _serve() -> None:
+        server = await start_health_server(host=host, port=port)
+        async with server:
+            await server.serve_forever()
+
+    t = threading.Thread(
+        target=lambda: asyncio.run(_serve()),
+        daemon=True,
+        name="health-server",
+    )
+    t.start()
+
+
 def _run_hot_path() -> None:
     try:
         settings, logger, alert_evaluator = _bootstrap_mode("hot-path")
@@ -385,6 +431,9 @@ def _run_hot_path() -> None:
             redis_client=redis_client,
             pod_id=pod_id,
         )
+    coordination_state = _HotPathCoordinationState(
+        enabled=settings.DISTRIBUTED_CYCLE_LOCK_ENABLED
+    )
     asyncio.run(
         _hot_path_scheduler_loop(
             settings=settings,
@@ -408,6 +457,7 @@ def _run_hot_path() -> None:
             cycle_lock=cycle_lock,
             cycle_lock_owner_id=pod_id,
             shard_coordinator=shard_coordinator,
+            coordination_state=coordination_state,
         )
     )
 
@@ -435,6 +485,7 @@ async def _hot_path_scheduler_loop(
     cycle_lock: CycleLockProtocol,
     cycle_lock_owner_id: str,
     shard_coordinator: RedisShardCoordinator | None = None,
+    coordination_state: _HotPathCoordinationState | None = None,
 ) -> None:
     """Async hot-path scheduler loop: evidence → peak → topology → gate → casefile → dispatch."""
     interval_seconds = settings.HOT_PATH_SCHEDULER_INTERVAL_SECONDS
@@ -449,8 +500,20 @@ async def _hot_path_scheduler_loop(
     coordination_registry = get_health_registry()
     _previous_shard_holders: dict[int, str] = {}  # shard_id → holder_id when this pod last yielded
 
+    # Wire health server (FR54/FR55) — runs concurrently with the scheduler loop.
+    _health_server = await start_health_server(
+        host=settings.HEALTH_SERVER_HOST,
+        port=settings.HEALTH_SERVER_PORT,
+        coordination_info_fn=(
+            coordination_state.snapshot if coordination_state is not None else None
+        ),
+    )
+    asyncio.create_task(_health_server.serve_forever(), name="health-server")
+
     while True:
         evaluation_time = datetime.now(UTC)
+        if coordination_state is not None:
+            coordination_state.last_cycle_time_utc = evaluation_time.isoformat()
         tick = evaluate_scheduler_tick(
             actual_fire_time=evaluation_time,
             previous_boundary=previous_boundary,
@@ -485,6 +548,10 @@ async def _hot_path_scheduler_loop(
                     lock_key=lock_outcome.key,
                     lock_ttl_seconds=lock_outcome.ttl_seconds,
                 )
+                if coordination_state is not None:
+                    coordination_state.is_lock_holder = True
+                    coordination_state.lock_holder_id = cycle_lock_owner_id
+                    coordination_state.lock_ttl_seconds = lock_outcome.ttl_seconds
             elif lock_outcome.status == CycleLockStatus.yielded:
                 record_cycle_lock_yielded()
                 await coordination_registry.update(
@@ -499,6 +566,10 @@ async def _hot_path_scheduler_loop(
                     lock_ttl_seconds=lock_outcome.ttl_seconds,
                     holder_id=lock_outcome.holder_id,
                 )
+                if coordination_state is not None:
+                    coordination_state.is_lock_holder = False
+                    coordination_state.lock_holder_id = lock_outcome.holder_id
+                    coordination_state.lock_ttl_seconds = lock_outcome.ttl_seconds
                 await emit_redis_degraded_mode_events(
                     dedupe_store=dedupe_store,
                     evaluation_time=evaluation_time,
@@ -536,6 +607,10 @@ async def _hot_path_scheduler_loop(
                     lock_ttl_seconds=lock_outcome.ttl_seconds,
                     reason=lock_outcome.reason,
                 )
+                if coordination_state is not None:
+                    coordination_state.is_lock_holder = True  # fail-open: proceed as if lock held
+                    coordination_state.lock_holder_id = None
+                    coordination_state.lock_ttl_seconds = None
 
         # ── Shard coordination gate (Story 4.2, disabled-by-default) ──────────
         # When SHARD_REGISTRY_ENABLED is True, each pod acquires a shard lease
@@ -978,6 +1053,13 @@ async def _cold_path_consumer_loop(
     poll_timeout: float = settings.KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS
     adapter: KafkaConsumerAdapterProtocol | None = None
 
+    # Wire health server (FR54) — runs concurrently with the consume loop.
+    _health_server = await start_health_server(
+        host=settings.HEALTH_SERVER_HOST,
+        port=settings.HEALTH_SERVER_PORT,
+    )
+    asyncio.create_task(_health_server.serve_forever(), name="health-server")
+
     # Signal connecting state before attempting consumer construction.
     await registry.update(
         "kafka_cold_path_connected",
@@ -1267,6 +1349,7 @@ def _run_outbox_publisher(*, once: bool) -> None:
     if once:
         worker.run_once()
         return
+    _start_health_server_background(settings.HEALTH_SERVER_HOST, settings.HEALTH_SERVER_PORT)
     worker.run_forever()
 
 
@@ -1309,6 +1392,7 @@ def _run_casefile_lifecycle(*, once: bool) -> None:
         )
         return
 
+    _start_health_server_background(settings.HEALTH_SERVER_HOST, settings.HEALTH_SERVER_PORT)
     while True:
         runner.run_once()
         time.sleep(settings.CASEFILE_LIFECYCLE_POLL_INTERVAL_SECONDS)

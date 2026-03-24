@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+from typing import Any, Callable
 
 from aiops_triage_pipeline.health.registry import get_health_registry
 
@@ -9,6 +10,8 @@ from aiops_triage_pipeline.health.registry import get_health_registry
 async def _handle_health_request(
     reader: asyncio.StreamReader,
     writer: asyncio.StreamWriter,
+    *,
+    coordination_info_fn: Callable[[], dict[str, Any]] | None = None,
 ) -> None:
     """Handle a single HTTP GET /health request."""
     try:
@@ -23,6 +26,8 @@ async def _handle_health_request(
             name: health.model_dump(mode="json")
             for name, health in registry.get_all().items()
         }
+        if coordination_info_fn is not None:
+            statuses["_coordination"] = coordination_info_fn()
         body = json.dumps(statuses, default=str).encode("utf-8")
 
         response = (
@@ -40,12 +45,20 @@ async def _handle_health_request(
         await writer.wait_closed()
 
 
-async def start_health_server(host: str = "127.0.0.1", port: int = 8080) -> asyncio.Server:
+async def start_health_server(
+    host: str = "127.0.0.1",
+    port: int = 8080,
+    *,
+    coordination_info_fn: Callable[[], dict[str, Any]] | None = None,
+) -> asyncio.Server:
     """Start the asyncio-based /health HTTP endpoint server.
 
     Args:
         host: Bind address (default 127.0.0.1 — loopback only; pass "0.0.0.0" for all interfaces)
         port: Port to listen on (default 8080)
+        coordination_info_fn: Optional callable returning coordination state dict for hot-path.
+            When provided, its return value is included under the "_coordination" key in the
+            response body. HTTP status is always 200 regardless of coordination state.
 
     Returns:
         asyncio.Server instance — caller is responsible for closing on shutdown.
@@ -55,4 +68,10 @@ async def start_health_server(host: str = "127.0.0.1", port: int = 8080) -> asyn
         async with server:
             await server.serve_forever()
     """
-    return await asyncio.start_server(_handle_health_request, host, port)
+    async def _handle(
+        reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ) -> None:
+        await _handle_health_request(
+            reader, writer, coordination_info_fn=coordination_info_fn
+        )
+    return await asyncio.start_server(_handle, host, port)

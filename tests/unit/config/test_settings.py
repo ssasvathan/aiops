@@ -606,3 +606,19 @@ def test_env_file_selection_uses_app_env() -> None:
     )
     assert settings.APP_ENV == AppEnv.dev
     assert settings.max_action == "NOTIFY"
+
+
+def test_settings_health_server_default_host_is_0_0_0_0() -> None:
+    """HEALTH_SERVER_HOST defaults to 0.0.0.0 for K8s liveness probe access."""
+    get_settings.cache_clear()
+    settings = Settings(**_base_settings_kwargs())
+    assert settings.HEALTH_SERVER_HOST == "0.0.0.0"
+    get_settings.cache_clear()
+
+
+def test_settings_health_server_port_validation_rejects_out_of_range() -> None:
+    """HEALTH_SERVER_PORT must be between 1 and 65535."""
+    with pytest.raises((ValueError, ValidationError)):
+        Settings(**{**_base_settings_kwargs(), "HEALTH_SERVER_PORT": 0})
+    with pytest.raises((ValueError, ValidationError)):
+        Settings(**{**_base_settings_kwargs(), "HEALTH_SERVER_PORT": 65536})

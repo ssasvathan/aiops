@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from aiops_triage_pipeline import __main__
+from aiops_triage_pipeline.__main__ import _HotPathCoordinationState
 from aiops_triage_pipeline.coordination.protocol import CycleLockStatus
 from aiops_triage_pipeline.models.anomaly import AnomalyFinding
 
@@ -170,6 +171,8 @@ def _build_cold_path_settings_for_unit() -> SimpleNamespace:
         KAFKA_CASE_HEADER_TOPIC="aiops-case-header",
         KAFKA_COLD_PATH_CONSUMER_GROUP="aiops-cold-path-diagnosis",
         KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=1.0,
+        HEALTH_SERVER_HOST="127.0.0.1",
+        HEALTH_SERVER_PORT=0,
     )
 
 
@@ -197,6 +200,12 @@ def test_run_cold_path_is_no_longer_stub_and_logs_mode_started(monkeypatch) -> N
     monkeypatch.setattr(
         __main__, "build_s3_object_store_client_from_settings", lambda _: MagicMock()
     )
+    mock_server = MagicMock()
+    mock_server.serve_forever = AsyncMock()
+    monkeypatch.setattr(
+        "aiops_triage_pipeline.__main__.start_health_server",
+        AsyncMock(return_value=mock_server),
+    )
 
     __main__._run_cold_path()
 
@@ -219,6 +228,12 @@ def test_run_cold_path_startup_log_includes_consumer_group_and_topic(monkeypatch
     )
     monkeypatch.setattr(
         __main__, "build_s3_object_store_client_from_settings", lambda _: MagicMock()
+    )
+    mock_server = MagicMock()
+    mock_server.serve_forever = AsyncMock()
+    monkeypatch.setattr(
+        "aiops_triage_pipeline.__main__.start_health_server",
+        AsyncMock(return_value=mock_server),
     )
 
     __main__._run_cold_path()
@@ -690,6 +705,8 @@ def _hot_path_settings_for_coordination_tests(*, lock_enabled: bool) -> SimpleNa
         STAGE2_SUSTAINED_PARALLEL_CHUNK_SIZE=32,
         DISTRIBUTED_CYCLE_LOCK_ENABLED=lock_enabled,
         SHARD_REGISTRY_ENABLED=False,
+        HEALTH_SERVER_HOST="127.0.0.1",
+        HEALTH_SERVER_PORT=0,
     )
 
 
@@ -738,6 +755,12 @@ async def test_hot_path_scheduler_skips_stage_execution_when_cycle_lock_yielded(
         holder_id="pod-b",
     )
     topology_loader = MagicMock()
+    mock_server = MagicMock()
+    mock_server.serve_forever = AsyncMock()
+    monkeypatch.setattr(
+        "aiops_triage_pipeline.__main__.start_health_server",
+        AsyncMock(return_value=mock_server),
+    )
 
     with pytest.raises(asyncio.CancelledError):
         await __main__._hot_path_scheduler_loop(
@@ -761,6 +784,7 @@ async def test_hot_path_scheduler_skips_stage_execution_when_cycle_lock_yielded(
             topology_loader=topology_loader,
             cycle_lock=cycle_lock,
             cycle_lock_owner_id="pod-a",
+            coordination_state=_HotPathCoordinationState(),
         )
 
     cycle_lock.acquire.assert_called_once_with(interval_seconds=300, owner_id="pod-a")
@@ -795,6 +819,12 @@ async def test_hot_path_scheduler_fail_open_continues_to_pipeline_path(
     )
     topology_loader = MagicMock()
     topology_loader.reload_if_changed.side_effect = asyncio.CancelledError()
+    mock_server = MagicMock()
+    mock_server.serve_forever = AsyncMock()
+    monkeypatch.setattr(
+        "aiops_triage_pipeline.__main__.start_health_server",
+        AsyncMock(return_value=mock_server),
+    )
 
     with pytest.raises(asyncio.CancelledError):
         await __main__._hot_path_scheduler_loop(
@@ -818,6 +848,7 @@ async def test_hot_path_scheduler_fail_open_continues_to_pipeline_path(
             topology_loader=topology_loader,
             cycle_lock=cycle_lock,
             cycle_lock_owner_id="pod-a",
+            coordination_state=_HotPathCoordinationState(),
         )
 
     cycle_lock.acquire.assert_called_once_with(interval_seconds=300, owner_id="pod-a")
@@ -839,6 +870,12 @@ async def test_hot_path_scheduler_does_not_attempt_lock_when_feature_flag_disabl
     topology_loader.reload_if_changed.side_effect = asyncio.CancelledError()
 
     cycle_lock = MagicMock()
+    mock_server = MagicMock()
+    mock_server.serve_forever = AsyncMock()
+    monkeypatch.setattr(
+        "aiops_triage_pipeline.__main__.start_health_server",
+        AsyncMock(return_value=mock_server),
+    )
 
     with pytest.raises(asyncio.CancelledError):
         await __main__._hot_path_scheduler_loop(
@@ -882,6 +919,8 @@ def _hot_path_settings_for_shard_tests(*, shard_enabled: bool) -> SimpleNamespac
         SHARD_COORDINATION_SHARD_COUNT=2,
         SHARD_LEASE_TTL_SECONDS=270,
         SHARD_CHECKPOINT_TTL_SECONDS=660,
+        HEALTH_SERVER_HOST="127.0.0.1",
+        HEALTH_SERVER_PORT=0,
     )
 
 
@@ -906,6 +945,12 @@ def _make_shard_loop_call(monkeypatch, settings, shard_coordinator):
     monkeypatch.setattr(__main__, "get_health_registry", lambda: registry)
     monkeypatch.setattr(__main__, "record_cycle_lock_acquired", MagicMock())
     monkeypatch.setattr(__main__, "set_shard_interval_checkpoint", MagicMock())
+    mock_server = MagicMock()
+    mock_server.serve_forever = AsyncMock()
+    monkeypatch.setattr(
+        "aiops_triage_pipeline.__main__.start_health_server",
+        AsyncMock(return_value=mock_server),
+    )
 
     return dict(
         settings=settings,

@@ -11,6 +11,7 @@ Required fields per NFR-O3: timestamp, correlation_id, component, event_type, se
 """
 
 import logging
+import os
 import sys
 from typing import Any
 
@@ -86,6 +87,15 @@ def configure_logging(log_level: str = "INFO") -> None:
         context_class=dict,
         cache_logger_on_first_use=True,
     )
+    pod_name = os.getenv("POD_NAME")
+    pod_namespace = os.getenv("POD_NAMESPACE")
+    _pod_bindings: dict[str, str] = {}
+    if pod_name:
+        _pod_bindings["pod_name"] = pod_name
+    if pod_namespace:
+        _pod_bindings["pod_namespace"] = pod_namespace
+    if _pod_bindings:
+        structlog.contextvars.bind_contextvars(**_pod_bindings)
 
 
 def get_logger(component: str) -> structlog.BoundLogger:
