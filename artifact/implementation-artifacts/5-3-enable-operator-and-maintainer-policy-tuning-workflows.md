@@ -1,6 +1,6 @@
 # Story 5.3: Enable Operator and Maintainer Policy Tuning Workflows
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -439,10 +439,11 @@ claude-sonnet-4-6
 ### Completion Notes List
 
 - FR52 (anomaly threshold wiring): Added `anomaly_detection_policy: AnomalyDetectionPolicyV1 | None = None` parameter to `detect_anomaly_findings()`, `_compute_scope_findings()`, and all three private `_detect_*` functions in `stages/anomaly.py`. Each detector resolves thresholds from the policy when provided, falling back to module constants when `None`. The nine module-level constants are preserved as defaults. The parameter propagates from `__main__._hot_path_scheduler_loop()` → `run_evidence_stage_cycle()` → `collect_evidence_stage_output()` → `detect_anomaly_findings()` → private detectors.
-- FR53 (topology registry version stamp): Added `topology_registry_version: str = Field(default="2", min_length=1)` to `CaseFilePolicyVersions`. Added matching parameter to `assemble_casefile_triage_stage()` with empty-string guard. Updated `__main__.py` to pass `topology_registry_version=str(snapshot.metadata.input_version)`.
+- FR53 (topology registry version stamp): Added `topology_registry_version: str = Field(default="2", min_length=1)` to `CaseFilePolicyVersions`. Added matching parameter to `assemble_casefile_triage_stage()` with empty-string guard and integer-parseable validation. Updated `__main__.py` to pass `topology_registry_version=str(snapshot.metadata.input_version)`.
 - All ACs satisfied: editing anomaly YAML + redeploy now changes detection behavior; every casefile stamps topology registry version for audit replay.
-- Tests: 6 new unit tests added. Full regression: 1144 passed, 0 skipped (baseline was 1042 unit / ~1144 full-suite).
-- Ruff check clean on all modified files (pre-existing E501 in atdd file not introduced by this story).
+- Tests: 8 new unit tests added (6 from dev + 2 from code review: throughput and volume_drop policy override tests). Full regression: 1050 unit passed, 0 skipped.
+- Ruff check clean on all modified files.
+- Code review fixes: renamed `all_six_fields` test to `all_seven_fields` (NFR-A2 compliance); added policy override tests for throughput and volume_drop detectors; strengthened evidence mock assertion; added integer-parseable guard to `topology_registry_version` in `assemble_casefile_triage_stage`.
 
 ### File List
 

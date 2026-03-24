@@ -526,5 +526,6 @@ def test_collect_evidence_stage_output_passes_anomaly_policy_to_detector() -> No
         collect_evidence_stage_output({}, anomaly_detection_policy=policy)
 
     mock_detect.assert_called_once()
-    _, kwargs = mock_detect.call_args
+    args, kwargs = mock_detect.call_args
+    assert args[0] == [], "detect_anomaly_findings must receive the collected rows as first arg"
     assert kwargs.get("anomaly_detection_policy") is policy

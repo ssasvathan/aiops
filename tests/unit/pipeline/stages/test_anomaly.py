@@ -715,3 +715,50 @@ def test_detect_anomaly_findings_none_policy_uses_module_constants() -> None:
 
     assert len(result.findings) == 1
     assert result.findings[0].anomaly_family == "CONSUMER_LAG"
+
+
+def test_detect_anomaly_findings_uses_policy_throughput_threshold() -> None:
+    from aiops_triage_pipeline.contracts.anomaly_detection_policy import AnomalyDetectionPolicyV1
+
+    scope = ("prod", "cluster-a", "topic-a")
+    rows = [
+        EvidenceRow(metric_key="topic_messages_in_per_sec", value=1500.0, labels={}, scope=scope),
+        EvidenceRow(
+            metric_key="total_produce_requests_per_sec", value=200.0, labels={}, scope=scope
+        ),
+        EvidenceRow(
+            metric_key="failed_produce_requests_per_sec", value=20.0, labels={}, scope=scope
+        ),
+    ]
+    # With defaults: throughput=1500>=1000, total_produce=200>=100, failure_ratio=0.1>=0.05 → fires.
+
+    # Impossibly high threshold — no finding should be produced.
+    policy = AnomalyDetectionPolicyV1(throughput_min_messages_per_sec=999999.0)
+    result = detect_anomaly_findings(rows, anomaly_detection_policy=policy)
+
+    assert result.findings == (), (
+        "Policy throughput_min_messages_per_sec=999999 must suppress THROUGHPUT_CONSTRAINED_PROXY"
+    )
+
+
+def test_detect_anomaly_findings_uses_policy_volume_drop_threshold() -> None:
+    from aiops_triage_pipeline.contracts.anomaly_detection_policy import AnomalyDetectionPolicyV1
+
+    scope = ("prod", "cluster-a", "topic-a")
+    rows = [
+        # max=60.0 (baseline >= 50), min=0.5 (current <= 1.0) → volume drop fires with defaults.
+        EvidenceRow(metric_key="topic_messages_in_per_sec", value=60.0, labels={}, scope=scope),
+        EvidenceRow(metric_key="topic_messages_in_per_sec", value=0.5, labels={}, scope=scope),
+        EvidenceRow(
+            metric_key="total_produce_requests_per_sec", value=200.0, labels={}, scope=scope
+        ),
+    ]
+    # With defaults: baseline=60>=50, expected_requests=200>=150, current=0.5<=1.0 → fires.
+
+    # Policy tightens max_current to near-zero — current=0.5 > 0.001 suppresses detection.
+    policy = AnomalyDetectionPolicyV1(volume_drop_max_current_messages_in_per_sec=0.001)
+    result = detect_anomaly_findings(rows, anomaly_detection_policy=policy)
+
+    assert result.findings == (), (
+        "Policy volume_drop_max_current_messages_in_per_sec=0.001 must suppress VOLUME_DROP"
+    )

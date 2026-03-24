@@ -1208,10 +1208,10 @@ def test_persist_casefile_labels_stage_raises_invariant_violation_when_triage_ab
         )
 
 
-def test_assemble_casefile_triage_stage_policy_versions_all_six_fields_non_empty(
+def test_assemble_casefile_triage_stage_policy_versions_all_seven_fields_non_empty(
     tmp_path: Path,
 ) -> None:
-    """AC: 1 / FR31 — assemble_casefile_triage_stage must populate all six CaseFilePolicyVersions
+    """AC: 1 / FR31 — assemble_casefile_triage_stage must populate all seven CaseFilePolicyVersions
     fields with non-empty strings. No field may be absent or empty at assembly time."""
     (
         scope,
@@ -1244,6 +1244,7 @@ def test_assemble_casefile_triage_stage_policy_versions_all_six_fields_non_empty
         "prometheus_metrics_contract_version",
         "exposure_denylist_version",
         "diagnosis_policy_version",
+        "anomaly_detection_policy_version",
         "topology_registry_version",
     ):
         value = getattr(pv, field_name)

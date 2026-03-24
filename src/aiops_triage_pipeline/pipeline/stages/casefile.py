@@ -89,6 +89,13 @@ def assemble_casefile_triage_stage(
 
     if not topology_registry_version.strip():
         raise ValueError("topology_registry_version must not be empty")
+    try:
+        int(topology_registry_version)
+    except ValueError:
+        raise ValueError(
+            "topology_registry_version must be a parseable integer string, "
+            f"got {topology_registry_version!r}"
+        )
 
     resolved_timestamp = triage_timestamp or datetime.now(tz=UTC)
     if resolved_timestamp.tzinfo is None:
