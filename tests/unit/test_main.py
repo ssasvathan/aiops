@@ -288,6 +288,81 @@ def test_run_casefile_lifecycle_logs_policy_path_and_governance_ref(monkeypatch)
     assert start_call.kwargs["policy_schema_version"] == "v1"
 
 
+def test_run_outbox_publisher_starts_health_server_in_daemon_mode(monkeypatch) -> None:
+    """_run_outbox_publisher(once=False) calls _start_health_server_background (FR54)."""
+    settings = SimpleNamespace(
+        APP_ENV=SimpleNamespace(value="dev"),
+        DATABASE_URL="postgresql+psycopg://u:p@h/db",
+        KAFKA_CASE_HEADER_TOPIC="aiops-case-header",
+        KAFKA_TRIAGE_EXCERPT_TOPIC="aiops-triage-excerpt",
+        OUTBOX_PUBLISHER_BATCH_SIZE=100,
+        OUTBOX_PUBLISHER_POLL_INTERVAL_SECONDS=5.0,
+        HEALTH_SERVER_HOST="127.0.0.1",
+        HEALTH_SERVER_PORT=0,
+    )
+    monkeypatch.setattr(
+        __main__, "_bootstrap_mode", lambda mode: (settings, MagicMock(), MagicMock())
+    )
+    monkeypatch.setattr(__main__, "load_policy_yaml", lambda *_a, **_k: MagicMock())
+    monkeypatch.setattr(__main__, "load_denylist", lambda *_a: MagicMock())
+    monkeypatch.setattr(__main__, "create_engine", lambda *_a, **_k: MagicMock())
+    monkeypatch.setattr(__main__, "OutboxSqlRepository", lambda **_k: MagicMock())
+    monkeypatch.setattr(__main__, "ConfluentKafkaCaseEventPublisher", lambda **_k: MagicMock())
+    monkeypatch.setattr(
+        __main__, "build_s3_object_store_client_from_settings", lambda _: MagicMock()
+    )
+
+    health_calls: list[tuple] = []
+    monkeypatch.setattr(
+        __main__, "_start_health_server_background", lambda h, p: health_calls.append((h, p))
+    )
+
+    worker = MagicMock()
+    monkeypatch.setattr(__main__, "OutboxPublisherWorker", lambda **_k: worker)
+
+    __main__._run_outbox_publisher(once=False)
+
+    assert health_calls == [("127.0.0.1", 0)]
+    worker.run_forever.assert_called_once()
+
+
+def test_run_casefile_lifecycle_starts_health_server_in_daemon_mode(monkeypatch) -> None:
+    """_run_casefile_lifecycle(once=False) calls _start_health_server_background (FR54)."""
+    settings = SimpleNamespace(
+        APP_ENV=SimpleNamespace(value="dev"),
+        CASEFILE_RETENTION_GOVERNANCE_APPROVAL=None,
+        CASEFILE_LIFECYCLE_DELETE_BATCH_SIZE=500,
+        CASEFILE_LIFECYCLE_LIST_PAGE_SIZE=500,
+        CASEFILE_LIFECYCLE_POLL_INTERVAL_SECONDS=3600.0,
+        HEALTH_SERVER_HOST="127.0.0.1",
+        HEALTH_SERVER_PORT=0,
+    )
+    monkeypatch.setattr(
+        __main__, "_bootstrap_mode", lambda mode: (settings, MagicMock(), MagicMock())
+    )
+    monkeypatch.setattr(
+        __main__, "load_policy_yaml", lambda *_a, **_k: SimpleNamespace(schema_version="v1")
+    )
+    monkeypatch.setattr(
+        __main__, "build_s3_object_store_client_from_settings", lambda _: MagicMock()
+    )
+
+    health_calls: list[tuple] = []
+    monkeypatch.setattr(
+        __main__, "_start_health_server_background", lambda h, p: health_calls.append((h, p))
+    )
+
+    runner = MagicMock()
+    runner.run_once.side_effect = SystemExit(0)
+    monkeypatch.setattr(__main__, "CasefileLifecycleRunner", lambda **_k: runner)
+
+    with pytest.raises(SystemExit):
+        __main__._run_casefile_lifecycle(once=False)
+
+    assert health_calls == [("127.0.0.1", 0)]
+    runner.run_once.assert_called_once()
+
+
 def test_run_hot_path_emits_structured_error_on_bootstrap_failure(monkeypatch) -> None:
     mock_logger = MagicMock()
     monkeypatch.setattr(__main__, "get_logger", lambda _: mock_logger)
@@ -762,6 +837,7 @@ async def test_hot_path_scheduler_skips_stage_execution_when_cycle_lock_yielded(
         AsyncMock(return_value=mock_server),
     )
 
+    coordination_state = _HotPathCoordinationState(enabled=True)
     with pytest.raises(asyncio.CancelledError):
         await __main__._hot_path_scheduler_loop(
             settings=_hot_path_settings_for_coordination_tests(lock_enabled=True),
@@ -784,12 +860,15 @@ async def test_hot_path_scheduler_skips_stage_execution_when_cycle_lock_yielded(
             topology_loader=topology_loader,
             cycle_lock=cycle_lock,
             cycle_lock_owner_id="pod-a",
-            coordination_state=_HotPathCoordinationState(),
+            coordination_state=coordination_state,
         )
 
     cycle_lock.acquire.assert_called_once_with(interval_seconds=300, owner_id="pod-a")
     assert topology_loader.reload_if_changed.call_count == 0
     __main__.record_cycle_lock_yielded.assert_called_once()
+    assert coordination_state.is_lock_holder is False
+    assert coordination_state.lock_holder_id == "pod-b"
+    assert coordination_state.lock_ttl_seconds == 360
 
 
 @pytest.mark.asyncio
@@ -826,6 +905,7 @@ async def test_hot_path_scheduler_fail_open_continues_to_pipeline_path(
         AsyncMock(return_value=mock_server),
     )
 
+    coordination_state = _HotPathCoordinationState(enabled=True)
     with pytest.raises(asyncio.CancelledError):
         await __main__._hot_path_scheduler_loop(
             settings=_hot_path_settings_for_coordination_tests(lock_enabled=True),
@@ -848,12 +928,15 @@ async def test_hot_path_scheduler_fail_open_continues_to_pipeline_path(
             topology_loader=topology_loader,
             cycle_lock=cycle_lock,
             cycle_lock_owner_id="pod-a",
-            coordination_state=_HotPathCoordinationState(),
+            coordination_state=coordination_state,
         )
 
     cycle_lock.acquire.assert_called_once_with(interval_seconds=300, owner_id="pod-a")
     assert topology_loader.reload_if_changed.call_count == 1
     __main__.record_cycle_lock_fail_open.assert_called_once_with(reason="redis unavailable")
+    assert coordination_state.is_lock_holder is True
+    assert coordination_state.lock_holder_id is None
+    assert coordination_state.lock_ttl_seconds is None
 
 
 @pytest.mark.asyncio
@@ -899,6 +982,7 @@ async def test_hot_path_scheduler_does_not_attempt_lock_when_feature_flag_disabl
             topology_loader=topology_loader,
             cycle_lock=cycle_lock,
             cycle_lock_owner_id="pod-a",
+            coordination_state=_HotPathCoordinationState(),
         )
 
     cycle_lock.acquire.assert_not_called()
@@ -974,6 +1058,7 @@ def _make_shard_loop_call(monkeypatch, settings, shard_coordinator):
         cycle_lock=cycle_lock,
         cycle_lock_owner_id="pod-a",
         shard_coordinator=shard_coordinator,
+        coordination_state=_HotPathCoordinationState(),
     )
 
 

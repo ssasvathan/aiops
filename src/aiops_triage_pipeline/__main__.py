@@ -485,7 +485,7 @@ async def _hot_path_scheduler_loop(
     cycle_lock: CycleLockProtocol,
     cycle_lock_owner_id: str,
     shard_coordinator: RedisShardCoordinator | None = None,
-    coordination_state: _HotPathCoordinationState | None = None,
+    coordination_state: _HotPathCoordinationState,
 ) -> None:
     """Async hot-path scheduler loop: evidence → peak → topology → gate → casefile → dispatch."""
     interval_seconds = settings.HOT_PATH_SCHEDULER_INTERVAL_SECONDS
@@ -504,16 +504,13 @@ async def _hot_path_scheduler_loop(
     _health_server = await start_health_server(
         host=settings.HEALTH_SERVER_HOST,
         port=settings.HEALTH_SERVER_PORT,
-        coordination_info_fn=(
-            coordination_state.snapshot if coordination_state is not None else None
-        ),
+        coordination_info_fn=coordination_state.snapshot,
     )
     asyncio.create_task(_health_server.serve_forever(), name="health-server")
 
     while True:
         evaluation_time = datetime.now(UTC)
-        if coordination_state is not None:
-            coordination_state.last_cycle_time_utc = evaluation_time.isoformat()
+        coordination_state.last_cycle_time_utc = evaluation_time.isoformat()
         tick = evaluate_scheduler_tick(
             actual_fire_time=evaluation_time,
             previous_boundary=previous_boundary,
@@ -548,10 +545,9 @@ async def _hot_path_scheduler_loop(
                     lock_key=lock_outcome.key,
                     lock_ttl_seconds=lock_outcome.ttl_seconds,
                 )
-                if coordination_state is not None:
-                    coordination_state.is_lock_holder = True
-                    coordination_state.lock_holder_id = cycle_lock_owner_id
-                    coordination_state.lock_ttl_seconds = lock_outcome.ttl_seconds
+                coordination_state.is_lock_holder = True
+                coordination_state.lock_holder_id = cycle_lock_owner_id
+                coordination_state.lock_ttl_seconds = lock_outcome.ttl_seconds
             elif lock_outcome.status == CycleLockStatus.yielded:
                 record_cycle_lock_yielded()
                 await coordination_registry.update(
@@ -566,10 +562,9 @@ async def _hot_path_scheduler_loop(
                     lock_ttl_seconds=lock_outcome.ttl_seconds,
                     holder_id=lock_outcome.holder_id,
                 )
-                if coordination_state is not None:
-                    coordination_state.is_lock_holder = False
-                    coordination_state.lock_holder_id = lock_outcome.holder_id
-                    coordination_state.lock_ttl_seconds = lock_outcome.ttl_seconds
+                coordination_state.is_lock_holder = False
+                coordination_state.lock_holder_id = lock_outcome.holder_id
+                coordination_state.lock_ttl_seconds = lock_outcome.ttl_seconds
                 await emit_redis_degraded_mode_events(
                     dedupe_store=dedupe_store,
                     evaluation_time=evaluation_time,
@@ -607,10 +602,9 @@ async def _hot_path_scheduler_loop(
                     lock_ttl_seconds=lock_outcome.ttl_seconds,
                     reason=lock_outcome.reason,
                 )
-                if coordination_state is not None:
-                    coordination_state.is_lock_holder = True  # fail-open: proceed as if lock held
-                    coordination_state.lock_holder_id = None
-                    coordination_state.lock_ttl_seconds = None
+                coordination_state.is_lock_holder = True  # fail-open: proceed as if lock held
+                coordination_state.lock_holder_id = None
+                coordination_state.lock_ttl_seconds = None
 
         # ── Shard coordination gate (Story 4.2, disabled-by-default) ──────────
         # When SHARD_REGISTRY_ENABLED is True, each pod acquires a shard lease

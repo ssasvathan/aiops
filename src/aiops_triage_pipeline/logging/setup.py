@@ -35,15 +35,20 @@ def _add_severity(
 
 
 def configure_logging(log_level: str = "INFO") -> None:
-    """Configure structlog for structured JSON output with correlation_id propagation.
+    """Configure structlog for structured JSON output with pod identity and correlation_id.
 
     Call once at application startup before any pipeline operations begin.
     Raises ValueError for unrecognized log_level values. Note: loggers already cached
     via cache_logger_on_first_use retain the prior processor chain until
     structlog.reset_defaults() is called.
 
+    Also binds pod_name and pod_namespace from POD_NAME/POD_NAMESPACE env vars to the
+    structlog context (FR57/NFR-A6). When these env vars are present, every subsequent
+    log event carries the pod identity automatically via merge_contextvars.
+
     Processor pipeline:
-    1. merge_contextvars — injects asyncio task-local fields (correlation_id)
+    1. merge_contextvars — injects asyncio task-local fields (correlation_id, pod_name,
+       pod_namespace)
     2. filter_by_level — drops events below configured level (stdlib-backed)
     3. add_log_level — adds 'level' field
     4. _add_severity — renames 'level' → 'severity', uppercased (NFR-O3)

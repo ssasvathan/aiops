@@ -1,6 +1,6 @@
 # Story 5.4: Expose Health, Metrics, and Runtime Alert Evaluation
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -599,6 +599,7 @@ claude-sonnet-4-6
 - Task 5: All `__main__.py` wiring confirmed. Fixed 2 failing cold-path tests (missing `HEALTH_SERVER_HOST`/`HEALTH_SERVER_PORT` in settings mock + missing `start_health_server` patch). Also patched `start_health_server` in shard tests helper and lock-disabled test.
 - Task 6: Added 7 new tests — 2 coordination tests in `test_server.py`, 3 pod identity tests in `test_setup.py`, 2 health server settings tests in `test_settings.py`.
 - Task 7: `uv run ruff check` clean for all modified files. `uv run pytest -q tests/unit`: 1057 passed, 0 skipped.
+- Code review (post-commit): Resolved 3 medium + 3 low findings. `coordination_state` made required (no `| None = None`), all `if coordination_state is not None:` guards removed, `coordination_info_fn` simplified. Added `coordination_state` to 3 missing test callers, added coordination state value assertions to yielded/fail_open tests, added 2 daemon-mode tests for outbox-publisher and casefile-lifecycle health server wiring. Updated `configure_logging()` docstring to document pod identity binding side effect. `uv run pytest -q tests/unit`: 1059 passed, 0 skipped.
 
 ### File List
 
