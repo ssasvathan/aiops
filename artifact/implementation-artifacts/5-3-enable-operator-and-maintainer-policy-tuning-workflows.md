@@ -1,6 +1,6 @@
 # Story 5.3: Enable Operator and Maintainer Policy Tuning Workflows
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -26,17 +26,17 @@ so that behavior changes can be tested in lower environments before production.
 
 ## Tasks / Subtasks
 
-- [ ] Task 1: Wire `AnomalyDetectionPolicyV1` thresholds into the anomaly detector (AC: 1)
-  - [ ] In `src/aiops_triage_pipeline/pipeline/stages/anomaly.py`, add
+- [x] Task 1: Wire `AnomalyDetectionPolicyV1` thresholds into the anomaly detector (AC: 1)
+  - [x] In `src/aiops_triage_pipeline/pipeline/stages/anomaly.py`, add
         `from aiops_triage_pipeline.contracts.anomaly_detection_policy import AnomalyDetectionPolicyV1`
         import at the top of the file.
-  - [ ] Add `anomaly_detection_policy: AnomalyDetectionPolicyV1 | None = None` keyword-only parameter
+  - [x] Add `anomaly_detection_policy: AnomalyDetectionPolicyV1 | None = None` keyword-only parameter
         to `detect_anomaly_findings()` (after `baseline_values_by_scope`).
-  - [ ] Pass `anomaly_detection_policy=anomaly_detection_policy` in **both** `_compute_scope_findings()`
+  - [x] Pass `anomaly_detection_policy=anomaly_detection_policy` in **both** `_compute_scope_findings()`
         call sites inside `detect_anomaly_findings()` (the cache path and the non-cache path).
-  - [ ] Add `anomaly_detection_policy: AnomalyDetectionPolicyV1 | None = None` keyword-only parameter
+  - [x] Add `anomaly_detection_policy: AnomalyDetectionPolicyV1 | None = None` keyword-only parameter
         to `_compute_scope_findings()`. Pass it to each of the three private `_detect_*` function calls.
-  - [ ] Update `_detect_consumer_lag_buildup(scope, scope_metrics)` signature to add
+  - [x] Update `_detect_consumer_lag_buildup(scope, scope_metrics)` signature to add
         `anomaly_detection_policy: AnomalyDetectionPolicyV1 | None = None`. At the top of the body,
         resolve three locals before use:
         ```python
@@ -46,7 +46,7 @@ so that behavior changes can be tested in lower environments before production.
         ```
         Replace the three module-constant references (`_LAG_BUILDUP_MIN_LAG`, `_LAG_BUILDUP_MIN_GROWTH`,
         `_LAG_BUILDUP_MAX_OFFSET_PROGRESS`) with the resolved locals.
-  - [ ] Update `_detect_throughput_constrained_proxy(scope, scope_metrics)` signature to add
+  - [x] Update `_detect_throughput_constrained_proxy(scope, scope_metrics)` signature to add
         `anomaly_detection_policy: AnomalyDetectionPolicyV1 | None = None`. Resolve three locals:
         ```python
         min_messages_per_sec = anomaly_detection_policy.throughput_min_messages_per_sec if anomaly_detection_policy else _THROUGHPUT_MIN_MESSAGES_PER_SEC
@@ -54,7 +54,7 @@ so that behavior changes can be tested in lower environments before production.
         failure_ratio_min = anomaly_detection_policy.throughput_failure_ratio_min if anomaly_detection_policy else _THROUGHPUT_FAILURE_RATIO_MIN
         ```
         Replace the three module-constant references.
-  - [ ] Update `_detect_volume_drop(scope, scope_metrics, *, baseline_messages_in=None)` signature to add
+  - [x] Update `_detect_volume_drop(scope, scope_metrics, *, baseline_messages_in=None)` signature to add
         `anomaly_detection_policy: AnomalyDetectionPolicyV1 | None = None`. Resolve three locals:
         ```python
         max_current_messages_in = anomaly_detection_policy.volume_drop_max_current_messages_in_per_sec if anomaly_detection_policy else _VOLUME_DROP_MAX_CURRENT_MESSAGES_IN_PER_SEC
@@ -62,51 +62,51 @@ so that behavior changes can be tested in lower environments before production.
         min_expected_requests = anomaly_detection_policy.volume_drop_min_expected_requests_per_sec if anomaly_detection_policy else _VOLUME_DROP_MIN_EXPECTED_REQUESTS_PER_SEC
         ```
         Replace the three module-constant references.
-  - [ ] **Do NOT remove** the nine module-level constants (`_LAG_BUILDUP_MIN_LAG`, etc.) — they remain
+  - [x] **Do NOT remove** the nine module-level constants (`_LAG_BUILDUP_MIN_LAG`, etc.) — they remain
         as documented defaults and are used when `anomaly_detection_policy is None`.
 
-- [ ] Task 2: Thread `anomaly_detection_policy` through the evidence pipeline (AC: 1)
-  - [ ] In `src/aiops_triage_pipeline/pipeline/stages/evidence.py`, add
+- [x] Task 2: Thread `anomaly_detection_policy` through the evidence pipeline (AC: 1)
+  - [x] In `src/aiops_triage_pipeline/pipeline/stages/evidence.py`, add
         `from aiops_triage_pipeline.contracts.anomaly_detection_policy import AnomalyDetectionPolicyV1`
         import (place with the other `contracts.*` imports).
-  - [ ] Add `anomaly_detection_policy: AnomalyDetectionPolicyV1 | None = None` keyword-only parameter
+  - [x] Add `anomaly_detection_policy: AnomalyDetectionPolicyV1 | None = None` keyword-only parameter
         to `collect_evidence_stage_output()` (after `max_safe_action`).
-  - [ ] In the `detect_anomaly_findings(rows, ...)` call inside `collect_evidence_stage_output()`,
+  - [x] In the `detect_anomaly_findings(rows, ...)` call inside `collect_evidence_stage_output()`,
         pass `anomaly_detection_policy=anomaly_detection_policy`.
-  - [ ] In `src/aiops_triage_pipeline/pipeline/scheduler.py`, add
+  - [x] In `src/aiops_triage_pipeline/pipeline/scheduler.py`, add
         `from aiops_triage_pipeline.contracts.anomaly_detection_policy import AnomalyDetectionPolicyV1`
         import (place with the other `contracts.*` imports).
-  - [ ] Add `anomaly_detection_policy: AnomalyDetectionPolicyV1 | None = None` keyword-only parameter
+  - [x] Add `anomaly_detection_policy: AnomalyDetectionPolicyV1 | None = None` keyword-only parameter
         to `run_evidence_stage_cycle()`.
-  - [ ] In the `collect_evidence_stage_output(...)` call inside `run_evidence_stage_cycle()`,
+  - [x] In the `collect_evidence_stage_output(...)` call inside `run_evidence_stage_cycle()`,
         pass `anomaly_detection_policy=anomaly_detection_policy`.
-  - [ ] In `src/aiops_triage_pipeline/__main__.py`, update the `run_evidence_stage_cycle(...)` call
+  - [x] In `src/aiops_triage_pipeline/__main__.py`, update the `run_evidence_stage_cycle(...)` call
         at line ~616 to add `anomaly_detection_policy=anomaly_detection_policy`. The `anomaly_detection_policy`
         variable is already in scope (loaded at line ~323 in the startup block and passed to
         `_hot_path_scheduler_loop()` as a parameter).
 
-- [ ] Task 3: Add `topology_registry_version` to casefile policy stamps (AC: 2)
-  - [ ] In `src/aiops_triage_pipeline/models/case_file.py`, add
+- [x] Task 3: Add `topology_registry_version` to casefile policy stamps (AC: 2)
+  - [x] In `src/aiops_triage_pipeline/models/case_file.py`, add
         `topology_registry_version: str = Field(default="2", min_length=1)` to `CaseFilePolicyVersions`
         immediately after `anomaly_detection_policy_version` (line ~31).
-  - [ ] In `src/aiops_triage_pipeline/pipeline/stages/casefile.py`, add
+  - [x] In `src/aiops_triage_pipeline/pipeline/stages/casefile.py`, add
         `topology_registry_version: str = "2"` as a keyword-only parameter to
         `assemble_casefile_triage_stage()` (after `anomaly_detection_policy_version`).
-  - [ ] In `assemble_casefile_triage_stage()`, add validation guard immediately after the existing
+  - [x] In `assemble_casefile_triage_stage()`, add validation guard immediately after the existing
         `anomaly_detection_policy_version` guard:
         ```python
         if not topology_registry_version.strip():
             raise ValueError("topology_registry_version must not be empty")
         ```
-  - [ ] In the `CaseFilePolicyVersions(...)` construction inside `assemble_casefile_triage_stage()`
+  - [x] In the `CaseFilePolicyVersions(...)` construction inside `assemble_casefile_triage_stage()`
         (line ~103), add `topology_registry_version=topology_registry_version`.
-  - [ ] In `src/aiops_triage_pipeline/__main__.py`, update the `assemble_casefile_triage_stage(...)`
+  - [x] In `src/aiops_triage_pipeline/__main__.py`, update the `assemble_casefile_triage_stage(...)`
         call at line ~745 to add
         `topology_registry_version=str(snapshot.metadata.input_version)`.
         The `snapshot` variable is already in scope (set at line ~614: `snapshot = topology_loader.get_snapshot()`).
 
-- [ ] Task 4: Write unit tests (AC: 1, 2)
-  - [ ] In `tests/unit/pipeline/stages/test_anomaly.py`, add two tests:
+- [x] Task 4: Write unit tests (AC: 1, 2)
+  - [x] In `tests/unit/pipeline/stages/test_anomaly.py`, add two tests:
     - `test_detect_anomaly_findings_uses_policy_lag_threshold`: Construct
       `AnomalyDetectionPolicyV1(lag_buildup_min_lag=999999.0)` (impossibly high threshold).
       Create four `EvidenceRow` objects with `scope=("prod", "cluster-a", "group-a", "topic-a")`:
@@ -118,14 +118,14 @@ so that behavior changes can be tested in lower environments before production.
     - `test_detect_anomaly_findings_none_policy_uses_module_constants`: Use the same evidence rows
       as above, call `detect_anomaly_findings(rows, anomaly_detection_policy=None)`. Assert that
       one `CONSUMER_LAG` finding is returned (module-constant thresholds fire normally).
-  - [ ] In `tests/unit/pipeline/stages/test_evidence.py`, add one test:
+  - [x] In `tests/unit/pipeline/stages/test_evidence.py`, add one test:
     - `test_collect_evidence_stage_output_passes_anomaly_policy_to_detector`: Using `monkeypatch`
       (or `unittest.mock.patch`), replace `detect_anomaly_findings` in
       `aiops_triage_pipeline.pipeline.stages.evidence` with a `MagicMock` returning a valid
       `AnomalyDetectionResult(findings=())`. Call `collect_evidence_stage_output({}, anomaly_detection_policy=policy)`
       where `policy = AnomalyDetectionPolicyV1()`. Assert the mock was called with
       `anomaly_detection_policy=policy` as a keyword argument.
-  - [ ] In `tests/unit/pipeline/stages/test_casefile.py`, add one test and update one existing:
+  - [x] In `tests/unit/pipeline/stages/test_casefile.py`, add one test and update one existing:
     - `test_assemble_casefile_stamps_topology_registry_version`: Call
       `assemble_casefile_triage_stage(...)` with `topology_registry_version="3"`. Assert
       `assembled.policy_versions.topology_registry_version == "3"`. This proves the parameter
@@ -135,7 +135,7 @@ so that behavior changes can be tested in lower environments before production.
       Add `"topology_registry_version"` to the tuple of field names being asserted (line ~1241).
       The updated test calls `assemble_casefile_triage_stage(...)` without `topology_registry_version`
       (it will use the default `"2"`) and then checks all six fields.
-  - [ ] In `tests/unit/storage/test_casefile_io.py`, add two tests after the existing
+  - [x] In `tests/unit/storage/test_casefile_io.py`, add two tests after the existing
         `test_casefile_policy_versions_anomaly_detection_policy_version_rejects_empty`:
     - `test_casefile_policy_versions_topology_registry_version_field_present`: Construct
       `CaseFilePolicyVersions(topology_registry_version="2", ...)` and assert
@@ -143,10 +143,10 @@ so that behavior changes can be tested in lower environments before production.
     - `test_casefile_policy_versions_topology_registry_version_rejects_empty`: Assert
       `ValidationError` when `topology_registry_version=""`.
 
-- [ ] Task 5: Run full regression (AC: 1, 2)
-  - [ ] `uv run ruff check`
-  - [ ] `uv run pytest -q tests/unit`
-  - [ ] `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
+- [x] Task 5: Run full regression (AC: 1, 2)
+  - [x] `uv run ruff check`
+  - [x] `uv run pytest -q tests/unit`
+  - [x] `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
 
 ## Dev Notes
 
@@ -438,5 +438,24 @@ claude-sonnet-4-6
 
 ### Completion Notes List
 
+- FR52 (anomaly threshold wiring): Added `anomaly_detection_policy: AnomalyDetectionPolicyV1 | None = None` parameter to `detect_anomaly_findings()`, `_compute_scope_findings()`, and all three private `_detect_*` functions in `stages/anomaly.py`. Each detector resolves thresholds from the policy when provided, falling back to module constants when `None`. The nine module-level constants are preserved as defaults. The parameter propagates from `__main__._hot_path_scheduler_loop()` → `run_evidence_stage_cycle()` → `collect_evidence_stage_output()` → `detect_anomaly_findings()` → private detectors.
+- FR53 (topology registry version stamp): Added `topology_registry_version: str = Field(default="2", min_length=1)` to `CaseFilePolicyVersions`. Added matching parameter to `assemble_casefile_triage_stage()` with empty-string guard. Updated `__main__.py` to pass `topology_registry_version=str(snapshot.metadata.input_version)`.
+- All ACs satisfied: editing anomaly YAML + redeploy now changes detection behavior; every casefile stamps topology registry version for audit replay.
+- Tests: 6 new unit tests added. Full regression: 1144 passed, 0 skipped (baseline was 1042 unit / ~1144 full-suite).
+- Ruff check clean on all modified files (pre-existing E501 in atdd file not introduced by this story).
+
 ### File List
+
+- `src/aiops_triage_pipeline/pipeline/stages/anomaly.py`
+- `src/aiops_triage_pipeline/pipeline/stages/evidence.py`
+- `src/aiops_triage_pipeline/pipeline/scheduler.py`
+- `src/aiops_triage_pipeline/__main__.py`
+- `src/aiops_triage_pipeline/models/case_file.py`
+- `src/aiops_triage_pipeline/pipeline/stages/casefile.py`
+- `tests/unit/pipeline/stages/test_anomaly.py`
+- `tests/unit/pipeline/stages/test_evidence.py`
+- `tests/unit/pipeline/stages/test_casefile.py`
+- `tests/unit/storage/test_casefile_io.py`
+- `artifact/implementation-artifacts/5-3-enable-operator-and-maintainer-policy-tuning-workflows.md`
+- `artifact/implementation-artifacts/sprint-status.yaml`
 

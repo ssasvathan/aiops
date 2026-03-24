@@ -694,6 +694,34 @@ def test_casefile_policy_versions_anomaly_detection_policy_version_rejects_empty
         )
 
 
+def test_casefile_policy_versions_topology_registry_version_field_present() -> None:
+    """AC: 2 / FR53 — CaseFilePolicyVersions must stamp topology_registry_version so that
+    every casefile declares which topology registry version governed routing decisions."""
+    pv = CaseFilePolicyVersions(
+        rulebook_version="1",
+        peak_policy_version="v1",
+        prometheus_metrics_contract_version="v1.0.0",
+        exposure_denylist_version="v1.0.0",
+        diagnosis_policy_version="v1",
+        topology_registry_version="2",
+    )
+    assert pv.topology_registry_version == "2"
+
+
+def test_casefile_policy_versions_topology_registry_version_rejects_empty() -> None:
+    """AC: 2 / FR53 — topology_registry_version must enforce min_length=1 to prevent
+    silent empty-stamp persistence."""
+    with pytest.raises(ValidationError):
+        CaseFilePolicyVersions(
+            rulebook_version="1",
+            peak_policy_version="v1",
+            prometheus_metrics_contract_version="v1.0.0",
+            exposure_denylist_version="v1.0.0",
+            diagnosis_policy_version="v1",
+            topology_registry_version="",  # must reject empty string
+        )
+
+
 def test_hash_computation_excludes_raw_sensitive_fields_in_baseline() -> None:
     """AC: 1 / NFR-S1 — denylist sanitization must run before hash computation so that raw
     sensitive field values never appear in the hash payload baseline.

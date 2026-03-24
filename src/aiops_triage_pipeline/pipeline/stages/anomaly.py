@@ -9,6 +9,7 @@ from aiops_triage_pipeline.cache.findings_cache import (
     FindingsCacheClientProtocol,
     get_or_compute_interval_findings,
 )
+from aiops_triage_pipeline.contracts.anomaly_detection_policy import AnomalyDetectionPolicyV1
 from aiops_triage_pipeline.contracts.gate_input import Finding
 from aiops_triage_pipeline.contracts.redis_ttl_policy import RedisTtlPolicyV1
 from aiops_triage_pipeline.logging.setup import get_logger
@@ -37,6 +38,7 @@ def detect_anomaly_findings(
     redis_ttl_policy: RedisTtlPolicyV1 | None = None,
     evaluation_time: datetime | None = None,
     baseline_values_by_scope: Mapping[tuple[str, ...], Mapping[str, float]] | None = None,
+    anomaly_detection_policy: AnomalyDetectionPolicyV1 | None = None,
 ) -> AnomalyDetectionResult:
     """Detect supported anomaly families from normalized evidence rows."""
     cache_args_complete = (
@@ -77,6 +79,7 @@ def detect_anomaly_findings(
                     scope,
                     scope_metrics,
                     baseline_values_by_scope.get(scope) if baseline_values_by_scope else None,
+                    anomaly_detection_policy=anomaly_detection_policy,
                 ),
             )
         else:
@@ -84,6 +87,7 @@ def detect_anomaly_findings(
                 scope,
                 scope_metrics,
                 baseline_values_by_scope.get(scope) if baseline_values_by_scope else None,
+                anomaly_detection_policy=anomaly_detection_policy,
             )
         findings.extend(scope_findings)
 
@@ -96,14 +100,20 @@ def _compute_scope_findings(
     scope: tuple[str, ...],
     scope_metrics: dict[str, list[float]],
     baseline_values_by_metric: Mapping[str, float] | None = None,
+    *,
+    anomaly_detection_policy: AnomalyDetectionPolicyV1 | None = None,
 ) -> tuple[AnomalyFinding, ...]:
     scope_findings: list[AnomalyFinding] = []
 
-    lag_finding = _detect_consumer_lag_buildup(scope, scope_metrics)
+    lag_finding = _detect_consumer_lag_buildup(
+        scope, scope_metrics, anomaly_detection_policy=anomaly_detection_policy
+    )
     if lag_finding is not None:
         scope_findings.append(lag_finding)
 
-    throughput_finding = _detect_throughput_constrained_proxy(scope, scope_metrics)
+    throughput_finding = _detect_throughput_constrained_proxy(
+        scope, scope_metrics, anomaly_detection_policy=anomaly_detection_policy
+    )
     if throughput_finding is not None:
         scope_findings.append(throughput_finding)
 
@@ -115,6 +125,7 @@ def _compute_scope_findings(
             if baseline_values_by_metric
             else None
         ),
+        anomaly_detection_policy=anomaly_detection_policy,
     )
     if volume_drop_finding is not None:
         scope_findings.append(volume_drop_finding)
@@ -133,12 +144,31 @@ def build_gate_findings_by_scope(
 
 
 def _detect_consumer_lag_buildup(
-    scope: tuple[str, ...], scope_metrics: dict[str, list[float]]
+    scope: tuple[str, ...],
+    scope_metrics: dict[str, list[float]],
+    *,
+    anomaly_detection_policy: AnomalyDetectionPolicyV1 | None = None,
 ) -> AnomalyFinding | None:
     lag_values = scope_metrics.get("consumer_group_lag")
     offset_values = scope_metrics.get("consumer_group_offset")
     if not lag_values or not offset_values:
         return None
+
+    min_lag = (
+        anomaly_detection_policy.lag_buildup_min_lag
+        if anomaly_detection_policy
+        else _LAG_BUILDUP_MIN_LAG
+    )
+    min_growth = (
+        anomaly_detection_policy.lag_buildup_min_growth
+        if anomaly_detection_policy
+        else _LAG_BUILDUP_MIN_GROWTH
+    )
+    max_offset_progress = (
+        anomaly_detection_policy.lag_buildup_max_offset_progress
+        if anomaly_detection_policy
+        else _LAG_BUILDUP_MAX_OFFSET_PROGRESS
+    )
 
     lag_end = max(lag_values)
     # For multi-sample scopes (real Kafka: per-partition series collapse to one scope after
@@ -153,11 +183,11 @@ def _detect_consumer_lag_buildup(
 
     # Use max-min spread for offset progress to be independent of sample list ordering.
     offset_progress = max(offset_values) - min(offset_values)
-    if lag_end < _LAG_BUILDUP_MIN_LAG:
+    if lag_end < min_lag:
         return None
-    if lag_growth < _LAG_BUILDUP_MIN_GROWTH:
+    if lag_growth < min_growth:
         return None
-    if offset_progress > _LAG_BUILDUP_MAX_OFFSET_PROGRESS:
+    if offset_progress > max_offset_progress:
         return None
 
     scope_key = "|".join(scope)
@@ -186,7 +216,10 @@ def _to_gate_finding(finding: AnomalyFinding) -> Finding:
 
 
 def _detect_throughput_constrained_proxy(
-    scope: tuple[str, ...], scope_metrics: dict[str, list[float]]
+    scope: tuple[str, ...],
+    scope_metrics: dict[str, list[float]],
+    *,
+    anomaly_detection_policy: AnomalyDetectionPolicyV1 | None = None,
 ) -> AnomalyFinding | None:
     throughput_values = scope_metrics.get("topic_messages_in_per_sec")
     total_produce_values = scope_metrics.get("total_produce_requests_per_sec")
@@ -194,18 +227,34 @@ def _detect_throughput_constrained_proxy(
     if not throughput_values or not total_produce_values or not failed_produce_values:
         return None
 
+    min_messages_per_sec = (
+        anomaly_detection_policy.throughput_min_messages_per_sec
+        if anomaly_detection_policy
+        else _THROUGHPUT_MIN_MESSAGES_PER_SEC
+    )
+    min_total_produce_per_sec = (
+        anomaly_detection_policy.throughput_min_total_produce_requests_per_sec
+        if anomaly_detection_policy
+        else _THROUGHPUT_MIN_TOTAL_PRODUCE_REQUESTS_PER_SEC
+    )
+    failure_ratio_min = (
+        anomaly_detection_policy.throughput_failure_ratio_min
+        if anomaly_detection_policy
+        else _THROUGHPUT_FAILURE_RATIO_MIN
+    )
+
     throughput = max(throughput_values)
     total_produce = max(total_produce_values)
     failed_produce = max(failed_produce_values)
-    if throughput < _THROUGHPUT_MIN_MESSAGES_PER_SEC:
+    if throughput < min_messages_per_sec:
         return None
-    if total_produce < _THROUGHPUT_MIN_TOTAL_PRODUCE_REQUESTS_PER_SEC:
+    if total_produce < min_total_produce_per_sec:
         return None
     if total_produce <= 0:
         return None
 
     failure_ratio = failed_produce / total_produce
-    if failure_ratio < _THROUGHPUT_FAILURE_RATIO_MIN:
+    if failure_ratio < failure_ratio_min:
         return None
 
     scope_key = "|".join(scope)
@@ -229,11 +278,28 @@ def _detect_volume_drop(
     scope_metrics: dict[str, list[float]],
     *,
     baseline_messages_in: float | None = None,
+    anomaly_detection_policy: AnomalyDetectionPolicyV1 | None = None,
 ) -> AnomalyFinding | None:
     messages_in_values = scope_metrics.get("topic_messages_in_per_sec")
     total_produce_values = scope_metrics.get("total_produce_requests_per_sec")
     if not messages_in_values or not total_produce_values:
         return None
+
+    max_current_messages_in = (
+        anomaly_detection_policy.volume_drop_max_current_messages_in_per_sec
+        if anomaly_detection_policy
+        else _VOLUME_DROP_MAX_CURRENT_MESSAGES_IN_PER_SEC
+    )
+    min_baseline_messages_in = (
+        anomaly_detection_policy.volume_drop_min_baseline_messages_in_per_sec
+        if anomaly_detection_policy
+        else _VOLUME_DROP_MIN_BASELINE_MESSAGES_IN_PER_SEC
+    )
+    min_expected_requests = (
+        anomaly_detection_policy.volume_drop_min_expected_requests_per_sec
+        if anomaly_detection_policy
+        else _VOLUME_DROP_MIN_EXPECTED_REQUESTS_PER_SEC
+    )
 
     # Use max as baseline and min as current to be independent of sample list ordering.
     # Detects: peak throughput is high but the lowest observed value for the scope is near zero,
@@ -250,11 +316,11 @@ def _detect_volume_drop(
         baseline_messages_in = max(baseline_messages_in, baseline_from_current)
     current_messages_in = min(messages_in_values)
     expected_requests = max(total_produce_values)
-    if baseline_messages_in < _VOLUME_DROP_MIN_BASELINE_MESSAGES_IN_PER_SEC:
+    if baseline_messages_in < min_baseline_messages_in:
         return None
-    if expected_requests < _VOLUME_DROP_MIN_EXPECTED_REQUESTS_PER_SEC:
+    if expected_requests < min_expected_requests:
         return None
-    if current_messages_in > _VOLUME_DROP_MAX_CURRENT_MESSAGES_IN_PER_SEC:
+    if current_messages_in > max_current_messages_in:
         return None
 
     scope_key = "|".join(scope)

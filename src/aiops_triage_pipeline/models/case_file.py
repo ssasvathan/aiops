@@ -29,6 +29,7 @@ class CaseFilePolicyVersions(BaseModel, frozen=True):
     exposure_denylist_version: str = Field(min_length=1)
     diagnosis_policy_version: str = Field(min_length=1)
     anomaly_detection_policy_version: str = Field(default="v1", min_length=1)
+    topology_registry_version: str = Field(default="2", min_length=1)
 
 
 class CaseFileDownstreamImpact(BaseModel, frozen=True):

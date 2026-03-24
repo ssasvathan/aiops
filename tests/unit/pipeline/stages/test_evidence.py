@@ -508,3 +508,23 @@ def test_evidence_stage_output_evidence_status_map_is_immutable() -> None:
         output.evidence_status_map_by_scope[scope]["total_produce_requests_per_sec"] = (
             EvidenceStatus.PRESENT
         )
+
+
+def test_collect_evidence_stage_output_passes_anomaly_policy_to_detector() -> None:
+    from unittest.mock import patch
+
+    from aiops_triage_pipeline.contracts.anomaly_detection_policy import AnomalyDetectionPolicyV1
+    from aiops_triage_pipeline.models.anomaly import AnomalyDetectionResult
+
+    policy = AnomalyDetectionPolicyV1()
+    mock_result = AnomalyDetectionResult(findings=())
+
+    with patch(
+        "aiops_triage_pipeline.pipeline.stages.evidence.detect_anomaly_findings",
+        return_value=mock_result,
+    ) as mock_detect:
+        collect_evidence_stage_output({}, anomaly_detection_policy=policy)
+
+    mock_detect.assert_called_once()
+    _, kwargs = mock_detect.call_args
+    assert kwargs.get("anomaly_detection_policy") is policy

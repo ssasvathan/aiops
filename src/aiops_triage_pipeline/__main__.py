@@ -621,6 +621,7 @@ async def _hot_path_scheduler_loop(
                 baseline_cache_client=redis_client,
                 redis_ttl_policy=redis_ttl_policy,
                 alert_evaluator=alert_evaluator,
+                anomaly_detection_policy=anomaly_detection_policy,
             )
             peak_scopes = _peak_scopes_from_rows(evidence_output.rows)
             if (
@@ -755,6 +756,7 @@ async def _hot_path_scheduler_loop(
                             denylist=denylist,
                             diagnosis_policy_version="v1",
                             anomaly_detection_policy_version=anomaly_detection_policy.schema_version,
+                            topology_registry_version=str(snapshot.metadata.input_version),
                         )
                         outbox_ready = persist_casefile_and_prepare_outbox_ready(
                             casefile=casefile,

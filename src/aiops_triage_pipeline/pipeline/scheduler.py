@@ -9,6 +9,7 @@ from typing import Mapping, Sequence
 from aiops_triage_pipeline.cache.dedupe import HealthTrackableDedupeStore
 from aiops_triage_pipeline.cache.findings_cache import FindingsCacheClientProtocol
 from aiops_triage_pipeline.contracts.action_decision import ActionDecisionV1
+from aiops_triage_pipeline.contracts.anomaly_detection_policy import AnomalyDetectionPolicyV1
 from aiops_triage_pipeline.contracts.enums import Action
 from aiops_triage_pipeline.contracts.gate_input import GateInputV1
 from aiops_triage_pipeline.contracts.peak_policy import PeakPolicyV1
@@ -159,6 +160,7 @@ async def run_evidence_stage_cycle(
     redis_ttl_policy: RedisTtlPolicyV1 | None = None,
     health_registry: HealthRegistry | None = None,
     alert_evaluator: OperationalAlertEvaluator | None = None,
+    anomaly_detection_policy: AnomalyDetectionPolicyV1 | None = None,
 ) -> EvidenceStageOutput:
     """Run Stage 1 evidence collection and anomaly derivation for one scheduler cycle."""
     started_at = time.perf_counter()
@@ -226,6 +228,7 @@ async def run_evidence_stage_cycle(
             telemetry_degraded_active=diagnostics.is_total_outage,
             telemetry_degraded_events=telemetry_degraded_events,
             max_safe_action=Action.NOTIFY if diagnostics.is_total_outage else None,
+            anomaly_detection_policy=anomaly_detection_policy,
         )
     finally:
         elapsed_seconds = time.perf_counter() - started_at

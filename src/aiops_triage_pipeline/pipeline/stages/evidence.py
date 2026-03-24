@@ -9,6 +9,7 @@ from typing import Any, Mapping, Sequence
 from urllib.error import URLError
 
 from aiops_triage_pipeline.cache.findings_cache import FindingsCacheClientProtocol
+from aiops_triage_pipeline.contracts.anomaly_detection_policy import AnomalyDetectionPolicyV1
 from aiops_triage_pipeline.contracts.enums import Action, EvidenceStatus
 from aiops_triage_pipeline.contracts.redis_ttl_policy import RedisTtlPolicyV1
 from aiops_triage_pipeline.health.metrics import (
@@ -148,6 +149,7 @@ def collect_evidence_stage_output(
     telemetry_degraded_active: bool = False,
     telemetry_degraded_events: Sequence[TelemetryDegradedEvent] = (),
     max_safe_action: Action | None = None,
+    anomaly_detection_policy: AnomalyDetectionPolicyV1 | None = None,
 ) -> EvidenceStageOutput:
     """Collect normalized evidence rows and derive anomaly findings for downstream stages."""
     rows = collect_evidence_rows(samples_by_metric)
@@ -164,6 +166,7 @@ def collect_evidence_stage_output(
         redis_ttl_policy=redis_ttl_policy,
         evaluation_time=evaluation_time,
         baseline_values_by_scope=baseline_values_by_scope,
+        anomaly_detection_policy=anomaly_detection_policy,
     )
     if baseline_cache_client is not None and redis_ttl_policy is not None:
         persist_metric_baselines(

@@ -1208,10 +1208,10 @@ def test_persist_casefile_labels_stage_raises_invariant_violation_when_triage_ab
         )
 
 
-def test_assemble_casefile_triage_stage_policy_versions_all_five_fields_non_empty(
+def test_assemble_casefile_triage_stage_policy_versions_all_six_fields_non_empty(
     tmp_path: Path,
 ) -> None:
-    """AC: 1 / FR31 — assemble_casefile_triage_stage must populate all five CaseFilePolicyVersions
+    """AC: 1 / FR31 — assemble_casefile_triage_stage must populate all six CaseFilePolicyVersions
     fields with non-empty strings. No field may be absent or empty at assembly time."""
     (
         scope,
@@ -1244,6 +1244,7 @@ def test_assemble_casefile_triage_stage_policy_versions_all_five_fields_non_empt
         "prometheus_metrics_contract_version",
         "exposure_denylist_version",
         "diagnosis_policy_version",
+        "topology_registry_version",
     ):
         value = getattr(pv, field_name)
         assert value and isinstance(value, str), (
@@ -1324,3 +1325,36 @@ def test_assemble_casefile_triage_stage_diagnosis_policy_version_from_argument(
         "diagnosis_policy_version must reflect the value passed at call time, "
         "not a hard-coded string"
     )
+
+
+def test_assemble_casefile_stamps_topology_registry_version(
+    tmp_path: Path,
+) -> None:
+    """AC: 2 / FR53 — assemble_casefile_triage_stage must stamp topology_registry_version
+    in CaseFilePolicyVersions for audit replay."""
+    (
+        scope,
+        evidence_output,
+        peak_output,
+        topology_output,
+        gate_input,
+        action_decision,
+    ) = _build_scope_inputs(tmp_path)
+
+    assembled = assemble_casefile_triage_stage(
+        scope=scope,
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        topology_output=topology_output,
+        gate_input=gate_input,
+        action_decision=action_decision,
+        rulebook_policy=_rulebook_policy_for_tests(),
+        peak_policy=_peak_policy_for_tests(),
+        prometheus_metrics_contract=_prometheus_contract_for_tests(),
+        denylist=_denylist_for_tests(),
+        diagnosis_policy_version="v1",
+        topology_registry_version="3",
+        triage_timestamp=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
+    )
+
+    assert assembled.policy_versions.topology_registry_version == "3"

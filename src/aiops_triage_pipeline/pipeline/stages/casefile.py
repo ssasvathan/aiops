@@ -69,6 +69,7 @@ def assemble_casefile_triage_stage(
     denylist: DenylistV1,
     diagnosis_policy_version: str,
     anomaly_detection_policy_version: str = "v1",
+    topology_registry_version: str = "2",
     triage_timestamp: datetime | None = None,
     case_id: str | None = None,
 ) -> CaseFileTriageV1:
@@ -85,6 +86,9 @@ def assemble_casefile_triage_stage(
 
     if not anomaly_detection_policy_version.strip():
         raise ValueError("anomaly_detection_policy_version must not be empty")
+
+    if not topology_registry_version.strip():
+        raise ValueError("topology_registry_version must not be empty")
 
     resolved_timestamp = triage_timestamp or datetime.now(tz=UTC)
     if resolved_timestamp.tzinfo is None:
@@ -107,6 +111,7 @@ def assemble_casefile_triage_stage(
         exposure_denylist_version=denylist.denylist_version,
         diagnosis_policy_version=diagnosis_policy_version,
         anomaly_detection_policy_version=anomaly_detection_policy_version,
+        topology_registry_version=topology_registry_version,
     )
     resolved_case_id = case_id or gate_input.case_id or _derive_case_id(gate_input=gate_input)
 

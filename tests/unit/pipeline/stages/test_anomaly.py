@@ -680,3 +680,38 @@ def test_detect_anomaly_findings_logs_warning_on_partial_cache_configuration(
         and json.loads(line).get("event") == "findings_cache_configuration_incomplete"
     ]
     assert len(warnings) == 1
+
+
+def test_detect_anomaly_findings_uses_policy_lag_threshold() -> None:
+    from aiops_triage_pipeline.contracts.anomaly_detection_policy import AnomalyDetectionPolicyV1
+
+    scope = ("prod", "cluster-a", "group-a", "topic-a")
+    rows = [
+        EvidenceRow(metric_key="consumer_group_lag", value=150.0, labels={}, scope=scope),
+        EvidenceRow(metric_key="consumer_group_lag", value=200.0, labels={}, scope=scope),
+        EvidenceRow(metric_key="consumer_group_offset", value=100.0, labels={}, scope=scope),
+        EvidenceRow(metric_key="consumer_group_offset", value=105.0, labels={}, scope=scope),
+    ]
+    # These rows trigger CONSUMER_LAG with default thresholds:
+    # lag_end=200 >= 100, lag_growth=50 >= 25, offset_progress=5 <= 10
+
+    # Policy with impossibly high threshold — no finding should be produced.
+    policy = AnomalyDetectionPolicyV1(lag_buildup_min_lag=999999.0)
+    result = detect_anomaly_findings(rows, anomaly_detection_policy=policy)
+
+    assert result.findings == (), "Policy lag_buildup_min_lag=999999 must suppress CONSUMER_LAG"
+
+
+def test_detect_anomaly_findings_none_policy_uses_module_constants() -> None:
+    scope = ("prod", "cluster-a", "group-a", "topic-a")
+    rows = [
+        EvidenceRow(metric_key="consumer_group_lag", value=150.0, labels={}, scope=scope),
+        EvidenceRow(metric_key="consumer_group_lag", value=200.0, labels={}, scope=scope),
+        EvidenceRow(metric_key="consumer_group_offset", value=100.0, labels={}, scope=scope),
+        EvidenceRow(metric_key="consumer_group_offset", value=105.0, labels={}, scope=scope),
+    ]
+    # Same rows — with no policy, module-constant thresholds fire and produce one finding.
+    result = detect_anomaly_findings(rows, anomaly_detection_policy=None)
+
+    assert len(result.findings) == 1
+    assert result.findings[0].anomaly_family == "CONSUMER_LAG"
