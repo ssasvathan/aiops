@@ -66,9 +66,9 @@ development_status:
   4-2-coordinate-scope-shards-and-recover-from-pod-failure: done
   4-3-roll-out-distributed-coordination-incrementally: done
   epic-4-retrospective: done
-  epic-5: in-progress
+  epic-5: done
   5-1-load-and-validate-policies-at-startup: done
   5-2-enforce-security-critical-integration-configuration: done
   5-3-enable-operator-and-maintainer-policy-tuning-workflows: done
   5-4-expose-health-metrics-and-runtime-alert-evaluation: done
-  epic-5-retrospective: optional
+  epic-5-retrospective: done
