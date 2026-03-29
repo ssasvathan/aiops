@@ -1,6 +1,6 @@
 # Story 1.1: Implement Deterministic Confidence Scoring Core
 
-Status: review
+Status: done
 
 ## Story
 
@@ -158,6 +158,8 @@ GPT-5 Codex
 - artifact/implementation-artifacts/1-1-implement-deterministic-confidence-scoring-core.md
 - artifact/implementation-artifacts/sprint-status.yaml
 - src/aiops_triage_pipeline/pipeline/stages/gating.py
+- tests/atdd/fixtures/story_1_1_test_data.py
+- tests/atdd/test_story_1_1_deterministic_confidence_scoring_core_red_phase.py
 - tests/atdd/fixtures/story_3_1_test_data.py
 - tests/unit/pipeline/stages/test_gating.py
 - tests/unit/pipeline/test_scheduler.py
@@ -166,3 +168,4 @@ GPT-5 Codex
 ## Change Log
 
 - 2026-03-29: Completed Story 1.1 quality gate by running full Docker-backed regression with zero skipped tests; resolved unrelated test-suite blockers in Story 3.1 ATDD fixture and Prometheus fallback readiness check.
+- 2026-03-29: Applied code-review follow-up fixes: conservative sustained-boost behavior when sustained metadata is invalid/missing, stricter Prometheus target-metric integration assertion for local runtime, deterministic ATDD helper resolution, and corrected story File List completeness.

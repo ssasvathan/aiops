@@ -461,7 +461,8 @@ def _score_sustained_boost(
         or required_buckets is None
         or required_buckets <= 0
     ):
-        return SCORE_V1_SUSTAINED_AMPLIFIER_MAX
+        # Missing/invalid sustained metadata must not inflate confidence.
+        return 0.0
 
     sustained_ratio = _clamp_score(consecutive_buckets / float(required_buckets))
     return _clamp_score(SCORE_V1_SUSTAINED_AMPLIFIER_MAX * sustained_ratio)

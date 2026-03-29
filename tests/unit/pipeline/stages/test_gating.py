@@ -495,6 +495,33 @@ def test_score_helpers_enforce_story_1_1_action_bands() -> None:
     assert gating._derive_proposed_action_from_score(high_confidence_score) == Action.PAGE
 
 
+def test_score_sustained_boost_is_conservative_when_sustained_metadata_is_missing() -> None:
+    assert (
+        gating._score_sustained_boost(
+            True,
+            consecutive_buckets=None,
+            required_buckets=5,
+        )
+        == pytest.approx(0.0)
+    )
+    assert (
+        gating._score_sustained_boost(
+            True,
+            consecutive_buckets=5,
+            required_buckets=None,
+        )
+        == pytest.approx(0.0)
+    )
+    assert (
+        gating._score_sustained_boost(
+            True,
+            consecutive_buckets=5,
+            required_buckets=0,
+        )
+        == pytest.approx(0.0)
+    )
+
+
 def test_collect_gate_inputs_by_scope_raises_when_context_missing() -> None:
     samples = {
         "topic_messages_in_per_sec": [

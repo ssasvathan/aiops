@@ -41,7 +41,7 @@ story_location: /home/sas/workspace/aiops/artifact/implementation-artifacts
 
 development_status:
   epic-1: in-progress
-  1-1-implement-deterministic-confidence-scoring-core: review
+  1-1-implement-deterministic-confidence-scoring-core: done
   1-2-enrich-gate-inputs-and-enforce-ag4-confidence-sustained-rules: backlog
   1-3-persist-differentiated-confidence-and-reason-code-audit-outcomes: backlog
   epic-1-retrospective: optional

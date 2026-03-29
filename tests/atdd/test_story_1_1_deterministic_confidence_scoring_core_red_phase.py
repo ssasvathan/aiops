@@ -18,6 +18,7 @@ from tests.atdd.fixtures.story_1_1_test_data import (
 
 def _locate_private_callable(*, prefix: str, contains: str) -> Callable[..., Any]:
     candidates: list[Callable[..., Any]] = []
+    candidate_names: list[str] = []
     for name in sorted(dir(gating)):
         if not name.startswith(prefix):
             continue
@@ -26,11 +27,17 @@ def _locate_private_callable(*, prefix: str, contains: str) -> Callable[..., Any
         candidate = getattr(gating, name)
         if callable(candidate):
             candidates.append(candidate)
+            candidate_names.append(name)
 
     if not candidates:
         pytest.fail(
             f"Story 1.1 RED phase: expected private helper with prefix={prefix!r} and "
             f"name containing {contains!r}."
+        )
+    if len(candidates) > 1:
+        pytest.fail(
+            "Story 1.1 RED phase: ambiguous private helper lookup for "
+            f"prefix={prefix!r}, contains={contains!r}. Matches: {candidate_names!r}"
         )
     return candidates[0]
 
@@ -109,15 +116,9 @@ def test_p0_scoring_internal_exception_falls_back_to_observe_without_unhandled_r
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """AC3: scoring exceptions must degrade to 0.0/OBSERVE and keep gating flow alive."""
-    score_base_name = next(
-        (
-            name
-            for name in sorted(dir(gating))
-            if name.startswith("_score_") and "base" in name and callable(getattr(gating, name))
-        ),
-        None,
-    )
-    if score_base_name is None:
+    score_base_name = "_score_base_from_evidence_status_map"
+    score_base = getattr(gating, score_base_name, None)
+    if not callable(score_base):
         pytest.fail("Story 1.1 RED phase: expected a private `_score_*base*` helper in gating.")
 
     def _raise_scoring_failure(*args: object, **kwargs: object) -> float:  # noqa: ARG001

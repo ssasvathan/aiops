@@ -110,6 +110,7 @@ def test_local_prometheus_query_path_smoke() -> None:
     queries = build_metric_queries()
     metric = queries["topic_messages_in_per_sec"].metric_name
     evaluation_time = datetime.now(tz=UTC)
+    used_fallback = False
 
     try:
         client = PrometheusHTTPClient(base_url="http://localhost:9090")
@@ -117,9 +118,12 @@ def test_local_prometheus_query_path_smoke() -> None:
             metric,
             at_time=evaluation_time,
         )
+        if not samples:
+            samples = _wait_for_non_empty_series(client, metric_name=metric)
     except (URLError, TimeoutError, ConnectionError) as exc:
         if not _is_prometheus_connectivity_failure(exc):
             raise
+        used_fallback = True
         try:
             with DockerContainer(_FALLBACK_PROMETHEUS_IMAGE).with_exposed_ports(9090) as container:
                 host = container.get_container_host_ip()
@@ -134,6 +138,7 @@ def test_local_prometheus_query_path_smoke() -> None:
                 if not samples:
                     self_series = _wait_for_non_empty_series(client, metric_name="up")
                     _assert_sample_shape(self_series)
+                    samples = self_series
         except Exception as fallback_exc:  # pragma: no cover - defensive path for CI diagnostics
             pytest.fail(
                 "Fallback Prometheus container startup failed. Pre-pull "
@@ -142,4 +147,9 @@ def test_local_prometheus_query_path_smoke() -> None:
             )
 
     assert isinstance(samples, list)
+    if not used_fallback:
+        assert samples, (
+            f"Expected non-empty '{metric}' series from local Prometheus to validate "
+            "target metric query behavior."
+        )
     _assert_sample_shape(samples)
