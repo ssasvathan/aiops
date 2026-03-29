@@ -431,6 +431,111 @@ def test_collect_gate_inputs_by_scope_handles_sustained_none_without_boost() -> 
     assert gate_input.decision_basis["sustained_boost"] == pytest.approx(0.0)
 
 
+def test_collect_gate_inputs_by_scope_uses_enriched_context_values_when_provided() -> None:
+    evidence_output, peak_output, scope = _build_story_1_1_stage_inputs(
+        sustained_value=True,
+        is_peak_window=True,
+    )
+    gate_inputs_by_scope = collect_gate_inputs_by_scope(
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        context_by_scope={
+            scope: GateInputContext(
+                stream_id="stream-orders",
+                topic_role="SHARED_TOPIC",
+                criticality_tier=CriticalityTier.TIER_0,
+                proposed_action=Action.PAGE,
+                diagnosis_confidence=0.59,
+                decision_basis={
+                    "score_version": "v1",
+                    "base_score": 0.59,
+                    "sustained_boost": 0.0,
+                    "peak_boost": 0.0,
+                    "final_score": 0.59,
+                    "score_reason_code": "LOW_CONFIDENCE_INSUFFICIENT_EVIDENCE",
+                    "fallback_applied": False,
+                },
+            )
+        },
+    )
+
+    gate_input = gate_inputs_by_scope[scope][0]
+    assert gate_input.diagnosis_confidence == pytest.approx(0.59)
+    assert gate_input.proposed_action == Action.PAGE
+
+
+def test_collect_gate_inputs_by_scope_ignores_unenriched_context_scoring_values() -> None:
+    evidence_output, peak_output, scope = _build_story_1_1_stage_inputs(
+        sustained_value=True,
+        is_peak_window=True,
+    )
+    gate_inputs_by_scope = collect_gate_inputs_by_scope(
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        context_by_scope={
+            scope: GateInputContext(
+                stream_id="stream-orders",
+                topic_role="SHARED_TOPIC",
+                criticality_tier=CriticalityTier.TIER_0,
+                proposed_action=Action.OBSERVE,
+                diagnosis_confidence=0.01,
+            )
+        },
+    )
+
+    gate_input = gate_inputs_by_scope[scope][0]
+    assert gate_input.diagnosis_confidence > 0.6
+    assert gate_input.proposed_action in {Action.TICKET, Action.PAGE}
+
+
+def test_parse_scoring_result_payload_rejects_non_finite_numeric_values() -> None:
+    base_payload = {
+        "score_version": "v1",
+        "base_score": 0.6,
+        "sustained_boost": 0.0,
+        "peak_boost": 0.0,
+        "proposed_action": "TICKET",
+        "score_reason_code": "MEDIUM_CONFIDENCE_BASELINE",
+        "fallback_applied": False,
+    }
+
+    for invalid_final_score in (float("nan"), float("inf"), -float("inf")):
+        payload = dict(base_payload, final_score=invalid_final_score)
+        assert gating._parse_scoring_result_payload(payload) is None
+
+
+def test_parse_scoring_result_payload_rejects_non_boolean_fallback_flag() -> None:
+    payload = {
+        "score_version": "v1",
+        "base_score": 0.59,
+        "sustained_boost": 0.0,
+        "peak_boost": 0.0,
+        "final_score": 0.59,
+        "proposed_action": "OBSERVE",
+        "score_reason_code": "LOW_CONFIDENCE_INSUFFICIENT_EVIDENCE",
+        "fallback_applied": "false",
+    }
+
+    assert gating._parse_scoring_result_payload(payload) is None
+
+
+def test_parse_scoring_result_payload_normalizes_reason_code() -> None:
+    payload = {
+        "score_version": "v1",
+        "base_score": 0.6,
+        "sustained_boost": 0.0,
+        "peak_boost": 0.0,
+        "final_score": 0.6,
+        "proposed_action": "TICKET",
+        "score_reason_code": "  MEDIUM_CONFIDENCE_BASELINE  ",
+        "fallback_applied": False,
+    }
+
+    parsed = gating._parse_scoring_result_payload(payload)
+    assert parsed is not None
+    assert parsed.score_reason_code == "MEDIUM_CONFIDENCE_BASELINE"
+
+
 def test_collect_gate_inputs_by_scope_applies_scoring_fallback_on_internal_exception(
     monkeypatch: pytest.MonkeyPatch,
     log_stream: io.StringIO,
@@ -453,8 +558,6 @@ def test_collect_gate_inputs_by_scope_applies_scoring_fallback_on_internal_excep
                 stream_id="stream-orders",
                 topic_role="SHARED_TOPIC",
                 criticality_tier=CriticalityTier.TIER_0,
-                proposed_action=Action.PAGE,
-                diagnosis_confidence=0.99,
             )
         },
     )

@@ -52,6 +52,7 @@ from aiops_triage_pipeline.pipeline.stages.gating import (
     GateDedupeStoreProtocol,
     GateInputContext,
     collect_gate_inputs_by_scope,
+    enrich_gate_input_context_by_scope,
     evaluate_rulebook_gate_inputs_by_scope,
 )
 from aiops_triage_pipeline.pipeline.stages.peak import collect_peak_stage_output
@@ -377,10 +378,16 @@ def run_gate_input_stage_cycle(
             telemetry_degraded_events=evidence_output.telemetry_degraded_events,
             max_safe_action=evidence_output.max_safe_action,
         )
-        return collect_gate_inputs_by_scope(
+        enriched_context_by_scope = enrich_gate_input_context_by_scope(
             evidence_output=filtered_evidence_output,
             peak_output=peak_output,
             context_by_scope=context_by_scope,
+            max_safe_action=filtered_evidence_output.max_safe_action,
+        )
+        return collect_gate_inputs_by_scope(
+            evidence_output=filtered_evidence_output,
+            peak_output=peak_output,
+            context_by_scope=enriched_context_by_scope,
             max_safe_action=filtered_evidence_output.max_safe_action,
         )
     finally:

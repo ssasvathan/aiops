@@ -1,7 +1,8 @@
 """Stage 6 gate-input assembly and deterministic rulebook evaluation helpers."""
 
+import math
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from time import perf_counter
 from typing import Any, Literal, Mapping, Protocol
 
@@ -39,6 +40,7 @@ SCORE_V1_NEAR_PEAK_AMPLIFIER = 0.03
 SCORE_V1_ACTION_BAND_TICKET_MIN = 0.60
 SCORE_V1_ACTION_BAND_PAGE_MIN = 0.85
 SCORE_V1_DECIMAL_PRECISION = 6
+_SCORING_BY_ANOMALY_FAMILY_KEY = "scoring_by_anomaly_family"
 
 
 @dataclass(frozen=True)
@@ -253,6 +255,94 @@ def evaluate_rulebook_gate_inputs_by_scope(
     return decisions_by_scope
 
 
+def enrich_gate_input_context_by_scope(
+    *,
+    evidence_output: EvidenceStageOutput,
+    peak_output: PeakStageOutput,
+    context_by_scope: Mapping[GateScope, GateInputContext],
+    max_safe_action: Action | None = None,
+) -> dict[GateScope, GateInputContext]:
+    """Enrich GateInputContext with deterministic scoring before gate-input collection."""
+    enriched_context_by_scope: dict[GateScope, GateInputContext] = dict(context_by_scope)
+
+    for scope, findings in sorted(evidence_output.gate_findings_by_scope.items()):
+        context = _resolve_context_for_scope(scope=scope, context_by_scope=context_by_scope)
+        if context is None:
+            continue
+
+        topic = _topic_from_scope(scope)
+        env = Environment(scope[0])
+        cluster_id = scope[1]
+        evidence_status_map = dict(evidence_output.evidence_status_map_by_scope.get(scope, {}))
+        peak_context = peak_output.peak_context_by_scope.get((env.value, cluster_id, topic))
+        scored_by_anomaly_family: dict[
+            Literal["CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY"],
+            _ScoringResult,
+        ] = {}
+
+        for finding in findings:
+            anomaly_family = _anomaly_family_from_gate_finding_name(finding.name)
+            sustained_status = peak_output.sustained_by_key.get(
+                _sustained_identity_key(
+                    scope=scope,
+                    anomaly_family=anomaly_family,
+                )
+            )
+            scored_by_anomaly_family[anomaly_family] = _derive_scoring_result_with_fallback(
+                scope=scope,
+                anomaly_family=anomaly_family,
+                evidence_status_map=evidence_status_map,
+                is_sustained=(
+                    sustained_status.is_sustained if sustained_status is not None else None
+                ),
+                sustained_consecutive_buckets=(
+                    sustained_status.consecutive_anomalous_buckets
+                    if sustained_status is not None
+                    else None
+                ),
+                sustained_required_buckets=(
+                    sustained_status.required_buckets if sustained_status is not None else None
+                ),
+                is_peak_window=(
+                    peak_context.is_peak_window if peak_context is not None else None
+                ),
+                is_near_peak_window=(
+                    peak_context.is_near_peak_window if peak_context is not None else None
+                ),
+            )
+
+        if not scored_by_anomaly_family:
+            continue
+
+        primary_scoring_result = _select_primary_scoring_result(
+            scored_by_anomaly_family=scored_by_anomaly_family
+        )
+        scored_by_anomaly_family_payload = {
+            anomaly_family: _serialize_scoring_result(
+                scoring_result=scored_by_anomaly_family[anomaly_family],
+                max_safe_action=max_safe_action,
+            )
+            for anomaly_family in sorted(scored_by_anomaly_family)
+        }
+        decision_basis = _merge_decision_basis(
+            existing_decision_basis=context.decision_basis,
+            scoring_result=primary_scoring_result,
+        )
+        decision_basis[_SCORING_BY_ANOMALY_FAMILY_KEY] = scored_by_anomaly_family_payload
+
+        enriched_context_by_scope[scope] = replace(
+            context,
+            proposed_action=_cap_action_to_max_safe(
+                proposed_action=primary_scoring_result.proposed_action,
+                max_safe_action=max_safe_action,
+            ),
+            diagnosis_confidence=primary_scoring_result.final_score,
+            decision_basis=decision_basis,
+        )
+
+    return enriched_context_by_scope
+
+
 def collect_gate_inputs_by_scope(
     *,
     evidence_output: EvidenceStageOutput,
@@ -292,8 +382,14 @@ def collect_gate_inputs_by_scope(
             )
             sustained_for_gate_input = is_sustained_for_scoring is True
 
-            try:
-                scoring_result = _derive_scoring_result(
+            scoring_result = _resolve_context_scoring_result(
+                context=context,
+                anomaly_family=anomaly_family,
+            )
+            if scoring_result is None:
+                scoring_result = _derive_scoring_result_with_fallback(
+                    scope=scope,
+                    anomaly_family=anomaly_family,
                     evidence_status_map=evidence_status_map,
                     is_sustained=is_sustained_for_scoring,
                     sustained_consecutive_buckets=(
@@ -313,15 +409,6 @@ def collect_gate_inputs_by_scope(
                         peak_context.is_near_peak_window if peak_context is not None else None
                     ),
                 )
-            except Exception as exc:
-                logger.warning(
-                    "gating_scoring_fallback_applied",
-                    event_type="gating.scoring.fallback_applied",
-                    scope=scope,
-                    anomaly_family=anomaly_family,
-                    error=str(exc),
-                )
-                scoring_result = _fallback_scoring_result()
 
             gate_inputs_by_scope[scope].append(
                 GateInputV1(
@@ -421,6 +508,239 @@ def _derive_scoring_result(
         score_reason_code=score_reason_code,
         fallback_applied=False,
     )
+
+
+def _derive_scoring_result_with_fallback(
+    *,
+    scope: GateScope,
+    anomaly_family: Literal["CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY"],
+    evidence_status_map: Mapping[str, EvidenceStatus],
+    is_sustained: bool | None,
+    sustained_consecutive_buckets: int | None,
+    sustained_required_buckets: int | None,
+    is_peak_window: bool | None,
+    is_near_peak_window: bool | None,
+) -> _ScoringResult:
+    try:
+        return _derive_scoring_result(
+            evidence_status_map=evidence_status_map,
+            is_sustained=is_sustained,
+            sustained_consecutive_buckets=sustained_consecutive_buckets,
+            sustained_required_buckets=sustained_required_buckets,
+            is_peak_window=is_peak_window,
+            is_near_peak_window=is_near_peak_window,
+        )
+    except Exception as exc:
+        get_logger("pipeline.stages.gating").warning(
+            "gating_scoring_fallback_applied",
+            event_type="gating.scoring.fallback_applied",
+            scope=scope,
+            anomaly_family=anomaly_family,
+            error=str(exc),
+        )
+        return _fallback_scoring_result()
+
+
+def _resolve_context_scoring_result(
+    *,
+    context: GateInputContext,
+    anomaly_family: Literal["CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY"],
+) -> _ScoringResult | None:
+    decision_basis = context.decision_basis
+    if decision_basis is not None:
+        scoring_by_anomaly_family = decision_basis.get(_SCORING_BY_ANOMALY_FAMILY_KEY)
+        if isinstance(scoring_by_anomaly_family, Mapping):
+            candidate = scoring_by_anomaly_family.get(anomaly_family)
+            if isinstance(candidate, Mapping):
+                parsed_candidate = _parse_scoring_result_payload(candidate)
+                if parsed_candidate is not None:
+                    return parsed_candidate
+
+    if _context_has_explicit_scoring(context=context):
+        return _scoring_result_from_context(context=context)
+
+    return None
+
+
+def _context_has_explicit_scoring(*, context: GateInputContext) -> bool:
+    decision_basis = context.decision_basis
+    if decision_basis is None:
+        return False
+    return _has_v1_scoring_basis_fields(decision_basis)
+
+
+def _scoring_result_from_context(*, context: GateInputContext) -> _ScoringResult:
+    decision_basis = context.decision_basis
+
+    if decision_basis is not None and _has_v1_scoring_basis_fields(decision_basis):
+        base_score = _to_float(decision_basis["base_score"])
+        sustained_boost = _to_float(decision_basis["sustained_boost"])
+        peak_boost = _to_float(decision_basis["peak_boost"])
+        final_score = _to_float(decision_basis["final_score"])
+        if (
+            base_score is not None
+            and sustained_boost is not None
+            and peak_boost is not None
+            and final_score is not None
+        ):
+            clamped_final_score = _clamp_score(final_score)
+            normalized_sustained_boost = _clamp_score(sustained_boost)
+            normalized_peak_boost = _clamp_score(peak_boost)
+            score_reason_code = decision_basis.get("score_reason_code")
+            normalized_reason_code = (
+                score_reason_code.strip()
+                if isinstance(score_reason_code, str) and score_reason_code.strip()
+                else _derive_score_reason_code(
+                    final_score=clamped_final_score,
+                    sustained_boost=normalized_sustained_boost,
+                    peak_boost=normalized_peak_boost,
+                )
+            )
+            fallback_applied = _to_bool(decision_basis.get("fallback_applied"))
+            return _ScoringResult(
+                base_score=_clamp_score(base_score),
+                sustained_boost=normalized_sustained_boost,
+                peak_boost=normalized_peak_boost,
+                final_score=clamped_final_score,
+                proposed_action=context.proposed_action,
+                score_reason_code=normalized_reason_code,
+                fallback_applied=False if fallback_applied is None else fallback_applied,
+            )
+
+    final_score = _clamp_score(context.diagnosis_confidence)
+    return _ScoringResult(
+        base_score=final_score,
+        sustained_boost=0.0,
+        peak_boost=0.0,
+        final_score=final_score,
+        proposed_action=context.proposed_action,
+        score_reason_code=_derive_score_reason_code(
+            final_score=final_score,
+            sustained_boost=0.0,
+            peak_boost=0.0,
+        ),
+        fallback_applied=False,
+    )
+
+
+def _parse_scoring_result_payload(payload: Mapping[str, Any]) -> _ScoringResult | None:
+    score_version = payload.get("score_version")
+    if score_version not in {None, SCORE_V1_VERSION}:
+        return None
+    base_score = _to_float(payload.get("base_score"))
+    sustained_boost = _to_float(payload.get("sustained_boost"))
+    peak_boost = _to_float(payload.get("peak_boost"))
+    final_score = _to_float(payload.get("final_score"))
+    proposed_action = _to_action(payload.get("proposed_action"))
+    score_reason_code = payload.get("score_reason_code")
+    fallback_applied = _to_bool(payload.get("fallback_applied", False))
+
+    if (
+        base_score is None
+        or sustained_boost is None
+        or peak_boost is None
+        or final_score is None
+        or proposed_action is None
+        or not isinstance(score_reason_code, str)
+        or not score_reason_code.strip()
+        or fallback_applied is None
+    ):
+        return None
+
+    return _ScoringResult(
+        base_score=_clamp_score(base_score),
+        sustained_boost=_clamp_score(sustained_boost),
+        peak_boost=_clamp_score(peak_boost),
+        final_score=_clamp_score(final_score),
+        proposed_action=proposed_action,
+        score_reason_code=score_reason_code.strip(),
+        fallback_applied=fallback_applied,
+    )
+
+
+def _has_v1_scoring_basis_fields(payload: Mapping[str, Any]) -> bool:
+    score_reason_code = payload.get("score_reason_code")
+    has_valid_fallback = (
+        "fallback_applied" not in payload
+        or _to_bool(payload.get("fallback_applied")) is not None
+    )
+    return (
+        payload.get("score_version") == SCORE_V1_VERSION
+        and _to_float(payload.get("base_score")) is not None
+        and _to_float(payload.get("sustained_boost")) is not None
+        and _to_float(payload.get("peak_boost")) is not None
+        and _to_float(payload.get("final_score")) is not None
+        and isinstance(score_reason_code, str)
+        and bool(score_reason_code.strip())
+        and has_valid_fallback
+    )
+
+
+def _to_float(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        numeric = float(value)
+        if not math.isfinite(numeric):
+            return None
+        return numeric
+    return None
+
+
+def _to_bool(value: Any) -> bool | None:
+    if isinstance(value, bool):
+        return value
+    return None
+
+
+def _to_action(value: Any) -> Action | None:
+    if isinstance(value, Action):
+        return value
+    if isinstance(value, str):
+        try:
+            return Action(value)
+        except ValueError:
+            return None
+    return None
+
+
+def _select_primary_scoring_result(
+    *,
+    scored_by_anomaly_family: Mapping[
+        Literal["CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY"],
+        _ScoringResult,
+    ],
+) -> _ScoringResult:
+    # Deterministically pick the strongest signal for top-level context fields.
+    sorted_scored = sorted(
+        scored_by_anomaly_family.items(),
+        key=lambda item: (
+            -_ACTION_PRIORITY[item[1].proposed_action],
+            -item[1].final_score,
+            item[0],
+        ),
+    )
+    return sorted_scored[0][1]
+
+
+def _serialize_scoring_result(
+    *,
+    scoring_result: _ScoringResult,
+    max_safe_action: Action | None,
+) -> dict[str, Any]:
+    return {
+        "score_version": SCORE_V1_VERSION,
+        "base_score": scoring_result.base_score,
+        "sustained_boost": scoring_result.sustained_boost,
+        "peak_boost": scoring_result.peak_boost,
+        "final_score": scoring_result.final_score,
+        "proposed_action": _cap_action_to_max_safe(
+            proposed_action=scoring_result.proposed_action,
+            max_safe_action=max_safe_action,
+        ).value,
+        "score_reason_code": scoring_result.score_reason_code,
+        "fallback_applied": scoring_result.fallback_applied,
+    }
 
 
 def _score_base_from_evidence_status_map(

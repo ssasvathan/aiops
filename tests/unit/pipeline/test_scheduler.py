@@ -6,6 +6,7 @@ from urllib.error import URLError
 
 import pytest
 
+import aiops_triage_pipeline.pipeline.scheduler as scheduler_module
 from aiops_triage_pipeline.cache.dedupe import RedisActionDedupeStore
 from aiops_triage_pipeline.contracts.enums import Action, CriticalityTier, EvidenceStatus
 from aiops_triage_pipeline.contracts.gate_input import Finding, GateInputV1
@@ -757,6 +758,74 @@ def test_run_gate_input_stage_cycle_preserves_unknown_evidence_status() -> None:
         gate_input.evidence_status_map["failed_produce_requests_per_sec"]
         == EvidenceStatus.UNKNOWN
     )
+
+
+def test_run_gate_input_stage_cycle_enriches_context_before_collect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    samples = {
+        "topic_messages_in_per_sec": [
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 180.0,
+            },
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 0.4,
+            },
+        ],
+        "total_produce_requests_per_sec": [
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 220.0,
+            }
+        ],
+        "failed_produce_requests_per_sec": [
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 24.0,
+            }
+        ],
+    }
+    evidence_output = collect_evidence_stage_output(samples)
+    scope = ("prod", "cluster-a", "orders")
+    peak_output = run_peak_stage_cycle(
+        evidence_output=evidence_output,
+        historical_windows_by_scope={scope: [float(x) for x in range(1, 21)]},
+        evaluation_time=datetime(2026, 3, 2, 12, 5, tzinfo=UTC),
+        peak_policy=_peak_policy_for_tests(),
+    )
+    context_by_scope = {
+        scope: GateInputContext(
+            stream_id="stream-orders",
+            topic_role="SOURCE_TOPIC",
+            criticality_tier=CriticalityTier.TIER_0,
+            proposed_action=Action.OBSERVE,
+            diagnosis_confidence=0.0,
+        )
+    }
+
+    def _collect_probe(
+        *,
+        evidence_output: object,  # noqa: ARG001
+        peak_output: object,  # noqa: ARG001
+        context_by_scope: dict[tuple[str, ...], GateInputContext],
+        max_safe_action: object,  # noqa: ARG001
+    ) -> dict[tuple[str, ...], tuple[object, ...]]:
+        context = context_by_scope[scope]
+        assert context.diagnosis_confidence > 0.0
+        assert context.proposed_action in {Action.TICKET, Action.PAGE}
+        return {scope: ()}
+
+    monkeypatch.setattr(scheduler_module, "collect_gate_inputs_by_scope", _collect_probe)
+
+    gate_inputs_by_scope = run_gate_input_stage_cycle(
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        context_by_scope=context_by_scope,
+    )
+
+    assert gate_inputs_by_scope == {scope: ()}
 
 
 def test_run_gate_input_stage_cycle_applies_scoring_before_max_safe_action_cap() -> None:

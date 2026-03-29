@@ -1,0 +1,22 @@
+{
+  "tdd_phase": "RED",
+  "total_tests": 4,
+  "api_tests": 4,
+  "e2e_tests": 0,
+  "all_tests_skipped": false,
+  "expected_to_fail": true,
+  "fixtures_created": 1,
+  "acceptance_criteria_covered": [
+    "AC1 deterministic scoring and proposed action derivation",
+    "AC2 sustained=None has no amplification and remains deterministic",
+    "AC3 scoring exception fallback to 0.0/OBSERVE"
+  ],
+  "knowledge_fragments_used": [
+    "data-factories",
+    "test-quality",
+    "test-levels",
+    "test-priorities"
+  ],
+  "subagent_execution": "SEQUENTIAL (API -> backend-only E2E bypass)",
+  "performance_gain": "baseline (backend-only generation)"
+}

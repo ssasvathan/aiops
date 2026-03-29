@@ -1,0 +1,35 @@
+{
+  "success": true,
+  "subagent": "atdd-api-tests",
+  "tests": [
+    {
+      "file": "tests/atdd/test_story_1_1_deterministic_confidence_scoring_core_red_phase.py",
+      "content": "\"\"\"ATDD red-phase acceptance tests for Story 1.1 deterministic confidence scoring core.\"\"\"\n\nfrom __future__ import annotations\n\nfrom collections.abc import Callable\nfrom typing import Any\n\nimport pytest\n\nfrom aiops_triage_pipeline.contracts.enums import Action\nimport aiops_triage_pipeline.pipeline.stages.gating as gating\nfrom aiops_triage_pipeline.pipeline.stages.gating import collect_gate_inputs_by_scope\nfrom tests.atdd.fixtures.story_1_1_test_data import (\n    build_story_1_1_context,\n    build_story_1_1_stage_inputs,\n)\n\n\ndef _locate_private_callable(*, prefix: str, contains: str) -> Callable[..., Any]:\n    candidates: list[Callable[..., Any]] = []\n    for name in sorted(dir(gating)):\n        if not name.startswith(prefix):\n            continue\n        if contains not in name:\n            continue\n        candidate = getattr(gating, name)\n        if callable(candidate):\n            candidates.append(candidate)\n\n    if not candidates:\n        pytest.fail(\n            f\"Story 1.1 RED phase: expected private helper with prefix={prefix!r} and \"\n            f\"name containing {contains!r}.\"\n        )\n    return candidates[0]\n\n\ndef test_p0_collect_gate_inputs_computes_deterministic_score_and_action_from_stage_inputs() -> None:\n    \"\"\"AC1: scoring should derive confidence/action from evidence+sustained+peak in stage 6.\"\"\"\n    evidence_output, peak_output, scope = build_story_1_1_stage_inputs(\n        sustained_value=True,\n        is_peak_window=True,\n    )\n\n    gate_inputs_by_scope = collect_gate_inputs_by_scope(\n        evidence_output=evidence_output,\n        peak_output=peak_output,\n        context_by_scope={scope: build_story_1_1_context()},\n    )\n\n    gate_input = gate_inputs_by_scope[scope][0]\n\n    assert 0.0 < gate_input.diagnosis_confidence <= 1.0\n    assert gate_input.proposed_action in {Action.TICKET, Action.PAGE}\n    assert gate_input.decision_basis is not None\n    for key in (\n        \"score_version\",\n        \"base_score\",\n        \"sustained_boost\",\n        \"peak_boost\",\n        \"final_score\",\n        \"score_reason_code\",\n        \"fallback_applied\",\n    ):\n        assert key in gate_input.decision_basis\n    assert gate_input.decision_basis[\"score_version\"] == \"v1\"\n\n\ndef test_p0_action_band_thresholds_map_exactly_to_story_contract() -> None:\n    \"\"\"AC1: deterministic action mapping boundaries must be <0.6 OBSERVE, 0.6-<0.85 TICKET, >=0.85 PAGE.\"\"\"\n    derive_action = _locate_private_callable(prefix=\"_derive_\", contains=\"action\")\n\n    assert derive_action(0.59) == Action.OBSERVE\n    assert derive_action(0.60) == Action.TICKET\n    assert derive_action(0.85) == Action.PAGE\n\n\ndef test_p1_sustained_none_applies_zero_boost_and_output_is_repeatable() -> None:\n    \"\"\"AC2: is_sustained=None should not apply sustained amplification and must remain deterministic.\"\"\"\n    score_sustained = _locate_private_callable(prefix=\"_score_\", contains=\"sustained\")\n\n    assert score_sustained(False) == pytest.approx(0.0)\n    assert score_sustained(None) == pytest.approx(0.0)\n\n    evidence_output, peak_output, scope = build_story_1_1_stage_inputs(\n        sustained_value=None,\n        is_peak_window=True,\n    )\n    context = {scope: build_story_1_1_context()}\n\n    first = collect_gate_inputs_by_scope(\n        evidence_output=evidence_output,\n        peak_output=peak_output,\n        context_by_scope=context,\n    )\n    second = collect_gate_inputs_by_scope(\n        evidence_output=evidence_output,\n        peak_output=peak_output,\n        context_by_scope=context,\n    )\n\n    assert first == second\n    first_gate_input = first[scope][0]\n    assert first_gate_input.decision_basis is not None\n    assert first_gate_input.decision_basis[\"sustained_boost\"] == pytest.approx(0.0)\n\n\ndef test_p0_scoring_internal_exception_falls_back_to_observe_without_unhandled_raise(\n    monkeypatch: pytest.MonkeyPatch,\n) -> None:\n    \"\"\"AC3: scoring exceptions must degrade to 0.0/OBSERVE and keep gating flow alive.\"\"\"\n    score_base_name = next(\n        (\n            name\n            for name in sorted(dir(gating))\n            if name.startswith(\"_score_\") and \"base\" in name and callable(getattr(gating, name))\n        ),\n        None,\n    )\n    if score_base_name is None:\n        pytest.fail(\"Story 1.1 RED phase: expected a private `_score_*base*` helper in gating.\")\n\n    def _raise_scoring_failure(*args: object, **kwargs: object) -> float:  # noqa: ARG001\n        raise RuntimeError(\"story-1-1-intentional-red-phase-scoring-failure\")\n\n    monkeypatch.setattr(gating, score_base_name, _raise_scoring_failure)\n\n    evidence_output, peak_output, scope = build_story_1_1_stage_inputs(\n        sustained_value=True,\n        is_peak_window=True,\n    )\n\n    gate_inputs_by_scope = collect_gate_inputs_by_scope(\n        evidence_output=evidence_output,\n        peak_output=peak_output,\n        context_by_scope={\n            scope: build_story_1_1_context(\n                proposed_action=Action.PAGE,\n                diagnosis_confidence=0.99,\n            )\n        },\n    )\n\n    gate_input = gate_inputs_by_scope[scope][0]\n\n    assert gate_input.diagnosis_confidence == pytest.approx(0.0)\n    assert gate_input.proposed_action == Action.OBSERVE\n    assert gate_input.decision_basis is not None\n    assert gate_input.decision_basis[\"fallback_applied\"] is True\n",
+      "description": "ATDD backend acceptance tests for Story 1.1 deterministic confidence scoring (RED PHASE)",
+      "expected_to_fail": true,
+      "acceptance_criteria_covered": [
+        "AC1 deterministic scoring and proposed action derivation",
+        "AC2 sustained=None has no amplification and remains deterministic",
+        "AC3 scoring exception fallback to 0.0/OBSERVE"
+      ],
+      "priority_coverage": {
+        "P0": 3,
+        "P1": 1,
+        "P2": 0,
+        "P3": 0
+      }
+    }
+  ],
+  "fixture_needs": [
+    "story_1_1_test_data"
+  ],
+  "knowledge_fragments_used": [
+    "data-factories",
+    "test-quality",
+    "test-levels",
+    "test-priorities"
+  ],
+  "test_count": 4,
+  "tdd_phase": "RED",
+  "summary": "Generated 4 failing backend ATDD tests for Story 1.1"
+}

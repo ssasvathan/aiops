@@ -7,8 +7,8 @@ from typing import Any
 
 import pytest
 
-from aiops_triage_pipeline.contracts.enums import Action
 import aiops_triage_pipeline.pipeline.stages.gating as gating
+from aiops_triage_pipeline.contracts.enums import Action
 from aiops_triage_pipeline.pipeline.stages.gating import collect_gate_inputs_by_scope
 from tests.atdd.fixtures.story_1_1_test_data import (
     build_story_1_1_context,
@@ -74,7 +74,7 @@ def test_p0_collect_gate_inputs_computes_deterministic_score_and_action_from_sta
 
 
 def test_p0_action_band_thresholds_map_exactly_to_story_contract() -> None:
-    """AC1: deterministic action mapping boundaries must be <0.6 OBSERVE, 0.6-<0.85 TICKET, >=0.85 PAGE."""
+    """AC1: enforce action bands: <0.6 OBSERVE, 0.6-<0.85 TICKET, >=0.85 PAGE."""
     derive_action = _locate_private_callable(prefix="_derive_", contains="action")
 
     assert derive_action(0.59) == Action.OBSERVE
@@ -83,7 +83,7 @@ def test_p0_action_band_thresholds_map_exactly_to_story_contract() -> None:
 
 
 def test_p1_sustained_none_applies_zero_boost_and_output_is_repeatable() -> None:
-    """AC2: is_sustained=None should not apply sustained amplification and must remain deterministic."""
+    """AC2: `is_sustained=None` must not amplify and output must remain deterministic."""
     score_sustained = _locate_private_callable(prefix="_score_", contains="sustained")
 
     assert score_sustained(False) == pytest.approx(0.0)
@@ -135,10 +135,7 @@ def test_p0_scoring_internal_exception_falls_back_to_observe_without_unhandled_r
         evidence_output=evidence_output,
         peak_output=peak_output,
         context_by_scope={
-            scope: build_story_1_1_context(
-                proposed_action=Action.PAGE,
-                diagnosis_confidence=0.99,
-            )
+            scope: build_story_1_1_context()
         },
     )
 

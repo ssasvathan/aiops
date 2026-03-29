@@ -1,0 +1,37 @@
+{
+  "success": true,
+  "subagent": "atdd-api-tests",
+  "tests": [
+    {
+      "file": "tests/atdd/test_story_1_2_enrich_gate_inputs_and_enforce_ag4_rules_red_phase.py",
+      "content": "\"\"\"ATDD red-phase acceptance tests for Story 1.2 gate-input enrichment and AG4 rules.\"\"\"\n\nfrom __future__ import annotations\n\nimport pytest\n\nfrom aiops_triage_pipeline.contracts.enums import Action, Environment\nfrom aiops_triage_pipeline.pipeline.scheduler import run_gate_input_stage_cycle\nfrom aiops_triage_pipeline.pipeline.stages.gating import (\n    collect_gate_inputs_by_scope,\n    evaluate_rulebook_gates,\n)\nfrom aiops_triage_pipeline.pipeline.stages.peak import load_rulebook_policy\nimport aiops_triage_pipeline.pipeline.scheduler as scheduler_module\nfrom tests.atdd.fixtures.story_1_2_test_data import (\n    build_story_1_2_context,\n    build_story_1_2_stage_inputs,\n)\n\n\ndef test_p0_scheduler_enriches_gate_input_context_before_collect() -> None:\n    \"\"\"AC1: scheduler must enrich GateInputContext confidence/action before collect call.\"\"\"\n    evidence_output, peak_output, scope = build_story_1_2_stage_inputs(\n        sustained_value=True,\n        is_peak_window=True,\n    )\n    context_by_scope = {scope: build_story_1_2_context()}\n\n    def _collect_probe(\n        *,\n        evidence_output,  # noqa: ANN001\n        peak_output,  # noqa: ANN001\n        context_by_scope,  # noqa: ANN001\n        max_safe_action,  # noqa: ANN001\n    ) -> dict[tuple[str, ...], tuple[object, ...]]:\n        context = context_by_scope[scope]\n        assert context.diagnosis_confidence > 0.0, (\n            \"Story 1.2 RED phase: expected scheduler to enrich diagnosis_confidence \"\n            \"before collect_gate_inputs_by_scope.\"\n        )\n        assert context.proposed_action in {Action.TICKET, Action.PAGE}, (\n            \"Story 1.2 RED phase: expected scheduler to enrich proposed_action \"\n            \"before collect_gate_inputs_by_scope.\"\n        )\n        return {scope: ()}\n\n    monkeypatch = pytest.MonkeyPatch()\n    monkeypatch.setattr(scheduler_module, \"collect_gate_inputs_by_scope\", _collect_probe)\n    try:\n        _ = run_gate_input_stage_cycle(\n            evidence_output=evidence_output,\n            peak_output=peak_output,\n            context_by_scope=context_by_scope,\n        )\n    finally:\n        monkeypatch.undo()\n\n\ndef test_p0_ag4_caps_low_confidence_ticket_or_page_candidates_to_observe() -> None:\n    \"\"\"AC2: confidence <0.6 must cap TICKET/PAGE to OBSERVE regardless of other positive signals.\"\"\"\n    evidence_output, peak_output, scope = build_story_1_2_stage_inputs(\n        sustained_value=True,\n        is_peak_window=True,\n    )\n    gate_input = collect_gate_inputs_by_scope(\n        evidence_output=evidence_output,\n        peak_output=peak_output,\n        context_by_scope={\n            scope: build_story_1_2_context(\n                proposed_action=Action.PAGE,\n                diagnosis_confidence=0.59,\n            )\n        },\n    )[scope][0]\n\n    assert gate_input.diagnosis_confidence == pytest.approx(0.59)\n    assert gate_input.proposed_action == Action.PAGE\n\n    decision = evaluate_rulebook_gates(\n        gate_input=gate_input,\n        rulebook=load_rulebook_policy(),\n    )\n    assert decision.final_action == Action.OBSERVE\n    assert \"LOW_CONFIDENCE\" in decision.gate_reason_codes\n    assert \"NOT_SUSTAINED\" not in decision.gate_reason_codes\n\n\ndef test_p0_ag4_allows_boundary_confidence_when_sustained_and_caps_still_apply() -> None:\n    \"\"\"AC3: confidence 0.6 + sustained=True permits progression, while env caps remain final authority.\"\"\"\n    evidence_output, peak_output, scope = build_story_1_2_stage_inputs(\n        sustained_value=True,\n        is_peak_window=True,\n    )\n    gate_input = collect_gate_inputs_by_scope(\n        evidence_output=evidence_output,\n        peak_output=peak_output,\n        context_by_scope={\n            scope: build_story_1_2_context(\n                proposed_action=Action.PAGE,\n                diagnosis_confidence=0.60,\n            )\n        },\n    )[scope][0]\n\n    assert gate_input.diagnosis_confidence == pytest.approx(0.60)\n    assert gate_input.proposed_action == Action.PAGE\n\n    prod_decision = evaluate_rulebook_gates(\n        gate_input=gate_input,\n        rulebook=load_rulebook_policy(),\n    )\n    assert prod_decision.final_action == Action.PAGE\n    assert \"LOW_CONFIDENCE\" not in prod_decision.gate_reason_codes\n    assert \"NOT_SUSTAINED\" not in prod_decision.gate_reason_codes\n\n    dev_decision = evaluate_rulebook_gates(\n        gate_input=gate_input.model_copy(update={\"env\": Environment.DEV}),\n        rulebook=load_rulebook_policy(),\n    )\n    assert dev_decision.final_action == Action.NOTIFY\n    assert \"AG1_ENV_OR_TIER_CAP\" in dev_decision.gate_reason_codes\n\n\ndef test_p1_ag4_suppresses_not_sustained_even_when_confidence_meets_floor() -> None:\n    \"\"\"AC4: confidence >=0.6 with sustained=False must suppress TICKET/PAGE to OBSERVE.\"\"\"\n    evidence_output, peak_output, scope = build_story_1_2_stage_inputs(\n        sustained_value=False,\n        is_peak_window=True,\n    )\n    gate_input = collect_gate_inputs_by_scope(\n        evidence_output=evidence_output,\n        peak_output=peak_output,\n        context_by_scope={\n            scope: build_story_1_2_context(\n                proposed_action=Action.PAGE,\n                diagnosis_confidence=0.60,\n            )\n        },\n    )[scope][0]\n\n    assert gate_input.diagnosis_confidence == pytest.approx(0.60)\n    assert gate_input.proposed_action == Action.PAGE\n    assert gate_input.sustained is False\n\n    decision = evaluate_rulebook_gates(\n        gate_input=gate_input,\n        rulebook=load_rulebook_policy(),\n    )\n    assert decision.final_action == Action.OBSERVE\n    assert \"NOT_SUSTAINED\" in decision.gate_reason_codes\n    assert \"LOW_CONFIDENCE\" not in decision.gate_reason_codes\n",
+      "description": "ATDD backend acceptance tests for Story 1.2 gate-input enrichment and AG4 confidence+sustained rules (RED PHASE)",
+      "expected_to_fail": true,
+      "acceptance_criteria_covered": [
+        "AC1 scheduler enriches GateInputContext before collect_gate_inputs_by_scope",
+        "AC2 AG4 caps TICKET/PAGE to OBSERVE for diagnosis_confidence < 0.6",
+        "AC3 AG4 allows confidence boundary 0.60 with sustained=true while env/tier caps remain authoritative",
+        "AC4 AG4 suppresses TICKET/PAGE to OBSERVE when sustained=false despite confidence >= 0.6"
+      ],
+      "priority_coverage": {
+        "P0": 3,
+        "P1": 1,
+        "P2": 0,
+        "P3": 0
+      }
+    }
+  ],
+  "fixture_needs": [
+    "story_1_2_test_data"
+  ],
+  "knowledge_fragments_used": [
+    "data-factories",
+    "test-quality",
+    "test-levels-framework",
+    "test-priorities-matrix",
+    "api-testing-patterns"
+  ],
+  "test_count": 4,
+  "tdd_phase": "RED",
+  "summary": "Generated 4 failing backend ATDD tests for Story 1.2"
+}
