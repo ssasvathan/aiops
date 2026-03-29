@@ -1,0 +1,220 @@
+# Story 3.2: Enforce Deterministic Test and Regression Quality Gate
+
+Status: ready-for-dev
+
+<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+## Story
+
+As a Developer,
+I want targeted scoring/gating boundaries and full regression to pass with zero skips,
+so that release readiness is demonstrated objectively.
+
+## Acceptance Criteria
+
+1. Given AG4 boundary scenarios are encoded in unit tests, when tests execute for score `0.59`, `0.60`, all-`UNKNOWN`, and `PRESENT+sustained+peak` cases, then gate outcomes match policy expectations and tests remain deterministic with no external-service dependency for scoring logic.
+
+2. Given the full project regression suite is executed with required runtime prerequisites, when the quality gate runs, then all tests pass and skipped-test count is zero.
+
+## Tasks / Subtasks
+
+- [ ] Verify boundary coverage in stage-level gating tests (AC: 1)
+  - [ ] Confirm explicit checks for `0.59` (cap to `OBSERVE`) and `0.60` (allow `TICKET/PAGE` subject to existing caps) in `tests/unit/pipeline/stages/test_gating.py`.
+  - [ ] Confirm deterministic all-`UNKNOWN` floor and `PRESENT+sustained+peak` high-confidence path assertions are present and stable.
+  - [ ] Add/adjust tests only where gaps are proven; avoid duplicate scenarios already covered.
+
+- [ ] Verify replay and reason-code parity remains deterministic while tightening test gate (AC: 1)
+  - [ ] Reuse existing replay fixtures and golden-oracle patterns in `tests/unit/audit/test_decision_reproducibility.py`.
+  - [ ] Ensure low-confidence vs high-confidence reason-code differentiation remains explicit (`LOW_CONFIDENCE` only on true low-confidence paths).
+
+- [ ] Execute deterministic quality gates with zero skips (AC: 2)
+  - [ ] Run targeted unit suites for gating/replay behavior.
+  - [ ] Run full Docker-enabled regression and confirm `0 skipped`.
+  - [ ] Run lint check for modified test files.
+
+- [ ] Document evidence and update story status trail (AC: 2)
+  - [ ] Capture command evidence and pass/fail outcomes in this story file.
+  - [ ] Keep sprint status transitions aligned with workflow (`ready-for-dev` -> `in-progress` -> `review` -> `done`).
+
+## Dev Notes
+
+### Story Context and Scope
+
+- Epic 3 scope is verification and release readiness for deterministic decision behavior (`FR20`, `NFR13`, `NFR14`, `NFR15`).
+- Story 3.1 completed replay determinism across pre-score/post-score casefiles; Story 3.2 hardens/validates quality-gate execution discipline and boundary coverage evidence.
+- This story should prioritize verification rigor over feature expansion.
+
+### Technical Requirements
+
+- Preserve deterministic AG4 boundary semantics:
+  - `diagnosis_confidence < 0.60` must cap candidate escalations to `OBSERVE`.
+  - `diagnosis_confidence >= 0.60` allows progression subject to sustained and environment/tier caps.
+- Keep deterministic evidence semantics:
+  - all-`UNKNOWN` scenarios remain below AG4 floor.
+  - `PRESENT+sustained+peak` scenario reaches high-confidence path deterministically.
+- Ensure scoring/regression tests do not introduce external-service dependency for scoring assertions (pure deterministic unit paths).
+- Full regression gate must run Docker-enabled and end with `0 skipped`.
+
+### Architecture Compliance
+
+- Keep changes within existing test and verification surface:
+  - `tests/unit/pipeline/stages/test_gating.py`
+  - `tests/unit/audit/test_decision_reproducibility.py` (if parity checks require updates)
+  - `artifact/implementation-artifacts/3-2-enforce-deterministic-test-and-regression-quality-gate.md`
+  - `artifact/implementation-artifacts/sprint-status.yaml`
+- Do not modify frozen-contract or cold-path domains for this story:
+  - `src/aiops_triage_pipeline/contracts/*`
+  - `src/aiops_triage_pipeline/diagnosis/*`
+- Maintain rulebook gate order and deterministic action-cap authority behavior.
+
+### Library / Framework Requirements
+
+Date checked: 2026-03-29 (primary sources: PyPI + official changelogs).
+
+- `pytest`: `9.0.2` (project pinned and aligned)
+  - Relevant change context: pytest 9 dropped Python 3.9 support and introduced 9.x behavior changes documented in official changelog.
+- `pytest-asyncio`: `1.3.0` (project pinned and aligned)
+  - 1.3.0 includes pytest 9 compatibility support.
+- `testcontainers`: latest `4.14.2`; project pinned `4.14.1`
+  - 4.14.2 changelog is minor (Kafka listener/security-protocol configurability); no required upgrade for this story.
+- `ruff`: latest `0.15.8`; project constraint `~0.15` remains compatible.
+
+Guidance:
+- Do not bundle dependency upgrades into Story 3.2 unless required by failing quality gates.
+
+### File Structure Requirements
+
+Primary verification/edit surface:
+
+- `tests/unit/pipeline/stages/test_gating.py`
+- `tests/unit/audit/test_decision_reproducibility.py` (optional, only if coverage parity adjustment needed)
+- `artifact/implementation-artifacts/3-2-enforce-deterministic-test-and-regression-quality-gate.md`
+- `artifact/implementation-artifacts/sprint-status.yaml`
+
+### Testing Requirements
+
+Required execution commands:
+
+```bash
+uv run pytest -q tests/unit/pipeline/stages/test_gating.py
+```
+
+```bash
+uv run pytest -q tests/unit/audit/test_decision_reproducibility.py
+```
+
+```bash
+TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs
+```
+
+```bash
+uv run ruff check tests/unit/pipeline/stages/test_gating.py tests/unit/audit/test_decision_reproducibility.py
+```
+
+Acceptance gate: full regression must complete with `0 skipped`.
+
+### Previous Story Intelligence (3.1)
+
+- Story 3.1 established robust replay patterns that should be reused, not reimplemented:
+  - golden expected `ActionDecisionV1` oracles for pre-score and post-score fixtures,
+  - canonical deserialize/hash validation boundary for legacy payload checks,
+  - explicit determinism assertions for audit-trail repeatability and ordering.
+- Story 3.1 workflow discipline already captured command evidence and zero-skip full regression output; Story 3.2 should keep the same evidence standard.
+
+### Git Intelligence Summary
+
+Recent commit patterns (most recent first):
+
+- `28beb82` `fix(review): resolve story 3.1 replay findings`
+  - Files: Story 3.1 artifact, sprint status, replay unit tests.
+- `50d1c5e` `Story 3.1: add pre/post-score replay determinism coverage`
+  - Files: Story 3.1 artifact, sprint status, replay unit tests.
+- `c8bf6fd` `chore(story): create story 3.1 and mark ready-for-dev`
+  - Files: Story 3.1 artifact, sprint status.
+
+Actionable patterns to follow in Story 3.2:
+
+- Keep implementation localized to relevant test modules and artifact status files.
+- Use strict deterministic assertions (not self-referential oracles) for replay/gating behavior.
+- Keep story and sprint tracking files synchronized with execution state.
+
+### Latest Tech Information
+
+Research date: 2026-03-29.
+
+- PyPI latest versions:
+  - `pytest`: `9.0.2`
+  - `pytest-asyncio`: `1.3.0`
+  - `testcontainers`: `4.14.2`
+  - `ruff`: `0.15.8`
+- Official changelog checks:
+  - pytest 9.0.0 documents dropped Python 3.9 support and notable 9.x behavior changes.
+  - pytest-asyncio 1.3.0 includes support for pytest 9.
+  - testcontainers 4.14.2 release notes indicate minor feature additions, no mandatory migration for this story scope.
+
+### Project Context Reference
+
+Applied critical rules from `artifact/project-context.md`:
+
+- Full regression gate is mandatory with `0 skipped`; skips are failures to remediate, not bypass.
+- Preserve deterministic guardrail authority and avoid introducing non-deterministic test behavior.
+- Keep changes local, contract-safe, and aligned with existing domain test structure.
+- Reuse established shared framework behaviors rather than introducing parallel patterns.
+
+### References
+
+- `artifact/planning-artifacts/epics.md` (Epic 3 / Story 3.2)
+- `artifact/planning-artifacts/prd.md` (FR20, NFR13/NFR14/NFR15 quality-gate requirements)
+- `artifact/planning-artifacts/architecture/project-context-analysis.md`
+- `artifact/planning-artifacts/architecture/project-structure-boundaries.md`
+- `artifact/planning-artifacts/architecture/implementation-patterns-consistency-rules.md`
+- `artifact/project-context.md`
+- `artifact/implementation-artifacts/3-1-validate-replay-determinism-across-pre-score-and-post-score-casefiles.md`
+- `tests/unit/pipeline/stages/test_gating.py`
+- `tests/unit/audit/test_decision_reproducibility.py`
+- `src/aiops_triage_pipeline/pipeline/stages/gating.py`
+- https://pypi.org/pypi/pytest/json
+- https://pypi.org/pypi/pytest-asyncio/json
+- https://pypi.org/pypi/testcontainers/json
+- https://pypi.org/pypi/ruff/json
+- https://docs.pytest.org/en/stable/changelog.html
+- https://pytest-asyncio.readthedocs.io/en/stable/reference/changelog.html
+- https://github.com/testcontainers/testcontainers-python/blob/main/CHANGELOG.md
+
+## Story Completion Status
+
+- Story analysis type: exhaustive artifact and code-surface verification context build
+- Previous-story intelligence: applied from Story 3.1 completed implementation and review fixes
+- Git-intelligence dependency: completed (last 5 commits analyzed)
+- Web research dependency: completed (primary sources only)
+- Completion note: Ultimate context engine analysis completed - comprehensive developer guide created
+
+## Dev Agent Record
+
+### Agent Model Used
+
+gpt-5 (Codex)
+
+### Debug Log References
+
+- Loaded workflow engine (`_bmad/core/tasks/workflow.xml`) and create-story workflow config.
+- Auto-selected first backlog story from `sprint-status.yaml`: `3-2-enforce-deterministic-test-and-regression-quality-gate`.
+- Loaded epics, PRD, architecture shards, project-context rules, and Story 3.1 artifact.
+- Reviewed relevant source/test surfaces (`gating.py`, `test_gating.py`, replay tests) for anti-reinvention guidance.
+- Completed latest-tech checks using PyPI JSON and official changelogs.
+
+### Completion Notes List
+
+- Created Story 3.2 implementation-ready context file.
+- Embedded explicit acceptance-to-task traceability for deterministic boundary and quality-gate verification.
+- Added architecture, file-surface, and regression-command guardrails aligned to current project constraints.
+- Included previous-story and git-intelligence learnings to reduce repeat errors.
+
+### File List
+
+- artifact/implementation-artifacts/3-2-enforce-deterministic-test-and-regression-quality-gate.md
+- artifact/implementation-artifacts/sprint-status.yaml
+
+## Change Log
+
+- 2026-03-29: Story 3.2 created via create-story workflow; status set to `ready-for-dev` with full context package.
