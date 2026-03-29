@@ -1,6 +1,6 @@
 # Story 3.1: Validate Replay Determinism Across Pre-Score and Post-Score Casefiles
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -40,6 +40,13 @@ so that decision histories remain trustworthy and defensible.
 - [x] Execute required verification gates with zero skipped tests (AC: 1, 2)
   - [x] Run targeted audit replay tests.
   - [x] Run full regression suite with Docker-enabled command and confirm `0 skipped`.
+
+### Review Follow-ups (AI)
+
+- [x] [AI-Review][High] Replaced self-referential replay oracles with fixed golden pre-score/post-score expected `ActionDecisionV1` snapshots so replay regressions are detected against stable outputs. [tests/unit/audit/test_decision_reproducibility.py]
+- [x] [AI-Review][High] Legacy-compatibility fixture replay now validates through canonical deserialize/hash boundary (`serialize_casefile_triage` + `validate_casefile_triage_json`) before replay assertions. [tests/unit/audit/test_decision_reproducibility.py]
+- [x] [AI-Review][Medium] Added deterministic serialization stability tests for `build_audit_trail()` (repeatability and map/row order preservation). [tests/unit/audit/test_decision_reproducibility.py]
+- [x] [AI-Review][Medium] Added explicit story-to-change traceability via source commit evidence for Story 3.1 implementation history. [artifact/implementation-artifacts/3-1-validate-replay-determinism-across-pre-score-and-post-score-casefiles.md]
 
 ## Dev Notes
 
@@ -190,6 +197,12 @@ gpt-5 (Codex)
 - Executed `uv run pytest -q tests/unit/audit/test_decision_reproducibility.py` (19 passed).
 - Executed full regression: `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs` (1205 passed, 0 skipped).
 - Executed scoped lint check: `uv run ruff check tests/unit/audit/test_decision_reproducibility.py` (passed).
+- Resolved review findings with golden replay oracles, canonical legacy deserialize/hash validation, and deterministic audit-trail serialization tests.
+
+### Git Evidence
+
+- Story 3.1 implementation commit reference: `50d1c5e` (`Story 3.1: add pre/post-score replay determinism coverage`).
+- Review-fix commit reference: this commit updates replay tests, traceability notes, and sprint/story status sync.
 
 ### Completion Notes List
 
@@ -208,3 +221,55 @@ gpt-5 (Codex)
 ## Change Log
 
 - 2026-03-29: Implemented Story 3.1 replay determinism and backward-compatibility validation updates; story status moved to `review`.
+- 2026-03-29: Senior code review completed; high/medium issues recorded under `Review Follow-ups (AI)` and story status moved to `in-progress`.
+- 2026-03-29: Resolved all review follow-ups (high/medium/low), reran replay and full regression gates, and moved story status to `done`.
+
+## Senior Developer Review (AI)
+
+### Reviewer
+
+- Sas (AI Senior Developer Reviewer)
+
+### Date
+
+- 2026-03-29
+
+### Outcome
+
+- Changes Requested
+
+### Findings Summary
+
+- High: 2
+- Medium: 2
+- Low: 1
+
+### Findings
+
+1. **[High] Replay-oracle construction is self-referential and can miss semantic regressions.**
+   - Pre/post fixtures compute `expected` by calling `evaluate_rulebook_gates(...)`, then verify `reproduce_gate_decision(...)` matches that same runtime-generated result. This couples oracle and implementation and can pass even when replay semantics drift from historical expectations.
+   - Evidence:
+     - `expected` generation: `tests/unit/audit/test_decision_reproducibility.py:361`, `tests/unit/audit/test_decision_reproducibility.py:410`
+     - replay equality assertion loop: `tests/unit/audit/test_decision_reproducibility.py:564`
+
+2. **[High] Legacy compatibility path bypasses canonical hash-validating deserialize boundary.**
+   - The legacy payload test mutates a Python dict and uses `CaseFileTriageV1.model_validate(...)`; it does not pass through `validate_casefile_triage_json(...)`, which is the boundary that enforces triage hash correctness.
+   - Evidence:
+     - direct model validation path: `tests/unit/audit/test_decision_reproducibility.py:646`
+     - canonical validation boundary: `src/aiops_triage_pipeline/storage/casefile_io.py:137`
+
+3. **[Medium] Determinism claim for `build_audit_trail()` is only partially tested.**
+   - Current tests assert key presence and types but do not assert repeatability/stable serialization behavior for map-heavy fields.
+   - Evidence:
+     - claimed deterministic serialization task: `artifact/implementation-artifacts/3-1-validate-replay-determinism-across-pre-score-and-post-score-casefiles.md:37`
+     - current assertion scope: `tests/unit/audit/test_decision_reproducibility.py:718`
+
+4. **[Medium] Story-to-diff traceability is currently unverifiable from working-tree evidence.**
+   - Story File List documents changed files, but `git diff --name-only` and `git diff --cached --name-only` are empty in review context; concrete commit-range evidence is not captured in-story.
+   - Evidence:
+     - File List section: `artifact/implementation-artifacts/3-1-validate-replay-determinism-across-pre-score-and-post-score-casefiles.md:202`
+
+5. **[Low] Post-score fixture metadata is internally inconsistent and unguarded.**
+   - Fixture encodes `diagnosis_confidence=0.95` while `decision_basis.final_score=1.0`; no assertion enforces consistency between these fields, allowing incoherent audit metadata to pass tests.
+   - Evidence:
+     - metadata values: `tests/unit/audit/test_decision_reproducibility.py:384`, `tests/unit/audit/test_decision_reproducibility.py:404`

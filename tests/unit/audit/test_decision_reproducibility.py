@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 from datetime import UTC, datetime
 from typing import Any
@@ -36,7 +37,11 @@ from aiops_triage_pipeline.models.case_file import (
     CaseFileTriageV1,
 )
 from aiops_triage_pipeline.pipeline.stages.gating import evaluate_rulebook_gates
-from aiops_triage_pipeline.storage.casefile_io import compute_casefile_triage_hash
+from aiops_triage_pipeline.storage.casefile_io import (
+    compute_casefile_triage_hash,
+    serialize_casefile_triage,
+    validate_casefile_triage_json,
+)
 
 # ---------------------------------------------------------------------------
 # Test rulebook factory
@@ -232,6 +237,39 @@ _NO_ANOMALY_FINDING = Finding(
     evidence_required=("topic_messages_in_per_sec",),
 )
 
+_GOLDEN_ACTION_FINGERPRINT = (
+    "prod/cluster-a/stream-orders/SHARED_TOPIC/orders/VOLUME_DROP/TIER_0"
+)
+_GOLDEN_GATE_RULE_IDS = ("AG0", "AG1", "AG2", "AG3", "AG4", "AG5", "AG6")
+
+
+def _golden_pre_score_expected_decision() -> ActionDecisionV1:
+    """Golden replay oracle for pre-score records (fixed snapshot)."""
+    return ActionDecisionV1(
+        final_action=Action.NOTIFY,
+        env_cap_applied=False,
+        gate_rule_ids=_GOLDEN_GATE_RULE_IDS,
+        gate_reason_codes=(),
+        action_fingerprint=_GOLDEN_ACTION_FINGERPRINT,
+        postmortem_required=False,
+        postmortem_mode=None,
+        postmortem_reason_codes=(),
+    )
+
+
+def _golden_post_score_expected_decision() -> ActionDecisionV1:
+    """Golden replay oracle for post-score records (fixed snapshot)."""
+    return ActionDecisionV1(
+        final_action=Action.PAGE,
+        env_cap_applied=False,
+        gate_rule_ids=_GOLDEN_GATE_RULE_IDS,
+        gate_reason_codes=(),
+        action_fingerprint=_GOLDEN_ACTION_FINGERPRINT,
+        postmortem_required=True,
+        postmortem_mode="SOFT",
+        postmortem_reason_codes=("PM_PEAK_SUSTAINED",),
+    )
+
 
 def _build_gate_input(
     *,
@@ -358,11 +396,8 @@ def _build_pre_score_replay_fixture(
         evidence_status_map={"topic_messages_in_per_sec": EvidenceStatus.PRESENT},
         decision_basis={"legacy_replay_source": "pre-score"},
     )
-    expected = evaluate_rulebook_gates(
-        gate_input=gate_input,
-        rulebook=rulebook,
-        dedupe_store=None,
-    )
+    assert gate_input.action_fingerprint == _GOLDEN_ACTION_FINGERPRINT
+    expected = _golden_pre_score_expected_decision()
     casefile = _build_minimal_casefile(
         gate_input,
         expected,
@@ -401,17 +436,14 @@ def _build_post_score_replay_fixture(
         case_id="case-audit-post-score",
         env=Environment.PROD,
         proposed_action=Action.PAGE,
-        diagnosis_confidence=0.95,
+        diagnosis_confidence=1.0,
         sustained=True,
         peak=True,
         evidence_status_map={"topic_messages_in_per_sec": EvidenceStatus.PRESENT},
         decision_basis=decision_basis,
     )
-    expected = evaluate_rulebook_gates(
-        gate_input=gate_input,
-        rulebook=rulebook,
-        dedupe_store=None,
-    )
+    assert gate_input.action_fingerprint == _GOLDEN_ACTION_FINGERPRINT
+    expected = _golden_post_score_expected_decision()
     casefile = _build_minimal_casefile(
         gate_input,
         expected,
@@ -588,6 +620,11 @@ def test_reproduce_gate_decision_replays_pre_and_post_score_fixtures_determinist
     assert "score_version" not in pre_basis
     assert pre_score_casefile.gate_input.diagnosis_confidence == 0.0
     assert post_basis.get("score_version") == "v1"
+    assert post_score_casefile.gate_input.diagnosis_confidence == post_basis.get("final_score")
+    assert (
+        post_basis["scoring_by_anomaly_family"]["VOLUME_DROP"]["final_score"]
+        == post_score_casefile.gate_input.diagnosis_confidence
+    )
 
 
 def test_reproduce_gate_decision_keeps_mixed_confidence_reason_code_parity() -> None:
@@ -643,7 +680,11 @@ def test_reproduce_gate_decision_accepts_legacy_casefile_policy_versions_default
     del legacy_payload["policy_versions"]["anomaly_detection_policy_version"]
     del legacy_payload["policy_versions"]["topology_registry_version"]
 
-    legacy_casefile = CaseFileTriageV1.model_validate(legacy_payload)
+    legacy_casefile_unhashed = CaseFileTriageV1.model_validate(legacy_payload)
+    legacy_casefile = legacy_casefile_unhashed.model_copy(
+        update={"triage_hash": compute_casefile_triage_hash(legacy_casefile_unhashed)}
+    )
+    legacy_casefile = validate_casefile_triage_json(serialize_casefile_triage(legacy_casefile))
     assert legacy_casefile.policy_versions.anomaly_detection_policy_version == "v1"
     assert legacy_casefile.policy_versions.topology_registry_version == "2"
 
@@ -722,6 +763,51 @@ def test_build_audit_trail_returns_all_required_keys() -> None:
     assert _REQUIRED_AUDIT_KEYS.issubset(trail.keys()), (
         f"Missing keys: {_REQUIRED_AUDIT_KEYS - set(trail.keys())}"
     )
+
+
+def test_build_audit_trail_is_repeatable_for_identical_casefile() -> None:
+    """build_audit_trail() must be deterministic for repeated invocations."""
+    casefile = _make_full_audit_casefile()
+    first_trail = build_audit_trail(casefile)
+    second_trail = build_audit_trail(casefile)
+    assert first_trail == second_trail
+    assert json.dumps(first_trail, separators=(",", ":"), sort_keys=False) == json.dumps(
+        second_trail, separators=(",", ":"), sort_keys=False
+    )
+
+
+def test_build_audit_trail_preserves_evidence_key_and_row_order() -> None:
+    """Audit-trail serialization should preserve deterministic insertion order."""
+    rulebook = _build_test_rulebook()
+    ordered_status_map = {
+        "z_metric": EvidenceStatus.UNKNOWN,
+        "a_metric": EvidenceStatus.PRESENT,
+        "m_metric": EvidenceStatus.STALE,
+    }
+    gate_input = _build_gate_input(
+        case_id="case-audit-ordering",
+        env=Environment.PROD,
+        proposed_action=Action.NOTIFY,
+        diagnosis_confidence=0.2,
+        sustained=False,
+        peak=False,
+        evidence_status_map=ordered_status_map,
+    )
+    action_decision = evaluate_rulebook_gates(
+        gate_input=gate_input,
+        rulebook=rulebook,
+        dedupe_store=None,
+    )
+    casefile = _build_minimal_casefile(
+        gate_input,
+        action_decision,
+        rulebook_version=str(rulebook.version),
+        case_id="case-audit-ordering",
+    )
+
+    trail = build_audit_trail(casefile)
+    assert list(trail["evidence_status_map"].keys()) == list(ordered_status_map.keys())
+    assert [row["metric_key"] for row in trail["evidence_rows"]] == list(ordered_status_map.keys())
 
 
 def test_build_audit_trail_policy_versions_contains_all_five_non_empty_strings() -> None:
