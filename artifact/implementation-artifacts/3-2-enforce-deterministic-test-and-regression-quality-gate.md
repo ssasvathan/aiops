@@ -1,6 +1,6 @@
 # Story 3.2: Enforce Deterministic Test and Regression Quality Gate
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -18,23 +18,23 @@ so that release readiness is demonstrated objectively.
 
 ## Tasks / Subtasks
 
-- [ ] Verify boundary coverage in stage-level gating tests (AC: 1)
-  - [ ] Confirm explicit checks for `0.59` (cap to `OBSERVE`) and `0.60` (allow `TICKET/PAGE` subject to existing caps) in `tests/unit/pipeline/stages/test_gating.py`.
-  - [ ] Confirm deterministic all-`UNKNOWN` floor and `PRESENT+sustained+peak` high-confidence path assertions are present and stable.
-  - [ ] Add/adjust tests only where gaps are proven; avoid duplicate scenarios already covered.
+- [x] Verify boundary coverage in stage-level gating tests (AC: 1)
+  - [x] Confirm explicit checks for `0.59` (cap to `OBSERVE`) and `0.60` (allow `TICKET/PAGE` subject to existing caps) in `tests/unit/pipeline/stages/test_gating.py`.
+  - [x] Confirm deterministic all-`UNKNOWN` floor and `PRESENT+sustained+peak` high-confidence path assertions are present and stable.
+  - [x] Add/adjust tests only where gaps are proven; avoid duplicate scenarios already covered.
 
-- [ ] Verify replay and reason-code parity remains deterministic while tightening test gate (AC: 1)
-  - [ ] Reuse existing replay fixtures and golden-oracle patterns in `tests/unit/audit/test_decision_reproducibility.py`.
-  - [ ] Ensure low-confidence vs high-confidence reason-code differentiation remains explicit (`LOW_CONFIDENCE` only on true low-confidence paths).
+- [x] Verify replay and reason-code parity remains deterministic while tightening test gate (AC: 1)
+  - [x] Reuse existing replay fixtures and golden-oracle patterns in `tests/unit/audit/test_decision_reproducibility.py`.
+  - [x] Ensure low-confidence vs high-confidence reason-code differentiation remains explicit (`LOW_CONFIDENCE` only on true low-confidence paths).
 
-- [ ] Execute deterministic quality gates with zero skips (AC: 2)
-  - [ ] Run targeted unit suites for gating/replay behavior.
-  - [ ] Run full Docker-enabled regression and confirm `0 skipped`.
-  - [ ] Run lint check for modified test files.
+- [x] Execute deterministic quality gates with zero skips (AC: 2)
+  - [x] Run targeted unit suites for gating/replay behavior.
+  - [x] Run full Docker-enabled regression and confirm `0 skipped`.
+  - [x] Run lint check for modified test files.
 
-- [ ] Document evidence and update story status trail (AC: 2)
-  - [ ] Capture command evidence and pass/fail outcomes in this story file.
-  - [ ] Keep sprint status transitions aligned with workflow (`ready-for-dev` -> `in-progress` -> `review` -> `done`).
+- [x] Document evidence and update story status trail (AC: 2)
+  - [x] Capture command evidence and pass/fail outcomes in this story file.
+  - [x] Keep sprint status transitions aligned with workflow (`ready-for-dev` -> `in-progress` -> `review` -> `done`).
 
 ## Dev Notes
 
@@ -202,6 +202,15 @@ gpt-5 (Codex)
 - Loaded epics, PRD, architecture shards, project-context rules, and Story 3.1 artifact.
 - Reviewed relevant source/test surfaces (`gating.py`, `test_gating.py`, replay tests) for anti-reinvention guidance.
 - Completed latest-tech checks using PyPI JSON and official changelogs.
+- Updated sprint tracking transition for this story from `ready-for-dev` -> `in-progress` -> `review`.
+- Executed targeted gates:
+  - `uv run pytest -q tests/unit/pipeline/stages/test_gating.py` -> `68 passed`
+  - `uv run pytest -q tests/unit/audit/test_decision_reproducibility.py` -> `21 passed`
+  - `uv run pytest -q tests/unit/pipeline/stages/test_gating.py tests/unit/audit/test_decision_reproducibility.py` -> `89 passed`
+- Executed full regression twice after final edits:
+  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs` -> `1207 passed`, `0 skipped`
+- Executed lint check:
+  - `uv run ruff check tests/unit/pipeline/stages/test_gating.py tests/unit/audit/test_decision_reproducibility.py` -> `All checks passed!`
 
 ### Completion Notes List
 
@@ -209,12 +218,21 @@ gpt-5 (Codex)
 - Embedded explicit acceptance-to-task traceability for deterministic boundary and quality-gate verification.
 - Added architecture, file-surface, and regression-command guardrails aligned to current project constraints.
 - Included previous-story and git-intelligence learnings to reduce repeat errors.
+- Verified AC1 boundary coverage already present and deterministic in stage-level gating and replay suites:
+  - AG4 `0.59` stays capped (`OBSERVE`) and `0.60` stays promotion-eligible (subject to other caps),
+  - all-`UNKNOWN` evidence path remains low-confidence,
+  - `PRESENT + sustained + peak` path remains high-confidence with explicit reason-code assertions.
+- Applied minimal test-only formatting updates in `tests/unit/pipeline/stages/test_gating.py` to satisfy Ruff E501 and keep quality gate green.
+- Validated sprint-quality gate with Docker-enabled full regression and confirmed `0 skipped`.
 
 ### File List
 
+- tests/unit/pipeline/stages/test_gating.py
 - artifact/implementation-artifacts/3-2-enforce-deterministic-test-and-regression-quality-gate.md
 - artifact/implementation-artifacts/sprint-status.yaml
 
 ## Change Log
 
 - 2026-03-29: Story 3.2 created via create-story workflow; status set to `ready-for-dev` with full context package.
+- 2026-03-29: Story 3.2 implementation completed; deterministic boundary/replay evidence validated and story status set to `review`.
+- 2026-03-29: Applied minimal Ruff line-length compliance updates in `tests/unit/pipeline/stages/test_gating.py`; full regression re-run passed with `0 skipped`.

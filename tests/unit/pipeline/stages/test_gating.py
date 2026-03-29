@@ -401,7 +401,7 @@ def test_collect_gate_inputs_by_scope_populates_score_metadata_and_candidate_act
     assert gate_input.decision_basis["fallback_applied"] is False
 
 
-def test_collect_gate_inputs_by_scope_preserves_parseable_scoring_by_anomaly_family_payload() -> None:
+def test_collect_gate_inputs_preserves_parseable_scoring_payload() -> None:
     evidence_output, peak_output, scope = _build_story_1_1_stage_inputs(
         sustained_value=True,
         is_peak_window=True,
@@ -454,14 +454,26 @@ def test_collect_gate_inputs_by_scope_confidence_varies_with_evidence_quality() 
     }
     base_samples = {
         "topic_messages_in_per_sec": [
-            {"labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"}, "value": 180.0},
-            {"labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"}, "value": 0.4},
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 180.0,
+            },
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 0.4,
+            },
         ],
         "total_produce_requests_per_sec": [
-            {"labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"}, "value": 220.0},
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 220.0,
+            },
         ],
         "failed_produce_requests_per_sec": [
-            {"labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"}, "value": 24.0},
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 24.0,
+            },
         ],
     }
     # Adding an empty key means the evidence_status_map will include one UNKNOWN entry,
@@ -496,15 +508,19 @@ def test_collect_gate_inputs_by_scope_confidence_varies_with_evidence_quality() 
     confidence_full = gi_full[scope][0].diagnosis_confidence
     confidence_partial = gi_partial[scope][0].diagnosis_confidence
 
-    assert confidence_full > 0.0, "Non-zero confidence required for all-PRESENT evidence path (AC 1)"
-    assert confidence_partial > 0.0, "Non-zero confidence required for partial-evidence path (AC 1)"
+    assert confidence_full > 0.0, (
+        "Non-zero confidence required for all-PRESENT evidence path (AC 1)"
+    )
+    assert confidence_partial > 0.0, (
+        "Non-zero confidence required for partial-evidence path (AC 1)"
+    )
     assert confidence_full > confidence_partial, (
         f"Confidence must vary with evidence quality to avoid flat-default regression "
         f"(full={confidence_full}, partial={confidence_partial})"
     )
 
 
-def test_collect_gate_inputs_by_scope_direct_path_decision_basis_excludes_scoring_by_anomaly_family() -> None:
+def test_collect_gate_inputs_direct_path_excludes_scoring_by_anomaly_family() -> None:
     """Direct path (no pre-enrichment) produces valid top-level score fields in decision_basis
     but does NOT include scoring_by_anomaly_family — that payload is only added by
     enrich_gate_input_context_by_scope."""
@@ -535,7 +551,7 @@ def test_collect_gate_inputs_by_scope_direct_path_decision_basis_excludes_scorin
     )
 
 
-def test_collect_gate_inputs_by_scope_scoring_by_anomaly_family_covers_low_confidence_path() -> None:
+def test_collect_gate_inputs_scoring_payload_covers_low_confidence_path() -> None:
     """AC 1: scoring_by_anomaly_family payload is parseable and correct for low-confidence
     paths (LOW_CONFIDENCE_INSUFFICIENT_EVIDENCE), not only for HIGH_CONFIDENCE_SUSTAINED_PEAK.
 
@@ -551,14 +567,26 @@ def test_collect_gate_inputs_by_scope_scoring_by_anomaly_family_covers_low_confi
 
     samples_low_quality = {
         "topic_messages_in_per_sec": [
-            {"labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"}, "value": 180.0},
-            {"labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"}, "value": 0.4},
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 180.0,
+            },
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 0.4,
+            },
         ],
         "total_produce_requests_per_sec": [
-            {"labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"}, "value": 220.0},
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 220.0,
+            },
         ],
         "failed_produce_requests_per_sec": [
-            {"labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"}, "value": 24.0},
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 24.0,
+            },
         ],
         "consumer_lag_metric_a": [],   # missing series → UNKNOWN
         "consumer_lag_metric_b": [],   # missing series → UNKNOWN
