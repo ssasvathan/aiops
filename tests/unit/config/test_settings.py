@@ -47,15 +47,16 @@ def test_integration_mode_override(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_max_action_for_all_environments() -> None:
     """max_action returns correct cap per APP_ENV value."""
-    for env_value, expected in [
-        ("local", "OBSERVE"),
-        ("dev", "NOTIFY"),
-        ("uat", "TICKET"),
-        ("prod", "PAGE"),
+    for env_value, expected, depth in [
+        ("local", "OBSERVE", 12),
+        ("dev", "NOTIFY", 2016),
+        ("uat", "TICKET", 4320),
+        ("prod", "PAGE", 8640),
     ]:
         settings = Settings(
             _env_file=None,
             APP_ENV=env_value,
+            STAGE2_PEAK_HISTORY_MAX_DEPTH=depth,
             KAFKA_BOOTSTRAP_SERVERS="localhost:9092",
             DATABASE_URL="postgresql+psycopg://u:p@h/db",
             REDIS_URL="redis://localhost:6379/0",
@@ -191,6 +192,7 @@ def test_otlp_deployment_environment_defaults_to_app_env() -> None:
     settings = Settings(
         _env_file=None,
         APP_ENV="uat",
+        STAGE2_PEAK_HISTORY_MAX_DEPTH=4320,
         KAFKA_BOOTSTRAP_SERVERS="localhost:9092",
         DATABASE_URL="postgresql+psycopg://u:p@h/db",
         REDIS_URL="redis://localhost:6379/0",
@@ -267,6 +269,7 @@ def test_get_settings_returns_same_instance() -> None:
 _PROD_SETTINGS_BASE: dict = dict(
     _env_file=None,
     APP_ENV="prod",
+    STAGE2_PEAK_HISTORY_MAX_DEPTH=8640,
     KAFKA_BOOTSTRAP_SERVERS="localhost:9092",
     DATABASE_URL="postgresql+psycopg://u:p@h/db",
     REDIS_URL="redis://localhost:6379/0",
@@ -595,6 +598,7 @@ def test_env_file_selection_uses_app_env() -> None:
     """APP_ENV=dev resolves to AppEnv.dev and max_action returns NOTIFY (FR50 precedence)."""
     settings = Settings(
         APP_ENV="dev",
+        STAGE2_PEAK_HISTORY_MAX_DEPTH=2016,
         _env_file=None,
         KAFKA_BOOTSTRAP_SERVERS="localhost:9092",
         DATABASE_URL="postgresql+psycopg://u:p@h/db",
@@ -622,3 +626,278 @@ def test_settings_health_server_port_validation_rejects_out_of_range() -> None:
         Settings(**{**_base_settings_kwargs(), "HEALTH_SERVER_PORT": 0})
     with pytest.raises((ValueError, ValidationError)):
         Settings(**{**_base_settings_kwargs(), "HEALTH_SERVER_PORT": 65536})
+
+
+# ---------------------------------------------------------------------------
+# ATDD: Story 2.1 — Environment-specific peak history depth configuration
+# Red phase: These tests FAIL until the story is fully implemented.
+# Acceptance Criteria: AC1 (env files), AC2 (no fallback), AC3 (validator).
+# ---------------------------------------------------------------------------
+
+
+# --- AC1: FR12 — env files define explicit depth values ---
+
+
+def test_env_dev_contains_stage2_peak_history_max_depth_2016() -> None:
+    """AC1/FR12: config/.env.dev must define STAGE2_PEAK_HISTORY_MAX_DEPTH=2016.
+
+    Fails RED: STAGE2_PEAK_HISTORY_MAX_DEPTH is currently absent from config/.env.dev.
+    """
+    env_dev = Path("config/.env.dev")
+    assert env_dev.exists(), "config/.env.dev must exist"
+    content = env_dev.read_text()
+    assert "STAGE2_PEAK_HISTORY_MAX_DEPTH=2016" in content, (
+        "config/.env.dev must contain STAGE2_PEAK_HISTORY_MAX_DEPTH=2016 "
+        "(7 days × 288 samples/day at 5-min intervals)"
+    )
+
+
+def test_env_uat_template_contains_stage2_peak_history_max_depth_4320() -> None:
+    """AC1/FR12: config/.env.uat.template must define STAGE2_PEAK_HISTORY_MAX_DEPTH=4320.
+
+    Fails RED: STAGE2_PEAK_HISTORY_MAX_DEPTH is currently absent from config/.env.uat.template.
+    """
+    env_uat = Path("config/.env.uat.template")
+    assert env_uat.exists(), "config/.env.uat.template must exist"
+    content = env_uat.read_text()
+    assert "STAGE2_PEAK_HISTORY_MAX_DEPTH=4320" in content, (
+        "config/.env.uat.template must contain STAGE2_PEAK_HISTORY_MAX_DEPTH=4320 "
+        "(15 days × 288 samples/day at 5-min intervals)"
+    )
+
+
+def test_env_prod_template_contains_stage2_peak_history_max_depth_8640() -> None:
+    """AC1/FR12: config/.env.prod.template must define STAGE2_PEAK_HISTORY_MAX_DEPTH=8640.
+
+    Fails RED: STAGE2_PEAK_HISTORY_MAX_DEPTH is currently absent from config/.env.prod.template.
+    """
+    env_prod = Path("config/.env.prod.template")
+    assert env_prod.exists(), "config/.env.prod.template must exist"
+    content = env_prod.read_text()
+    assert "STAGE2_PEAK_HISTORY_MAX_DEPTH=8640" in content, (
+        "config/.env.prod.template must contain STAGE2_PEAK_HISTORY_MAX_DEPTH=8640 "
+        "(30 days × 288 samples/day at 5-min intervals)"
+    )
+
+
+# --- AC2: FR13 — explicit env-file depth overrides the legacy default ---
+
+
+def test_settings_dev_env_depth_resolves_to_2016_not_default_12() -> None:
+    """AC2/FR13: Settings loaded with APP_ENV=dev depth value must resolve to 2016, not 12.
+
+    Fails RED: STAGE2_PEAK_HISTORY_MAX_DEPTH=2016 is not yet in config/.env.dev,
+    so depth falls back to the legacy class-level default of 12.
+    """
+    get_settings.cache_clear()
+    try:
+        settings = Settings(
+            **{
+                **_base_settings_kwargs(),
+                "APP_ENV": "dev",
+                "STAGE2_PEAK_HISTORY_MAX_DEPTH": 2016,
+            }
+        )
+        assert settings.STAGE2_PEAK_HISTORY_MAX_DEPTH == 2016, (
+            f"Expected STAGE2_PEAK_HISTORY_MAX_DEPTH=2016 for APP_ENV=dev, "
+            f"got {settings.STAGE2_PEAK_HISTORY_MAX_DEPTH}"
+        )
+        assert settings.STAGE2_PEAK_HISTORY_MAX_DEPTH != 12, (
+            "STAGE2_PEAK_HISTORY_MAX_DEPTH must not fall back to legacy default 12 "
+            "when explicit value is provided for APP_ENV=dev"
+        )
+    finally:
+        get_settings.cache_clear()
+
+
+def test_settings_explicit_non_default_depth_passes_validation_for_all_envs() -> None:
+    """AC2/FR13: An explicit non-default depth value (e.g. 100) passes validation for any env.
+
+    Fails RED: The new startup validator does not exist yet — when implemented,
+    it must allow any explicit non-12 value regardless of APP_ENV.
+    """
+    get_settings.cache_clear()
+    try:
+        for env_value in ("dev", "uat", "prod", "local", "harness"):
+            settings = Settings(
+                **{
+                    **_base_settings_kwargs(),
+                    "APP_ENV": env_value,
+                    "STAGE2_PEAK_HISTORY_MAX_DEPTH": 100,
+                }
+            )
+            assert settings.STAGE2_PEAK_HISTORY_MAX_DEPTH == 100, (
+                f"APP_ENV={env_value}: explicit depth=100 must be accepted, "
+                f"got {settings.STAGE2_PEAK_HISTORY_MAX_DEPTH}"
+            )
+    finally:
+        get_settings.cache_clear()
+
+
+# --- AC3: NFR-R3 — startup validator catches missing depth for named envs ---
+
+
+def test_settings_dev_with_default_depth_12_raises_value_error() -> None:
+    """AC3/NFR-R3: APP_ENV=dev with STAGE2_PEAK_HISTORY_MAX_DEPTH=12
+    (default) must raise ValueError.
+
+    Fails RED: validate_peak_depth_not_default_for_named_envs validator does not exist yet.
+    """
+    get_settings.cache_clear()
+    try:
+        with pytest.raises((ValueError, ValidationError), match="STAGE2_PEAK_HISTORY_MAX_DEPTH"):
+            Settings(
+                **{
+                    **_base_settings_kwargs(),
+                    "APP_ENV": "dev",
+                    "STAGE2_PEAK_HISTORY_MAX_DEPTH": 12,
+                }
+            )
+    finally:
+        get_settings.cache_clear()
+
+
+def test_settings_uat_with_default_depth_12_raises_value_error() -> None:
+    """AC3/NFR-R3: APP_ENV=uat with STAGE2_PEAK_HISTORY_MAX_DEPTH=12
+    (default) must raise ValueError.
+
+    Fails RED: validate_peak_depth_not_default_for_named_envs validator does not exist yet.
+    """
+    get_settings.cache_clear()
+    try:
+        with pytest.raises((ValueError, ValidationError), match="STAGE2_PEAK_HISTORY_MAX_DEPTH"):
+            Settings(
+                **{
+                    **_base_settings_kwargs(),
+                    "APP_ENV": "uat",
+                    "STAGE2_PEAK_HISTORY_MAX_DEPTH": 12,
+                }
+            )
+    finally:
+        get_settings.cache_clear()
+
+
+def test_settings_prod_with_default_depth_12_raises_value_error() -> None:
+    """AC3/NFR-R3: APP_ENV=prod with STAGE2_PEAK_HISTORY_MAX_DEPTH=12
+    (default) must raise ValueError.
+
+    Fails RED: validate_peak_depth_not_default_for_named_envs validator does not exist yet.
+    """
+    get_settings.cache_clear()
+    try:
+        with pytest.raises((ValueError, ValidationError), match="STAGE2_PEAK_HISTORY_MAX_DEPTH"):
+            Settings(
+                **{
+                    **_base_settings_kwargs(),
+                    "APP_ENV": "prod",
+                    "STAGE2_PEAK_HISTORY_MAX_DEPTH": 12,
+                    # Must satisfy other prod-only validators to isolate the depth check
+                    "INTEGRATION_MODE_LLM": "LIVE",
+                    "INTEGRATION_MODE_PD": "LIVE",
+                    "INTEGRATION_MODE_SLACK": "LIVE",
+                    "INTEGRATION_MODE_SN": "LIVE",
+                }
+            )
+    finally:
+        get_settings.cache_clear()
+
+
+def test_validator_error_message_includes_environment_name_dev() -> None:
+    """AC3: ValueError message for APP_ENV=dev must include the environment name 'dev'.
+
+    Fails RED: validate_peak_depth_not_default_for_named_envs validator does not exist yet.
+    """
+    get_settings.cache_clear()
+    try:
+        with pytest.raises((ValueError, ValidationError)) as exc_info:
+            Settings(
+                **{
+                    **_base_settings_kwargs(),
+                    "APP_ENV": "dev",
+                    "STAGE2_PEAK_HISTORY_MAX_DEPTH": 12,
+                }
+            )
+        error_text = str(exc_info.value)
+        assert "dev" in error_text, (
+            "Error message must include environment name 'dev' for operator clarity; "
+            f"got: {error_text}"
+        )
+    finally:
+        get_settings.cache_clear()
+
+
+def test_validator_error_message_includes_environment_name_uat() -> None:
+    """AC3: ValueError message for APP_ENV=uat must include the environment name 'uat'.
+
+    Fails RED: validate_peak_depth_not_default_for_named_envs validator does not exist yet.
+    """
+    get_settings.cache_clear()
+    try:
+        with pytest.raises((ValueError, ValidationError)) as exc_info:
+            Settings(
+                **{
+                    **_base_settings_kwargs(),
+                    "APP_ENV": "uat",
+                    "STAGE2_PEAK_HISTORY_MAX_DEPTH": 12,
+                }
+            )
+        error_text = str(exc_info.value)
+        assert "uat" in error_text, (
+            "Error message must include environment name 'uat' for operator clarity; "
+            f"got: {error_text}"
+        )
+    finally:
+        get_settings.cache_clear()
+
+
+# --- AC3: local/harness envs are EXEMPT from the depth validator ---
+
+
+def test_settings_local_with_default_depth_12_does_not_raise() -> None:
+    """AC3: APP_ENV=local with STAGE2_PEAK_HISTORY_MAX_DEPTH=12 must NOT raise.
+
+    Fails RED: When the validator is added, it must explicitly exempt APP_ENV=local.
+    This test verifies the exemption is correct — it will fail if the validator
+    incorrectly raises for local.
+
+    Note: Currently passes (no validator exists), but is included as a regression
+    guard to ensure the exemption is preserved when the validator is added.
+    """
+    get_settings.cache_clear()
+    try:
+        settings = Settings(
+            **{
+                **_base_settings_kwargs(),
+                "APP_ENV": "local",
+                "STAGE2_PEAK_HISTORY_MAX_DEPTH": 12,
+            }
+        )
+        assert settings.STAGE2_PEAK_HISTORY_MAX_DEPTH == 12
+        assert settings.APP_ENV == AppEnv.local
+    finally:
+        get_settings.cache_clear()
+
+
+def test_settings_harness_with_default_depth_12_does_not_raise() -> None:
+    """AC3: APP_ENV=harness with STAGE2_PEAK_HISTORY_MAX_DEPTH=12 must NOT raise.
+
+    Fails RED: When the validator is added, it must explicitly exempt APP_ENV=harness.
+    This test verifies the exemption is correct — it will fail if the validator
+    incorrectly raises for harness.
+
+    Note: Currently passes (no validator exists), but is included as a regression
+    guard to ensure the exemption is preserved when the validator is added.
+    """
+    get_settings.cache_clear()
+    try:
+        settings = Settings(
+            **{
+                **_base_settings_kwargs(),
+                "APP_ENV": "harness",
+                "STAGE2_PEAK_HISTORY_MAX_DEPTH": 12,
+            }
+        )
+        assert settings.STAGE2_PEAK_HISTORY_MAX_DEPTH == 12
+        assert settings.APP_ENV == AppEnv.harness
+    finally:
+        get_settings.cache_clear()

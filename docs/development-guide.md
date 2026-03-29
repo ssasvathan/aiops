@@ -28,6 +28,20 @@ APP_ENV=local uv run python -m aiops_triage_pipeline --mode outbox-publisher
 APP_ENV=local uv run python -m aiops_triage_pipeline --mode casefile-lifecycle --once
 ```
 
+## Stage 2 Peak History Depth by Environment
+
+`STAGE2_PEAK_HISTORY_MAX_DEPTH` must be explicitly set in env files for named deployment
+environments. Values are calibrated from 5-minute sampling (288 samples/day):
+
+| Environment | Samples | Days |
+|---|---:|---:|
+| `dev` | `2016` | `7` |
+| `uat` | `4320` | `15` |
+| `prod` | `8640` | `30` |
+
+Local and harness environments can continue using the default depth for isolated development
+and test harness execution.
+
 ## Build and Packaging
 
 - Container build: `docker build -t aiops-triage-pipeline .`

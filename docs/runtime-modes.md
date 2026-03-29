@@ -16,6 +16,10 @@ Every mode runs the same bootstrap sequence before any mode-specific logic:
 4. Initialise the `OperationalAlertEvaluator` scoped to `APP_ENV`
 5. Configure OTLP metrics export
 
+For named environments (`dev`, `uat`, `prod`), `STAGE2_PEAK_HISTORY_MAX_DEPTH` must be
+explicitly configured in the corresponding env file. Runtime startup validation rejects
+legacy fallback depth `12` for those environments.
+
 ---
 
 ## hot-path

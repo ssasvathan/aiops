@@ -237,6 +237,19 @@ class Settings(BaseSettings):
             self.OTLP_DEPLOYMENT_ENVIRONMENT = self.APP_ENV.value
         return self
 
+    @model_validator(mode="after")
+    def validate_peak_depth_not_default_for_named_envs(self) -> "Settings":
+        """Reject legacy peak-history fallback depth for dev/uat/prod environments."""
+        if (
+            self.APP_ENV in (AppEnv.dev, AppEnv.uat, AppEnv.prod)
+            and self.STAGE2_PEAK_HISTORY_MAX_DEPTH == 12
+        ):
+            raise ValueError(
+                "STAGE2_PEAK_HISTORY_MAX_DEPTH must be explicitly set for "
+                f"APP_ENV={self.APP_ENV.value}; refusing legacy default 12"
+            )
+        return self
+
     def log_active_config(self, logger: structlog.BoundLogger) -> None:
         """Log active configuration at startup (NFR-O4). Masks secret values."""
         logger.info(
