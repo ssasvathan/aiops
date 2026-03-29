@@ -48,7 +48,7 @@ development_status:
 
   epic-2: in-progress
   2-1-configure-environment-specific-peak-history-depth-and-loading: done
-  2-2-calibrate-and-apply-shard-lease-ttl-with-race-safety-guardrails: backlog
+  2-2-calibrate-and-apply-shard-lease-ttl-with-race-safety-guardrails: ready-for-dev
   epic-2-retrospective: optional
 
   epic-3: backlog
