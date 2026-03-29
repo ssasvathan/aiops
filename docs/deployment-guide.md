@@ -52,6 +52,16 @@ Configured env values:
 - `config/.env.uat.template`: `SHARD_LEASE_TTL_SECONDS=294`
 - `config/.env.prod.template`: `SHARD_LEASE_TTL_SECONDS=294` (aligned to UAT calibration basis)
 
+Evidence artifact:
+- `artifact/implementation-artifacts/2-2-shard-lease-ttl-calibration-evidence-2026-03-29.md`
+
+Operator recalibration procedure:
+1. Export UAT cycle-duration samples for a representative window at 5-minute cadence.
+2. Record `window_start_utc`, `window_end_utc`, `sample_count`, and `p95_seconds` in the evidence artifact.
+3. Compute `candidate_ttl_seconds = ceil(p95_seconds + safety_margin_seconds)` where `safety_margin_seconds >= 30`.
+4. Enforce guardrail `candidate_ttl_seconds < HOT_PATH_SCHEDULER_INTERVAL_SECONDS`; if violated, do not clamp silently.
+5. Update UAT/Prod env templates, run full regression with zero skips, and commit both config and evidence updates.
+
 ## Distributed Coordination Rollout
 
 Distributed coordination can be enabled incrementally using two independent feature flags.

@@ -123,6 +123,17 @@ Configured values:
 - `config/.env.uat.template`: `SHARD_LEASE_TTL_SECONDS=294`
 - `config/.env.prod.template`: `SHARD_LEASE_TTL_SECONDS=294` (aligned to approved UAT basis)
 
+Evidence artifact:
+- `artifact/implementation-artifacts/2-2-shard-lease-ttl-calibration-evidence-2026-03-29.md`
+
+Recalibration runbook (operators):
+1. Gather one full representative UAT window (5-minute scheduler cadence) from hot-path cycle-duration telemetry.
+2. Record raw sample count `n`, window start/end (UTC), and p95 in the evidence artifact.
+3. Compute `candidate_ttl_seconds = ceil(p95_seconds + safety_margin_seconds)` with `safety_margin_seconds >= 30`.
+4. Validate guardrail: `candidate_ttl_seconds < HOT_PATH_SCHEDULER_INTERVAL_SECONDS`; if this fails, stop rollout and adjust interval/operating model (no silent clamp).
+5. Update `config/.env.uat.template` and `config/.env.prod.template`, then run full regression with zero skips.
+6. Commit the updated evidence artifact with final approved values and date.
+
 **Rollback:** Set `SHARD_REGISTRY_ENABLED=false` to revert to single-pod full-scope processing instantly.
 
 ### Coordination state per flag combination

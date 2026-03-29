@@ -1,6 +1,6 @@
 # Story 2.2: Calibrate and Apply Shard Lease TTL with Race-Safety Guardrails
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -260,6 +260,9 @@ gpt-5 (Codex)
 - Added startup guardrails in `Settings` for named-env explicit shard lease TTL and TTL `<` scheduler interval validation.
 - Updated env templates and docs with calibrated TTL values and documented UAT p95 calibration basis.
 - Executed required Docker precheck and test gates, including full regression with zero skipped tests.
+- Added integration coverage proving residual overlap retries are suppressed via AG5 dedupe before external effects can re-trigger.
+- Added calibration evidence artifact plus operator recalibration runbook steps in deployment/runtime docs.
+- Re-ran targeted integration and full regression after review-fix updates.
 
 ### Completion Notes List
 
@@ -268,12 +271,13 @@ gpt-5 (Codex)
 - Added startup validations:
   - named envs (`dev|uat|prod`) must explicitly set `SHARD_LEASE_TTL_SECONDS`;
   - `SHARD_LEASE_TTL_SECONDS` must be `< HOT_PATH_SCHEDULER_INTERVAL_SECONDS`.
-- Added/updated tests for named-env explicit TTL validation, scheduler TTL wiring, and guardrail validation behavior.
-- Updated operational docs (`runtime-modes` and `deployment-guide`) with calibration window/methodology and rollout-safe guardrails.
+- Added/updated tests for named-env explicit TTL validation, scheduler TTL wiring, guardrail validation behavior, and residual overlap duplicate suppression.
+- Updated operational docs (`runtime-modes` and `deployment-guide`) with calibration window/methodology, operator recalibration runbook steps, and evidence artifact linkage.
+- Added calibration evidence record: `artifact/implementation-artifacts/2-2-shard-lease-ttl-calibration-evidence-2026-03-29.md`.
 - Quality gate results:
   - `uv run pytest -q tests/unit/config/test_settings.py tests/unit/pipeline/test_scheduler.py` -> `124 passed`
-  - `uv run pytest -q tests/integration/coordination/test_shard_lease_contention.py` -> `4 passed`
-  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs` -> `1202 passed`, `0 skipped`.
+  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q tests/integration/coordination/test_shard_lease_contention.py -rs` -> `5 passed`
+  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs` -> `1203 passed`, `0 skipped`.
 
 ### File List
 
@@ -284,7 +288,34 @@ gpt-5 (Codex)
 - tests/unit/config/test_settings.py
 - tests/unit/pipeline/test_scheduler.py
 - tests/unit/test_main.py
+- tests/integration/coordination/test_shard_lease_contention.py
 - docs/runtime-modes.md
 - docs/deployment-guide.md
+- artifact/implementation-artifacts/2-2-shard-lease-ttl-calibration-evidence-2026-03-29.md
 - artifact/implementation-artifacts/2-2-calibrate-and-apply-shard-lease-ttl-with-race-safety-guardrails.md
 - artifact/implementation-artifacts/sprint-status.yaml
+
+### Change Log
+
+- 2026-03-29: Added explicit `SHARD_LEASE_TTL_SECONDS` values and named-env startup guardrails (`required` + `< scheduler interval`).
+- 2026-03-29: Added docs calibration basis and alignment between runtime/deployment guidance.
+- 2026-03-29: Resolved code-review findings by adding overlap-dedupe integration coverage, operator recalibration runbook steps, and calibration evidence artifact.
+- 2026-03-29: Re-ran Docker-backed regression gate (`1203 passed`, `0 skipped`).
+
+## Senior Developer Review (AI)
+
+### Outcome
+
+- Approved after fixes.
+
+### Findings Addressed
+
+- Added integration test coverage showing duplicate retries are suppressed by AG5 dedupe, preventing duplicate external-action propagation.
+- Added explicit operator recalibration steps (where to gather evidence, how to recompute TTL, and guardrail enforcement).
+- Added an auditable calibration evidence artifact with recorded window/sample/p95/margin/derived TTL values.
+
+### Verification
+
+- `bash scripts/docker-precheck.sh`
+- `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q tests/integration/coordination/test_shard_lease_contention.py -rs` (`5 passed`)
+- `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs` (`1203 passed`, `0 skipped`)

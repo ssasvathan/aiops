@@ -8,10 +8,15 @@ import pytest
 import redis as redis_lib
 from testcontainers.core.container import DockerContainer
 
+from aiops_triage_pipeline.cache.dedupe import RedisActionDedupeStore
+from aiops_triage_pipeline.contracts.enums import Action
+from aiops_triage_pipeline.contracts.gate_input import Finding, GateInputV1
 from aiops_triage_pipeline.coordination.shard_registry import (
     RedisShardCoordinator,
     ShardLeaseStatus,
 )
+from aiops_triage_pipeline.pipeline.scheduler import run_gate_decision_stage_cycle
+from aiops_triage_pipeline.pipeline.stages.peak import load_rulebook_policy
 from tests.integration.conftest import _is_environment_prereq_error, _wait_for_redis
 
 
@@ -100,3 +105,52 @@ def test_shard_lease_renew_same_pod_fails_nx_semantics(redis_client) -> None:
     # Without explicit unlock, NX prevents immediate re-acquisition by the same pod
     second = coord.acquire_lease(shard_id=2, owner_id="pod-a", lease_ttl_seconds=30)
     assert second.status == ShardLeaseStatus.yielded
+
+
+def test_residual_overlap_duplicate_effects_are_suppressed_before_external_actions(
+    redis_client,
+) -> None:
+    """Residual overlap retries produce AG5 suppression, preventing duplicate external effects."""
+    dedupe_store = RedisActionDedupeStore(redis_client)
+    rulebook_policy = load_rulebook_policy()
+    scope = ("prod", "cluster-a", "orders")
+    gate_input = GateInputV1(
+        env="prod",
+        cluster_id="cluster-a",
+        stream_id="stream-orders",
+        topic="orders",
+        topic_role="SHARED_TOPIC",
+        anomaly_family="VOLUME_DROP",
+        criticality_tier="TIER_0",
+        proposed_action="PAGE",
+        diagnosis_confidence=0.92,
+        sustained=True,
+        findings=(
+            Finding(
+                finding_id="f-1",
+                name="volume-drop",
+                is_anomalous=True,
+                evidence_required=("topic_messages_in_per_sec",),
+                is_primary=True,
+            ),
+        ),
+        evidence_status_map={"topic_messages_in_per_sec": "PRESENT"},
+        action_fingerprint="prod/cluster-a/stream-orders/SHARED_TOPIC/orders/VOLUME_DROP/TIER_0",
+        peak=True,
+    )
+
+    first = run_gate_decision_stage_cycle(
+        gate_inputs_by_scope={scope: (gate_input,)},
+        rulebook_policy=rulebook_policy,
+        dedupe_store=dedupe_store,
+    )[scope][0]
+    second = run_gate_decision_stage_cycle(
+        gate_inputs_by_scope={scope: (gate_input,)},
+        rulebook_policy=rulebook_policy,
+        dedupe_store=dedupe_store,
+    )[scope][0]
+
+    assert first.final_action == Action.PAGE
+    assert "AG5_DUPLICATE_SUPPRESSED" not in first.gate_reason_codes
+    assert second.final_action == Action.OBSERVE
+    assert second.gate_reason_codes == ("AG5_DUPLICATE_SUPPRESSED",)
