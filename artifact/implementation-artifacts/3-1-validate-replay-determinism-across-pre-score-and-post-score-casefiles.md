@@ -1,6 +1,6 @@
 # Story 3.1: Validate Replay Determinism Across Pre-Score and Post-Score Casefiles
 
-Status: ready-for-dev
+Status: review
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -18,28 +18,28 @@ so that decision histories remain trustworthy and defensible.
 
 ## Tasks / Subtasks
 
-- [ ] Add explicit replay fixture coverage for both casefile generations (AC: 1, 2)
-  - [ ] Add deterministic test fixtures/builders representing pre-score casefiles (no v1 scoring metadata in `decision_basis`, `diagnosis_confidence` persisted as `0.0`).
-  - [ ] Add deterministic test fixtures/builders representing post-score casefiles (v1 scoring metadata present with non-zero confidence paths).
-  - [ ] Ensure fixture payloads use valid `CaseFileTriageV1` hash semantics and rulebook version stamping.
+- [x] Add explicit replay fixture coverage for both casefile generations (AC: 1, 2)
+  - [x] Add deterministic test fixtures/builders representing pre-score casefiles (no v1 scoring metadata in `decision_basis`, `diagnosis_confidence` persisted as `0.0`).
+  - [x] Add deterministic test fixtures/builders representing post-score casefiles (v1 scoring metadata present with non-zero confidence paths).
+  - [x] Ensure fixture payloads use valid `CaseFileTriageV1` hash semantics and rulebook version stamping.
 
-- [ ] Extend replay equivalence tests to validate field-for-field determinism across generations (AC: 1)
-  - [ ] Add/extend tests in `tests/unit/audit/test_decision_reproducibility.py` to replay both fixture generations with `dedupe_store=None` and assert exact `ActionDecisionV1` equality.
-  - [ ] Keep assertions strict on `final_action`, `gate_rule_ids`, `gate_reason_codes`, `env_cap_applied`, and postmortem fields.
-  - [ ] Verify mixed-confidence reason-code differentiation remains stable (`LOW_CONFIDENCE` only on true low-confidence paths).
+- [x] Extend replay equivalence tests to validate field-for-field determinism across generations (AC: 1)
+  - [x] Add/extend tests in `tests/unit/audit/test_decision_reproducibility.py` to replay both fixture generations with `dedupe_store=None` and assert exact `ActionDecisionV1` equality.
+  - [x] Keep assertions strict on `final_action`, `gate_rule_ids`, `gate_reason_codes`, `env_cap_applied`, and postmortem fields.
+  - [x] Verify mixed-confidence reason-code differentiation remains stable (`LOW_CONFIDENCE` only on true low-confidence paths).
 
-- [ ] Validate backward-compatibility behavior explicitly (AC: 2)
-  - [ ] Add tests proving pre-score records replay correctly without requiring schema migration utilities.
-  - [ ] Add tests confirming rulebook-version mismatch still raises `ValueError` with actionable guidance.
-  - [ ] Confirm `CaseFilePolicyVersions` defaults continue to support older payloads without widening contract shapes.
+- [x] Validate backward-compatibility behavior explicitly (AC: 2)
+  - [x] Add tests proving pre-score records replay correctly without requiring schema migration utilities.
+  - [x] Add tests confirming rulebook-version mismatch still raises `ValueError` with actionable guidance.
+  - [x] Confirm `CaseFilePolicyVersions` defaults continue to support older payloads without widening contract shapes.
 
-- [ ] Preserve audit-trail determinism guarantees while adding replay coverage (AC: 1, 2)
-  - [ ] Keep `build_audit_trail()` key-set and serialization behavior deterministic for replay-related fields.
-  - [ ] Confirm policy version fields remain non-empty and replay-relevant fields are still emitted in stable structure.
+- [x] Preserve audit-trail determinism guarantees while adding replay coverage (AC: 1, 2)
+  - [x] Keep `build_audit_trail()` key-set and serialization behavior deterministic for replay-related fields.
+  - [x] Confirm policy version fields remain non-empty and replay-relevant fields are still emitted in stable structure.
 
-- [ ] Execute required verification gates with zero skipped tests (AC: 1, 2)
-  - [ ] Run targeted audit replay tests.
-  - [ ] Run full regression suite with Docker-enabled command and confirm `0 skipped`.
+- [x] Execute required verification gates with zero skipped tests (AC: 1, 2)
+  - [x] Run targeted audit replay tests.
+  - [x] Run full regression suite with Docker-enabled command and confirm `0 skipped`.
 
 ## Dev Notes
 
@@ -185,14 +185,26 @@ gpt-5 (Codex)
 - Loaded sprint status and selected first backlog story in order.
 - Loaded epics, PRD, architecture set, project context, replay source, and replay/storage tests.
 - Performed latest-version checks from official PyPI JSON endpoints.
+- Updated sprint status to `in-progress` before implementation and to `review` on completion.
+- Added deterministic pre-score and post-score replay fixture builders and legacy payload replay coverage.
+- Executed `uv run pytest -q tests/unit/audit/test_decision_reproducibility.py` (19 passed).
+- Executed full regression: `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs` (1205 passed, 0 skipped).
+- Executed scoped lint check: `uv run ruff check tests/unit/audit/test_decision_reproducibility.py` (passed).
 
 ### Completion Notes List
 
-- Story context file created and set to `ready-for-dev`.
-- Task list prepared with explicit file-level implementation targets and verification gates.
-- Sprint status updated to reflect story readiness for implementation.
+- Implemented explicit replay fixture builders for pre-score (`diagnosis_confidence=0.0`, no v1 scoring metadata) and post-score (`score_version=v1`) casefile generations.
+- Upgraded replay fixtures to use computed `triage_hash` values and explicit rulebook version stamping for deterministic hash semantics.
+- Added deterministic replay equivalence assertions across generations with strict field checks for action/result parity and postmortem fields.
+- Added backward-compatibility replay coverage for legacy casefile payloads that omit optional policy-version stamps, verifying defaults apply without schema migration utilities.
+- Kept mixed-confidence reason-code differentiation and existing audit trail determinism tests intact and passing.
 
 ### File List
 
 - artifact/implementation-artifacts/3-1-validate-replay-determinism-across-pre-score-and-post-score-casefiles.md
 - artifact/implementation-artifacts/sprint-status.yaml
+- tests/unit/audit/test_decision_reproducibility.py
+
+## Change Log
+
+- 2026-03-29: Implemented Story 3.1 replay determinism and backward-compatibility validation updates; story status moved to `review`.

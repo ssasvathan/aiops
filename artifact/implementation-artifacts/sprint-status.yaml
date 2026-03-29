@@ -52,6 +52,6 @@ development_status:
   epic-2-retrospective: done
 
   epic-3: in-progress
-  3-1-validate-replay-determinism-across-pre-score-and-post-score-casefiles: ready-for-dev
+  3-1-validate-replay-determinism-across-pre-score-and-post-score-casefiles: review
   3-2-enforce-deterministic-test-and-regression-quality-gate: backlog
   epic-3-retrospective: optional

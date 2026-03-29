@@ -36,6 +36,7 @@ from aiops_triage_pipeline.models.case_file import (
     CaseFileTriageV1,
 )
 from aiops_triage_pipeline.pipeline.stages.gating import evaluate_rulebook_gates
+from aiops_triage_pipeline.storage.casefile_io import compute_casefile_triage_hash
 
 # ---------------------------------------------------------------------------
 # Test rulebook factory
@@ -243,6 +244,8 @@ def _build_gate_input(
     peak: bool | None = True,
     findings: tuple[Finding, ...] = (_VOLUME_DROP_FINDING,),
     evidence_status_map: dict[str, EvidenceStatus] | None = None,
+    case_id: str = "case-audit-test-001",
+    decision_basis: dict[str, Any] | None = None,
 ) -> GateInputV1:
     if evidence_status_map is None:
         evidence_status_map = {"topic_messages_in_per_sec": EvidenceStatus.PRESENT}
@@ -264,6 +267,8 @@ def _build_gate_input(
             f"orders/VOLUME_DROP/{criticality_tier.value}"
         ),
         peak=peak,
+        case_id=case_id,
+        decision_basis=decision_basis,
     )
 
 
@@ -291,6 +296,7 @@ def _build_minimal_casefile(
     action_decision: ActionDecisionV1,
     *,
     rulebook_version: str = "1",
+    case_id: str = "case-audit-test-001",
 ) -> CaseFileTriageV1:
     """Assemble a minimal CaseFileTriageV1 sufficient for audit/reproducibility tests."""
     evidence_snapshot = CaseFileEvidenceSnapshot(
@@ -316,8 +322,8 @@ def _build_minimal_casefile(
         exposure_denylist_version="v1.0.0",
         diagnosis_policy_version="v1",
     )
-    return CaseFileTriageV1(
-        case_id="case-audit-test-001",
+    casefile = CaseFileTriageV1(
+        case_id=case_id,
         scope=("prod", "cluster-a", "orders"),
         triage_timestamp=datetime(2026, 3, 8, 12, 0, tzinfo=UTC),
         evidence_snapshot=evidence_snapshot,
@@ -327,6 +333,7 @@ def _build_minimal_casefile(
         policy_versions=policy_versions,
         triage_hash=TRIAGE_HASH_PLACEHOLDER,
     )
+    return casefile.model_copy(update={"triage_hash": compute_casefile_triage_hash(casefile)})
 
 
 def _assert_replayed_decision_matches_expected(
@@ -335,6 +342,83 @@ def _assert_replayed_decision_matches_expected(
 ) -> None:
     """Assert full field-for-field ActionDecisionV1 equality."""
     assert replayed.model_dump() == expected.model_dump()
+
+
+def _build_pre_score_replay_fixture(
+    *,
+    rulebook: RulebookV1,
+) -> tuple[CaseFileTriageV1, ActionDecisionV1]:
+    gate_input = _build_gate_input(
+        case_id="case-audit-pre-score",
+        env=Environment.PROD,
+        proposed_action=Action.NOTIFY,
+        diagnosis_confidence=0.0,
+        sustained=False,
+        peak=False,
+        evidence_status_map={"topic_messages_in_per_sec": EvidenceStatus.PRESENT},
+        decision_basis={"legacy_replay_source": "pre-score"},
+    )
+    expected = evaluate_rulebook_gates(
+        gate_input=gate_input,
+        rulebook=rulebook,
+        dedupe_store=None,
+    )
+    casefile = _build_minimal_casefile(
+        gate_input,
+        expected,
+        rulebook_version=str(rulebook.version),
+        case_id="case-audit-pre-score",
+    )
+    return casefile, expected
+
+
+def _build_post_score_replay_fixture(
+    *,
+    rulebook: RulebookV1,
+) -> tuple[CaseFileTriageV1, ActionDecisionV1]:
+    decision_basis = {
+        "score_version": "v1",
+        "base_score": 0.87,
+        "sustained_boost": 0.08,
+        "peak_boost": 0.05,
+        "final_score": 1.0,
+        "score_reason_code": "HIGH_CONFIDENCE_SUSTAINED_PEAK",
+        "fallback_applied": False,
+        "scoring_by_anomaly_family": {
+            "VOLUME_DROP": {
+                "score_version": "v1",
+                "base_score": 0.87,
+                "sustained_boost": 0.08,
+                "peak_boost": 0.05,
+                "final_score": 1.0,
+                "proposed_action": "PAGE",
+                "score_reason_code": "HIGH_CONFIDENCE_SUSTAINED_PEAK",
+                "fallback_applied": False,
+            }
+        },
+    }
+    gate_input = _build_gate_input(
+        case_id="case-audit-post-score",
+        env=Environment.PROD,
+        proposed_action=Action.PAGE,
+        diagnosis_confidence=0.95,
+        sustained=True,
+        peak=True,
+        evidence_status_map={"topic_messages_in_per_sec": EvidenceStatus.PRESENT},
+        decision_basis=decision_basis,
+    )
+    expected = evaluate_rulebook_gates(
+        gate_input=gate_input,
+        rulebook=rulebook,
+        dedupe_store=None,
+    )
+    casefile = _build_minimal_casefile(
+        gate_input,
+        expected,
+        rulebook_version=str(rulebook.version),
+        case_id="case-audit-post-score",
+    )
+    return casefile, expected
 
 
 # ---------------------------------------------------------------------------
@@ -477,6 +561,35 @@ def test_reproduce_gate_decision_ag6_postmortem_trigger() -> None:
     _assert_replayed_decision_matches_expected(replayed, expected)
 
 
+def test_reproduce_gate_decision_replays_pre_and_post_score_fixtures_deterministically() -> None:
+    """AC 1/2: both casefile generations replay with strict ActionDecisionV1 equality."""
+    rulebook = _build_test_rulebook()
+    fixtures = (
+        _build_pre_score_replay_fixture(rulebook=rulebook),
+        _build_post_score_replay_fixture(rulebook=rulebook),
+    )
+    for casefile, expected in fixtures:
+        replayed = reproduce_gate_decision(casefile, rulebook)
+
+        _assert_replayed_decision_matches_expected(replayed, expected)
+        assert replayed.final_action == expected.final_action
+        assert replayed.gate_rule_ids == expected.gate_rule_ids
+        assert replayed.gate_reason_codes == expected.gate_reason_codes
+        assert replayed.env_cap_applied == expected.env_cap_applied
+        assert replayed.postmortem_required == expected.postmortem_required
+        assert replayed.postmortem_reason_codes == expected.postmortem_reason_codes
+        assert casefile.policy_versions.rulebook_version == str(rulebook.version)
+        assert casefile.triage_hash != TRIAGE_HASH_PLACEHOLDER
+
+    pre_score_casefile = fixtures[0][0]
+    post_score_casefile = fixtures[1][0]
+    pre_basis = pre_score_casefile.gate_input.decision_basis or {}
+    post_basis = post_score_casefile.gate_input.decision_basis or {}
+    assert "score_version" not in pre_basis
+    assert pre_score_casefile.gate_input.diagnosis_confidence == 0.0
+    assert post_basis.get("score_version") == "v1"
+
+
 def test_reproduce_gate_decision_keeps_mixed_confidence_reason_code_parity() -> None:
     """AC 1, AC 2: reproduce_gate_decision() preserves reason-code differentiation across
     mixed-confidence records — high-confidence paths must not carry LOW_CONFIDENCE and the
@@ -520,6 +633,22 @@ def test_reproduce_gate_decision_keeps_mixed_confidence_reason_code_parity() -> 
     _assert_replayed_decision_matches_expected(low_replayed, low_expected)
     assert "LOW_CONFIDENCE" not in high_replayed.gate_reason_codes
     assert "LOW_CONFIDENCE" in low_replayed.gate_reason_codes
+
+
+def test_reproduce_gate_decision_accepts_legacy_casefile_policy_versions_defaults() -> None:
+    """AC 2: legacy payloads missing new optional policy stamps replay without migration."""
+    rulebook = _build_test_rulebook()
+    casefile, expected = _build_pre_score_replay_fixture(rulebook=rulebook)
+    legacy_payload = casefile.model_dump(mode="python")
+    del legacy_payload["policy_versions"]["anomaly_detection_policy_version"]
+    del legacy_payload["policy_versions"]["topology_registry_version"]
+
+    legacy_casefile = CaseFileTriageV1.model_validate(legacy_payload)
+    assert legacy_casefile.policy_versions.anomaly_detection_policy_version == "v1"
+    assert legacy_casefile.policy_versions.topology_registry_version == "2"
+
+    replayed = reproduce_gate_decision(legacy_casefile, rulebook)
+    _assert_replayed_decision_matches_expected(replayed, expected)
 
 
 def test_reproduce_gate_decision_version_mismatch_raises_value_error() -> None:
