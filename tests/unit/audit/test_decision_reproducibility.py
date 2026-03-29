@@ -477,6 +477,51 @@ def test_reproduce_gate_decision_ag6_postmortem_trigger() -> None:
     _assert_replayed_decision_matches_expected(replayed, expected)
 
 
+def test_reproduce_gate_decision_keeps_mixed_confidence_reason_code_parity() -> None:
+    """AC 1, AC 2: reproduce_gate_decision() preserves reason-code differentiation across
+    mixed-confidence records — high-confidence paths must not carry LOW_CONFIDENCE and the
+    replayed decision must be field-for-field identical to the original evaluation."""
+    rulebook = _build_test_rulebook()
+    high_confidence_gate_input = _build_gate_input(
+        env=Environment.PROD,
+        proposed_action=Action.PAGE,
+        diagnosis_confidence=0.9,
+        sustained=True,
+        peak=True,
+    )
+    low_confidence_gate_input = _build_gate_input(
+        env=Environment.PROD,
+        proposed_action=Action.PAGE,
+        diagnosis_confidence=0.59,
+        sustained=True,
+        peak=False,
+    )
+    high_expected = evaluate_rulebook_gates(
+        gate_input=high_confidence_gate_input,
+        rulebook=rulebook,
+        dedupe_store=None,
+    )
+    low_expected = evaluate_rulebook_gates(
+        gate_input=low_confidence_gate_input,
+        rulebook=rulebook,
+        dedupe_store=None,
+    )
+
+    high_replayed = reproduce_gate_decision(
+        _build_minimal_casefile(high_confidence_gate_input, high_expected),
+        rulebook,
+    )
+    low_replayed = reproduce_gate_decision(
+        _build_minimal_casefile(low_confidence_gate_input, low_expected),
+        rulebook,
+    )
+
+    _assert_replayed_decision_matches_expected(high_replayed, high_expected)
+    _assert_replayed_decision_matches_expected(low_replayed, low_expected)
+    assert "LOW_CONFIDENCE" not in high_replayed.gate_reason_codes
+    assert "LOW_CONFIDENCE" in low_replayed.gate_reason_codes
+
+
 def test_reproduce_gate_decision_version_mismatch_raises_value_error() -> None:
     """Version mismatch: reproduce_gate_decision raises ValueError (AC: 2, 3, 6)."""
     rulebook = _build_test_rulebook(version=1)

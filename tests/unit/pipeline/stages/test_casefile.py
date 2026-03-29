@@ -49,8 +49,9 @@ from aiops_triage_pipeline.pipeline.stages.evidence import collect_evidence_stag
 from aiops_triage_pipeline.pipeline.stages.gating import (
     GateInputContext,
     collect_gate_inputs_by_scope,
+    evaluate_rulebook_gates,
 )
-from aiops_triage_pipeline.pipeline.stages.peak import collect_peak_stage_output
+from aiops_triage_pipeline.pipeline.stages.peak import collect_peak_stage_output, load_rulebook_policy
 from aiops_triage_pipeline.pipeline.stages.topology import collect_topology_stage_output
 from aiops_triage_pipeline.registry.loader import load_topology_registry
 from aiops_triage_pipeline.storage.casefile_io import (
@@ -430,6 +431,158 @@ def test_assemble_casefile_triage_stage_is_stable_for_same_input(tmp_path: Path)
 
     assert first.case_id == second.case_id
     assert first.triage_hash == second.triage_hash
+
+
+def test_assemble_casefile_triage_stage_preserves_mixed_confidence_gate_reason_codes(
+    tmp_path: Path,
+) -> None:
+    (
+        scope,
+        evidence_output,
+        peak_output,
+        topology_output,
+        gate_input,
+        _action_decision,
+    ) = _build_scope_inputs(tmp_path)
+    rulebook = load_rulebook_policy()
+
+    high_confidence_gate_input = gate_input.model_copy(
+        update={
+            "proposed_action": Action.PAGE,
+            "diagnosis_confidence": 0.95,
+            "sustained": True,
+        }
+    )
+    low_confidence_gate_input = gate_input.model_copy(
+        update={
+            "proposed_action": Action.PAGE,
+            "diagnosis_confidence": 0.59,
+            "sustained": True,
+        }
+    )
+    high_confidence_decision = evaluate_rulebook_gates(
+        gate_input=high_confidence_gate_input,
+        rulebook=rulebook,
+        dedupe_store=None,
+    )
+    low_confidence_decision = evaluate_rulebook_gates(
+        gate_input=low_confidence_gate_input,
+        rulebook=rulebook,
+        dedupe_store=None,
+    )
+
+    high_confidence_casefile = assemble_casefile_triage_stage(
+        scope=scope,
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        topology_output=topology_output,
+        gate_input=high_confidence_gate_input,
+        action_decision=high_confidence_decision,
+        rulebook_policy=rulebook,
+        peak_policy=_peak_policy_for_tests(),
+        prometheus_metrics_contract=_prometheus_contract_for_tests(),
+        denylist=_denylist_for_tests(),
+        diagnosis_policy_version="v1",
+        triage_timestamp=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
+    )
+    low_confidence_casefile = assemble_casefile_triage_stage(
+        scope=scope,
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        topology_output=topology_output,
+        gate_input=low_confidence_gate_input,
+        action_decision=low_confidence_decision,
+        rulebook_policy=rulebook,
+        peak_policy=_peak_policy_for_tests(),
+        prometheus_metrics_contract=_prometheus_contract_for_tests(),
+        denylist=_denylist_for_tests(),
+        diagnosis_policy_version="v1",
+        triage_timestamp=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
+    )
+
+    # AC 2: differentiated reason codes — high-confidence paths must not carry LOW_CONFIDENCE
+    assert "LOW_CONFIDENCE" not in high_confidence_casefile.action_decision.gate_reason_codes
+    assert "LOW_CONFIDENCE" in low_confidence_casefile.action_decision.gate_reason_codes
+    # AC 1: persisted casefile must carry the scored diagnosis_confidence, not a default
+    assert high_confidence_casefile.gate_input.diagnosis_confidence == pytest.approx(0.95)
+    assert low_confidence_casefile.gate_input.diagnosis_confidence == pytest.approx(0.59)
+    # Task 3c: decision_basis payloads for mixed-confidence records serialize deterministically
+    high_confidence_casefile_2 = assemble_casefile_triage_stage(
+        scope=scope,
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        topology_output=topology_output,
+        gate_input=high_confidence_gate_input,
+        action_decision=high_confidence_decision,
+        rulebook_policy=rulebook,
+        peak_policy=_peak_policy_for_tests(),
+        prometheus_metrics_contract=_prometheus_contract_for_tests(),
+        denylist=_denylist_for_tests(),
+        diagnosis_policy_version="v1",
+        triage_timestamp=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
+    )
+    low_confidence_casefile_2 = assemble_casefile_triage_stage(
+        scope=scope,
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        topology_output=topology_output,
+        gate_input=low_confidence_gate_input,
+        action_decision=low_confidence_decision,
+        rulebook_policy=rulebook,
+        peak_policy=_peak_policy_for_tests(),
+        prometheus_metrics_contract=_prometheus_contract_for_tests(),
+        denylist=_denylist_for_tests(),
+        diagnosis_policy_version="v1",
+        triage_timestamp=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
+    )
+    assert high_confidence_casefile.triage_hash == high_confidence_casefile_2.triage_hash, (
+        "Triage hash must be deterministic for high-confidence records (Task 3c)"
+    )
+    assert low_confidence_casefile.triage_hash == low_confidence_casefile_2.triage_hash, (
+        "Triage hash must be deterministic for low-confidence records (Task 3c)"
+    )
+
+
+def test_assemble_casefile_triage_stage_persists_scoring_pipeline_confidence_end_to_end(
+    tmp_path: Path,
+) -> None:
+    """AC 1: assemble_casefile_triage_stage must preserve the diagnosis_confidence produced
+    by the scoring pipeline (collect_gate_inputs_by_scope) in the assembled casefile,
+    verifying end-to-end non-zero confidence for PRESENT-evidence paths."""
+    (
+        scope,
+        evidence_output,
+        peak_output,
+        topology_output,
+        gate_input,
+        action_decision,
+    ) = _build_scope_inputs(tmp_path)
+
+    assert gate_input.diagnosis_confidence > 0.0, (
+        "Scoring pipeline must produce non-zero confidence for PRESENT-evidence paths (AC 1)"
+    )
+
+    assembled = assemble_casefile_triage_stage(
+        scope=scope,
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        topology_output=topology_output,
+        gate_input=gate_input,
+        action_decision=action_decision,
+        rulebook_policy=_rulebook_policy_for_tests(),
+        peak_policy=_peak_policy_for_tests(),
+        prometheus_metrics_contract=_prometheus_contract_for_tests(),
+        denylist=_denylist_for_tests(),
+        diagnosis_policy_version="v1",
+        triage_timestamp=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
+    )
+
+    assert assembled.gate_input.diagnosis_confidence > 0.0, (
+        "Casefile must preserve non-zero diagnosis_confidence from the scoring pipeline (AC 1)"
+    )
+    assert assembled.gate_input.diagnosis_confidence == pytest.approx(gate_input.diagnosis_confidence), (
+        "Casefile gate_input.diagnosis_confidence must exactly match the value from the scoring pipeline"
+    )
 
 
 def test_assemble_casefile_triage_stage_removes_denylisted_list_values(tmp_path: Path) -> None:

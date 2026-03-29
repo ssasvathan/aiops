@@ -1,6 +1,6 @@
 # Story 1.3: Persist Differentiated Confidence and Reason-Code Audit Outcomes
 
-Status: ready-for-dev
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -17,25 +17,25 @@ so that I can distinguish weak-signal silence from valid escalations.
 
 ## Tasks / Subtasks
 
-- [ ] Preserve and persist differentiated confidence context from gating through casefile assembly (AC: 1, 2)
-  - [ ] Ensure every `GateInputV1` produced by `collect_gate_inputs_by_scope` carries deterministic scoring metadata in `decision_basis` (`score_version`, `base_score`, `sustained_boost`, `peak_boost`, `final_score`, `score_reason_code`, `fallback_applied`).
-  - [ ] Ensure fallback scoring path (`SCORING_FALLBACK_APPLIED`) is retained only for genuine scoring failures and not used as a default for normal signal paths.
-  - [ ] Ensure scoped anomaly-family scoring payload (`scoring_by_anomaly_family`) remains parseable and deterministic so persisted audit records keep per-signal explanation fidelity.
-- [ ] Keep AG4 reason-code semantics explicit and non-universal in finalized decisions (AC: 2)
-  - [ ] Preserve `LOW_CONFIDENCE` and `NOT_SUSTAINED` as AG4 failure reasons in `ActionDecisionV1.gate_reason_codes` without schema changes.
-  - [ ] Verify success/high-confidence paths do not inject `LOW_CONFIDENCE` by default.
-  - [ ] Ensure mixed scenario coverage demonstrates both low-confidence and non-low-confidence outcomes.
-- [ ] Maintain deterministic replay and audit-chain compatibility while improving reason-code quality (AC: 1, 2)
-  - [ ] Keep frozen contract posture (`GateInputV1`, `ActionDecisionV1`, `CaseFileTriageV1`) and avoid any field additions/removals.
-  - [ ] Preserve `reproduce_gate_decision()` behavior and version checks while confirming replay outputs remain deterministic for pre-score and post-score records.
-  - [ ] Keep casefile triage hash determinism by preserving stable key/value serialization for decision basis payloads.
-- [ ] Expand automated verification for differentiated confidence and reason-code outcomes (AC: 1, 2)
-  - [ ] Add/extend stage-level tests proving non-zero confidence for PRESENT-evidence paths and score variance across representative scopes.
-  - [ ] Add/extend casefile/audit tests proving persisted records include differentiated reason-code evidence (not universal `LOW_CONFIDENCE`) and stable gate-reason propagation.
-  - [ ] Add/extend replay tests proving deterministic parity across mixed confidence records and rulebook-version match constraints.
-- [ ] Execute quality gate with zero skipped tests (AC: 1, 2)
-  - [ ] Run targeted suites for touched gating/casefile/audit modules.
-  - [ ] Run full regression with Docker-backed testcontainers and confirm `0 skipped`.
+- [x] Preserve and persist differentiated confidence context from gating through casefile assembly (AC: 1, 2)
+  - [x] Ensure every `GateInputV1` produced by `collect_gate_inputs_by_scope` carries deterministic scoring metadata in `decision_basis` (`score_version`, `base_score`, `sustained_boost`, `peak_boost`, `final_score`, `score_reason_code`, `fallback_applied`).
+  - [x] Ensure fallback scoring path (`SCORING_FALLBACK_APPLIED`) is retained only for genuine scoring failures and not used as a default for normal signal paths.
+  - [x] Ensure scoped anomaly-family scoring payload (`scoring_by_anomaly_family`) remains parseable and deterministic so persisted audit records keep per-signal explanation fidelity.
+- [x] Keep AG4 reason-code semantics explicit and non-universal in finalized decisions (AC: 2)
+  - [x] Preserve `LOW_CONFIDENCE` and `NOT_SUSTAINED` as AG4 failure reasons in `ActionDecisionV1.gate_reason_codes` without schema changes.
+  - [x] Verify success/high-confidence paths do not inject `LOW_CONFIDENCE` by default.
+  - [x] Ensure mixed scenario coverage demonstrates both low-confidence and non-low-confidence outcomes.
+- [x] Maintain deterministic replay and audit-chain compatibility while improving reason-code quality (AC: 1, 2)
+  - [x] Keep frozen contract posture (`GateInputV1`, `ActionDecisionV1`, `CaseFileTriageV1`) and avoid any field additions/removals.
+  - [x] Preserve `reproduce_gate_decision()` behavior and version checks while confirming replay outputs remain deterministic for pre-score and post-score records.
+  - [x] Keep casefile triage hash determinism by preserving stable key/value serialization for decision basis payloads.
+- [x] Expand automated verification for differentiated confidence and reason-code outcomes (AC: 1, 2)
+  - [x] Add/extend stage-level tests proving non-zero confidence for PRESENT-evidence paths and score variance across representative scopes.
+  - [x] Add/extend casefile/audit tests proving persisted records include differentiated reason-code evidence (not universal `LOW_CONFIDENCE`) and stable gate-reason propagation.
+  - [x] Add/extend replay tests proving deterministic parity across mixed confidence records and rulebook-version match constraints.
+- [x] Execute quality gate with zero skipped tests (AC: 1, 2)
+  - [x] Run targeted suites for touched gating/casefile/audit modules.
+  - [x] Run full regression with Docker-backed testcontainers and confirm `0 skipped`.
 
 ## Dev Notes
 
@@ -212,21 +212,33 @@ Critical rules from `artifact/project-context.md` applied to this story:
 
 ### Agent Model Used
 
-GPT-5 Codex
+claude-sonnet-4-6
 
 ### Debug Log References
 
 - Loaded and analyzed sprint status, epics, PRD, architecture shards, project context, prior story artifacts, and recent commits.
 - Confirmed current gating/casefile/audit code paths that already carry confidence and reason-code signals.
 - Executed latest-package checks from official PyPI metadata to confirm no dependency-driven blockers.
+- Implemented Story 1.3 verification-focused updates by extending gating/casefile/audit unit coverage for mixed-confidence and reason-code differentiation behavior.
+- Executed targeted verification: `uv run pytest -q tests/unit/pipeline/stages/test_gating.py tests/unit/pipeline/stages/test_casefile.py tests/unit/audit/test_decision_reproducibility.py` (`109 passed`).
+- Executed full regression gate: `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs` (`1178 passed`, `0 skipped`).
 
 ### Completion Notes List
 
 - Story created as `ready-for-dev` with implementation guardrails focused on FR11/FR18/FR19.
 - Scope constrained to deterministic audit-outcome quality and replay-safe persistence; no contract/schema expansion.
 - Includes explicit anti-regression guidance from Story 1.2 review findings.
+- Added deterministic scoring payload coverage to ensure `scoring_by_anomaly_family` remains parseable and aligned with persisted decision-basis confidence values.
+- Added mixed-confidence casefile coverage confirming `LOW_CONFIDENCE` is present only in low-confidence AG4 outcomes and absent for high-confidence paths.
+- Added replay parity coverage across mixed-confidence records to confirm deterministic `reproduce_gate_decision()` output and reason-code differentiation.
+- Story definition-of-done gate satisfied; status advanced to `review`.
+- Code review (adversarial) resolved 3H/3M/3L findings: added AC 1 score-variance test across evidence quality scenarios; verified casefile persists non-zero `diagnosis_confidence` end-to-end; unified rulebook reference in mixed-confidence casefile test; added `scoring_by_anomaly_family` coverage for low-confidence paths; added triage-hash determinism assertions for mixed-confidence records; added direct-path `scoring_by_anomaly_family` exclusion test; fixed agent attribution; added AC docstrings to replay test.
+- All HIGH and MEDIUM findings resolved; story advanced to `done`.
 
 ### File List
 
 - artifact/implementation-artifacts/1-3-persist-differentiated-confidence-and-reason-code-audit-outcomes.md
 - artifact/implementation-artifacts/sprint-status.yaml
+- tests/unit/pipeline/stages/test_gating.py
+- tests/unit/pipeline/stages/test_casefile.py
+- tests/unit/audit/test_decision_reproducibility.py

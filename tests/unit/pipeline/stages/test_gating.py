@@ -28,6 +28,7 @@ from aiops_triage_pipeline.pipeline.stages.evidence import collect_evidence_stag
 from aiops_triage_pipeline.pipeline.stages.gating import (
     GateInputContext,
     collect_gate_inputs_by_scope,
+    enrich_gate_input_context_by_scope,
     evaluate_rulebook_gates,
 )
 from aiops_triage_pipeline.pipeline.stages.peak import (
@@ -398,6 +399,229 @@ def test_collect_gate_inputs_by_scope_populates_score_metadata_and_candidate_act
     assert gate_input.decision_basis["final_score"] == pytest.approx(1.0)
     assert gate_input.decision_basis["score_reason_code"] == "HIGH_CONFIDENCE_SUSTAINED_PEAK"
     assert gate_input.decision_basis["fallback_applied"] is False
+
+
+def test_collect_gate_inputs_by_scope_preserves_parseable_scoring_by_anomaly_family_payload() -> None:
+    evidence_output, peak_output, scope = _build_story_1_1_stage_inputs(
+        sustained_value=True,
+        is_peak_window=True,
+    )
+    enriched_context_by_scope = enrich_gate_input_context_by_scope(
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        context_by_scope={
+            scope: GateInputContext(
+                stream_id="stream-orders",
+                topic_role="SHARED_TOPIC",
+                criticality_tier=CriticalityTier.TIER_0,
+            )
+        },
+    )
+
+    gate_inputs_by_scope = collect_gate_inputs_by_scope(
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        context_by_scope=enriched_context_by_scope,
+    )
+
+    gate_input = gate_inputs_by_scope[scope][0]
+    scoring_payload = gate_input.decision_basis["scoring_by_anomaly_family"]["VOLUME_DROP"]
+
+    assert scoring_payload["score_version"] == "v1"
+    assert scoring_payload["fallback_applied"] is False
+    assert scoring_payload["score_reason_code"] == "HIGH_CONFIDENCE_SUSTAINED_PEAK"
+    assert scoring_payload["final_score"] == pytest.approx(gate_input.diagnosis_confidence)
+    assert scoring_payload["proposed_action"] == gate_input.proposed_action.value
+
+
+def test_collect_gate_inputs_by_scope_confidence_varies_with_evidence_quality() -> None:
+    """AC 1: diagnosis_confidence is non-zero for PRESENT-evidence paths and varies with
+    evidence quality across scopes rather than collapsing to a flat default.
+
+    Two evidence scenarios share the same anomaly-detection metrics (to ensure findings are
+    produced) but differ in the number of extra metrics present.  The extra-unknown scenario
+    adds one empty metric key so its evidence_status_map includes an UNKNOWN entry, which
+    lowers the base_score average relative to the all-present scenario.
+    """
+    scope = ("prod", "cluster-a", "orders")
+    evaluation_time = datetime(2026, 3, 29, 12, 0, tzinfo=UTC)
+    context = {
+        scope: GateInputContext(
+            stream_id="stream-orders",
+            topic_role="SHARED_TOPIC",
+            criticality_tier=CriticalityTier.TIER_0,
+        )
+    }
+    base_samples = {
+        "topic_messages_in_per_sec": [
+            {"labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"}, "value": 180.0},
+            {"labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"}, "value": 0.4},
+        ],
+        "total_produce_requests_per_sec": [
+            {"labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"}, "value": 220.0},
+        ],
+        "failed_produce_requests_per_sec": [
+            {"labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"}, "value": 24.0},
+        ],
+    }
+    # Adding an empty key means the evidence_status_map will include one UNKNOWN entry,
+    # lowering base_score from (1+1+1)/3=1.0 to (1+1+1+0.25)/4=0.8125.
+    samples_with_extra_unknown = {**base_samples, "consumer_lag_per_topic": []}
+
+    def _build_peak_output(evidence_output):
+        return collect_peak_stage_output(
+            rows=evidence_output.rows,
+            historical_windows_by_scope={scope: [float(x) for x in range(1, 21)]},
+            anomaly_findings=evidence_output.anomaly_result.findings,
+            evaluation_time=evaluation_time,
+            evidence_status_map_by_scope=evidence_output.evidence_status_map_by_scope,
+            peak_policy=_peak_policy_for_tests(),
+            rulebook_policy=_rulebook_policy_for_tests(),
+        )
+
+    ev_full = collect_evidence_stage_output(base_samples)
+    ev_partial = collect_evidence_stage_output(samples_with_extra_unknown)
+
+    gi_full = collect_gate_inputs_by_scope(
+        evidence_output=ev_full,
+        peak_output=_build_peak_output(ev_full),
+        context_by_scope=context,
+    )
+    gi_partial = collect_gate_inputs_by_scope(
+        evidence_output=ev_partial,
+        peak_output=_build_peak_output(ev_partial),
+        context_by_scope=context,
+    )
+
+    confidence_full = gi_full[scope][0].diagnosis_confidence
+    confidence_partial = gi_partial[scope][0].diagnosis_confidence
+
+    assert confidence_full > 0.0, "Non-zero confidence required for all-PRESENT evidence path (AC 1)"
+    assert confidence_partial > 0.0, "Non-zero confidence required for partial-evidence path (AC 1)"
+    assert confidence_full > confidence_partial, (
+        f"Confidence must vary with evidence quality to avoid flat-default regression "
+        f"(full={confidence_full}, partial={confidence_partial})"
+    )
+
+
+def test_collect_gate_inputs_by_scope_direct_path_decision_basis_excludes_scoring_by_anomaly_family() -> None:
+    """Direct path (no pre-enrichment) produces valid top-level score fields in decision_basis
+    but does NOT include scoring_by_anomaly_family — that payload is only added by
+    enrich_gate_input_context_by_scope."""
+    evidence_output, peak_output, scope = _build_story_1_1_stage_inputs(
+        sustained_value=True,
+        is_peak_window=True,
+    )
+
+    gate_inputs = collect_gate_inputs_by_scope(
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        context_by_scope={
+            scope: GateInputContext(
+                stream_id="stream-orders",
+                topic_role="SHARED_TOPIC",
+                criticality_tier=CriticalityTier.TIER_0,
+            )
+        },
+    )
+
+    gate_input = gate_inputs[scope][0]
+    assert gate_input.decision_basis is not None
+    assert gate_input.decision_basis["score_version"] == "v1"
+    assert gate_input.decision_basis["fallback_applied"] is False
+    assert "scoring_by_anomaly_family" not in gate_input.decision_basis, (
+        "scoring_by_anomaly_family is only populated by enrich_gate_input_context_by_scope; "
+        "the direct collect_gate_inputs_by_scope path must not include it"
+    )
+
+
+def test_collect_gate_inputs_by_scope_scoring_by_anomaly_family_covers_low_confidence_path() -> None:
+    """AC 1: scoring_by_anomaly_family payload is parseable and correct for low-confidence
+    paths (LOW_CONFIDENCE_INSUFFICIENT_EVIDENCE), not only for HIGH_CONFIDENCE_SUSTAINED_PEAK.
+
+    The 3 anomaly-detection metrics are kept present so gate_findings_by_scope is populated.
+    Four extra empty-series keys add UNKNOWN entries to the evidence_status_map, giving
+    base_score = (3×1.0 + 4×0.25) / 7 ≈ 0.571.  Sustained and peak boosts are suppressed
+    via peak_output manipulation so final_score stays below the 0.6 ticket-band floor.
+    """
+    scope = ("prod", "cluster-a", "orders")
+    sustained_key = ("prod", "cluster-a", "topic:orders", "VOLUME_DROP")
+    peak_key = ("prod", "cluster-a", "orders")
+    evaluation_time = datetime(2026, 3, 29, 12, 0, tzinfo=UTC)
+
+    samples_low_quality = {
+        "topic_messages_in_per_sec": [
+            {"labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"}, "value": 180.0},
+            {"labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"}, "value": 0.4},
+        ],
+        "total_produce_requests_per_sec": [
+            {"labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"}, "value": 220.0},
+        ],
+        "failed_produce_requests_per_sec": [
+            {"labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"}, "value": 24.0},
+        ],
+        "consumer_lag_metric_a": [],   # missing series → UNKNOWN
+        "consumer_lag_metric_b": [],   # missing series → UNKNOWN
+        "consumer_lag_metric_c": [],   # missing series → UNKNOWN
+        "consumer_lag_metric_d": [],   # missing series → UNKNOWN
+    }
+    evidence_output = collect_evidence_stage_output(samples_low_quality)
+    rulebook = _rulebook_policy_for_tests()
+    peak_output_raw = collect_peak_stage_output(
+        rows=evidence_output.rows,
+        historical_windows_by_scope={scope: [float(x) for x in range(1, 21)]},
+        anomaly_findings=evidence_output.anomaly_result.findings,
+        evaluation_time=evaluation_time,
+        evidence_status_map_by_scope=evidence_output.evidence_status_map_by_scope,
+        peak_policy=_peak_policy_for_tests(),
+        rulebook_policy=rulebook,
+    )
+    # Suppress sustained boost: remove key → is_sustained=None → boost=0.0
+    sustained_by_key = dict(peak_output_raw.sustained_by_key)
+    sustained_by_key.pop(sustained_key, None)
+    # Suppress peak boost: force is_peak_window=False so peak_boost=0.0
+    peak_context_by_scope = dict(peak_output_raw.peak_context_by_scope)
+    if peak_key in peak_context_by_scope:
+        peak_context_by_scope[peak_key] = peak_context_by_scope[peak_key].model_copy(
+            update={"is_peak_window": False, "is_near_peak_window": False}
+        )
+    peak_output = peak_output_raw.model_copy(
+        update={
+            "sustained_by_key": sustained_by_key,
+            "peak_context_by_scope": peak_context_by_scope,
+        }
+    )
+
+    context = {
+        scope: GateInputContext(
+            stream_id="stream-orders",
+            topic_role="SHARED_TOPIC",
+            criticality_tier=CriticalityTier.TIER_0,
+        )
+    }
+    enriched_context = enrich_gate_input_context_by_scope(
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        context_by_scope=context,
+    )
+    gate_inputs = collect_gate_inputs_by_scope(
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        context_by_scope=enriched_context,
+    )
+
+    gate_input = gate_inputs[scope][0]
+    assert gate_input.decision_basis is not None
+    scoring_payload = gate_input.decision_basis["scoring_by_anomaly_family"]["VOLUME_DROP"]
+
+    assert scoring_payload["score_version"] == "v1"
+    assert scoring_payload["fallback_applied"] is False
+    assert scoring_payload["score_reason_code"] == "LOW_CONFIDENCE_INSUFFICIENT_EVIDENCE"
+    assert gate_input.diagnosis_confidence < 0.6, (
+        "Expected low confidence for 7-metric scenario with 4 UNKNOWN entries"
+    )
+    assert gate_input.diagnosis_confidence > 0.0
+    assert scoring_payload["final_score"] == pytest.approx(gate_input.diagnosis_confidence)
 
 
 def test_collect_gate_inputs_by_scope_handles_sustained_none_without_boost() -> None:
