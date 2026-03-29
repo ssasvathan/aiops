@@ -47,16 +47,17 @@ def test_integration_mode_override(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_max_action_for_all_environments() -> None:
     """max_action returns correct cap per APP_ENV value."""
-    for env_value, expected, depth in [
-        ("local", "OBSERVE", 12),
-        ("dev", "NOTIFY", 2016),
-        ("uat", "TICKET", 4320),
-        ("prod", "PAGE", 8640),
+    for env_value, expected, depth, lease_ttl in [
+        ("local", "OBSERVE", 12, 270),
+        ("dev", "NOTIFY", 2016, 250),
+        ("uat", "TICKET", 4320, 294),
+        ("prod", "PAGE", 8640, 294),
     ]:
         settings = Settings(
             _env_file=None,
             APP_ENV=env_value,
             STAGE2_PEAK_HISTORY_MAX_DEPTH=depth,
+            SHARD_LEASE_TTL_SECONDS=lease_ttl,
             KAFKA_BOOTSTRAP_SERVERS="localhost:9092",
             DATABASE_URL="postgresql+psycopg://u:p@h/db",
             REDIS_URL="redis://localhost:6379/0",
@@ -193,6 +194,7 @@ def test_otlp_deployment_environment_defaults_to_app_env() -> None:
         _env_file=None,
         APP_ENV="uat",
         STAGE2_PEAK_HISTORY_MAX_DEPTH=4320,
+        SHARD_LEASE_TTL_SECONDS=294,
         KAFKA_BOOTSTRAP_SERVERS="localhost:9092",
         DATABASE_URL="postgresql+psycopg://u:p@h/db",
         REDIS_URL="redis://localhost:6379/0",
@@ -270,6 +272,7 @@ _PROD_SETTINGS_BASE: dict = dict(
     _env_file=None,
     APP_ENV="prod",
     STAGE2_PEAK_HISTORY_MAX_DEPTH=8640,
+    SHARD_LEASE_TTL_SECONDS=294,
     KAFKA_BOOTSTRAP_SERVERS="localhost:9092",
     DATABASE_URL="postgresql+psycopg://u:p@h/db",
     REDIS_URL="redis://localhost:6379/0",
@@ -382,6 +385,7 @@ def _base_settings_kwargs() -> dict:
         "S3_ACCESS_KEY": "key",
         "S3_SECRET_KEY": "secret",
         "S3_BUCKET": "bucket",
+        "SHARD_LEASE_TTL_SECONDS": 250,
     }
 
 
@@ -599,6 +603,7 @@ def test_env_file_selection_uses_app_env() -> None:
     settings = Settings(
         APP_ENV="dev",
         STAGE2_PEAK_HISTORY_MAX_DEPTH=2016,
+        SHARD_LEASE_TTL_SECONDS=250,
         _env_file=None,
         KAFKA_BOOTSTRAP_SERVERS="localhost:9092",
         DATABASE_URL="postgresql+psycopg://u:p@h/db",
@@ -646,6 +651,10 @@ def test_env_dev_contains_stage2_peak_history_max_depth_2016() -> None:
         "config/.env.dev must contain STAGE2_PEAK_HISTORY_MAX_DEPTH=2016 "
         "(7 days × 288 samples/day at 5-min intervals)"
     )
+    assert "SHARD_LEASE_TTL_SECONDS=250" in content, (
+        "config/.env.dev must contain SHARD_LEASE_TTL_SECONDS=250 "
+        "(calibrated below HOT_PATH_SCHEDULER_INTERVAL_SECONDS=300)"
+    )
 
 
 def test_env_uat_template_contains_stage2_peak_history_max_depth_4320() -> None:
@@ -657,6 +666,10 @@ def test_env_uat_template_contains_stage2_peak_history_max_depth_4320() -> None:
         "config/.env.uat.template must contain STAGE2_PEAK_HISTORY_MAX_DEPTH=4320 "
         "(15 days × 288 samples/day at 5-min intervals)"
     )
+    assert "SHARD_LEASE_TTL_SECONDS=294" in content, (
+        "config/.env.uat.template must contain SHARD_LEASE_TTL_SECONDS=294 "
+        "(UAT p95 + 31s safety margin, and < scheduler interval)"
+    )
 
 
 def test_env_prod_template_contains_stage2_peak_history_max_depth_8640() -> None:
@@ -667,6 +680,10 @@ def test_env_prod_template_contains_stage2_peak_history_max_depth_8640() -> None
     assert "STAGE2_PEAK_HISTORY_MAX_DEPTH=8640" in content, (
         "config/.env.prod.template must contain STAGE2_PEAK_HISTORY_MAX_DEPTH=8640 "
         "(30 days × 288 samples/day at 5-min intervals)"
+    )
+    assert "SHARD_LEASE_TTL_SECONDS=294" in content, (
+        "config/.env.prod.template must contain SHARD_LEASE_TTL_SECONDS=294 "
+        "(aligned to UAT calibration basis and < scheduler interval)"
     )
 
 
@@ -722,6 +739,7 @@ def test_settings_explicit_non_default_depth_passes_validation_for_all_envs() ->
                     **_base_settings_kwargs(),
                     "APP_ENV": env_value,
                     "STAGE2_PEAK_HISTORY_MAX_DEPTH": 100,
+                    "SHARD_LEASE_TTL_SECONDS": 250 if env_value == "dev" else 294,
                 }
             )
             assert settings.STAGE2_PEAK_HISTORY_MAX_DEPTH == 100, (
@@ -884,3 +902,43 @@ def test_settings_harness_with_default_depth_12_does_not_raise() -> None:
         assert settings.APP_ENV == AppEnv.harness
     finally:
         get_settings.cache_clear()
+
+
+@pytest.mark.parametrize("app_env", ["dev", "uat", "prod"])
+def test_named_env_requires_explicit_shard_lease_ttl(app_env: str) -> None:
+    """Named envs must provide SHARD_LEASE_TTL_SECONDS explicitly (no implicit fallback default)."""
+    get_settings.cache_clear()
+    try:
+        kwargs = {
+            **_base_settings_kwargs(),
+            "APP_ENV": app_env,
+            "STAGE2_PEAK_HISTORY_MAX_DEPTH": 2016 if app_env == "dev" else 4320,
+        }
+        kwargs.pop("SHARD_LEASE_TTL_SECONDS", None)
+        if app_env == "prod":
+            kwargs.update(
+                {
+                    "INTEGRATION_MODE_LLM": "LIVE",
+                    "INTEGRATION_MODE_PD": "LIVE",
+                    "INTEGRATION_MODE_SLACK": "LIVE",
+                    "INTEGRATION_MODE_SN": "LIVE",
+                }
+            )
+        with pytest.raises((ValueError, ValidationError), match="SHARD_LEASE_TTL_SECONDS"):
+            Settings(**kwargs)
+    finally:
+        get_settings.cache_clear()
+
+
+def test_shard_lease_ttl_rejects_value_greater_than_or_equal_to_scheduler_interval() -> None:
+    """Startup validation rejects lease TTL that is not strictly lower than scheduler interval."""
+    with pytest.raises((ValueError, ValidationError), match="HOT_PATH_SCHEDULER_INTERVAL_SECONDS"):
+        Settings(
+            **{
+                **_base_settings_kwargs(),
+                "APP_ENV": "dev",
+                "STAGE2_PEAK_HISTORY_MAX_DEPTH": 2016,
+                "SHARD_LEASE_TTL_SECONDS": 300,
+                "HOT_PATH_SCHEDULER_INTERVAL_SECONDS": 300,
+            }
+        )

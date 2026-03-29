@@ -160,6 +160,34 @@ class Settings(BaseSettings):
             ) from exc
         return data
 
+    @model_validator(mode="before")
+    @classmethod
+    def validate_shard_lease_ttl_presence_for_named_envs(cls, data: object) -> object:
+        """Require explicit SHARD_LEASE_TTL_SECONDS in named envs (dev/uat/prod)."""
+        if not isinstance(data, dict):
+            return data
+
+        raw_app_env = data.get("APP_ENV", _APP_ENV)
+        app_env = raw_app_env if isinstance(raw_app_env, AppEnv) else str(raw_app_env).lower()
+        if app_env not in {AppEnv.dev.value, AppEnv.uat.value, AppEnv.prod.value}:
+            return data
+
+        if "SHARD_LEASE_TTL_SECONDS" not in data:
+            raise ValueError(
+                "SHARD_LEASE_TTL_SECONDS must be explicitly set for "
+                f"APP_ENV={app_env}; refusing implicit fallback/default"
+            )
+
+        raw_ttl = data.get("SHARD_LEASE_TTL_SECONDS")
+        try:
+            int(raw_ttl)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "SHARD_LEASE_TTL_SECONDS must be a valid integer for "
+                f"APP_ENV={app_env}; got {raw_ttl!r}"
+            ) from exc
+        return data
+
     @model_validator(mode="after")
     def validate_llm_prod_mode(self) -> "Settings":
         """Reject MOCK and OFF for INTEGRATION_MODE_LLM in prod — requires LIVE (or LOG)."""
@@ -251,6 +279,12 @@ class Settings(BaseSettings):
             raise ValueError("SHARD_COORDINATION_SHARD_COUNT must be > 0")
         if self.SHARD_LEASE_TTL_SECONDS <= 0:
             raise ValueError("SHARD_LEASE_TTL_SECONDS must be > 0")
+        if self.SHARD_LEASE_TTL_SECONDS >= self.HOT_PATH_SCHEDULER_INTERVAL_SECONDS:
+            raise ValueError(
+                "SHARD_LEASE_TTL_SECONDS must be < HOT_PATH_SCHEDULER_INTERVAL_SECONDS "
+                f"(got ttl={self.SHARD_LEASE_TTL_SECONDS}, "
+                f"interval={self.HOT_PATH_SCHEDULER_INTERVAL_SECONDS})"
+            )
         if self.SHARD_CHECKPOINT_TTL_SECONDS <= 0:
             raise ValueError("SHARD_CHECKPOINT_TTL_SECONDS must be > 0")
         if self.OTLP_METRICS_EXPORT_INTERVAL_MILLIS <= 0:

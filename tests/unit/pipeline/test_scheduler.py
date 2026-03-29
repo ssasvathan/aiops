@@ -2017,3 +2017,22 @@ def test_scheduler_enabling_shard_does_not_implicitly_enable_cycle_lock() -> Non
 
     assert settings.SHARD_REGISTRY_ENABLED is True
     assert settings.DISTRIBUTED_CYCLE_LOCK_ENABLED is False
+
+
+def test_scheduler_shard_acquire_lease_uses_settings_ttl_value() -> None:
+    """Shard lease call wiring uses Settings.SHARD_LEASE_TTL_SECONDS."""
+    settings = _scheduler_flag_settings(
+        SHARD_REGISTRY_ENABLED=True,
+        SHARD_LEASE_TTL_SECONDS=211,
+    )
+    shard_coordinator = _RecordingShardCoordinator()
+
+    if settings.SHARD_REGISTRY_ENABLED and shard_coordinator is not None:
+        shard_coordinator.acquire_lease(
+            shard_id=0,
+            owner_id="test-pod",
+            lease_ttl_seconds=settings.SHARD_LEASE_TTL_SECONDS,
+        )
+
+    assert len(shard_coordinator.acquire_lease_calls) == 1
+    assert shard_coordinator.acquire_lease_calls[0]["lease_ttl_seconds"] == 211

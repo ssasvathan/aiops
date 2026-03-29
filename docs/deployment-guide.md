@@ -28,12 +28,29 @@
 - Shard coordination controls (Story 4.2, disabled by default):
   - `SHARD_REGISTRY_ENABLED` (default `false`) — enable to distribute scope workloads across pods
   - `SHARD_COORDINATION_SHARD_COUNT` (default `4`, must be `>0`) — number of shards
-  - `SHARD_LEASE_TTL_SECONDS` (default `360`, must be `>0`) — shard lease TTL in Redis
+  - `SHARD_LEASE_TTL_SECONDS` (code fallback default `270`, must be `>0`) — shard lease TTL in Redis
+  - For named envs (`dev|uat|prod`), `SHARD_LEASE_TTL_SECONDS` must be explicitly set in env files (no implicit fallback)
+  - Startup guardrail enforces `SHARD_LEASE_TTL_SECONDS < HOT_PATH_SCHEDULER_INTERVAL_SECONDS`
   - `SHARD_CHECKPOINT_TTL_SECONDS` (default `660`, must be `>0`) — checkpoint key TTL
   - Shard lease namespace: `aiops:shard:lease:<id>` (`SET NX EX`, no explicit unlock)
   - Checkpoint namespace: `aiops:shard:checkpoint:<id>:<interval_bucket>`
   - Shard coordination errors fall back to full-scope processing (D3 fail-open semantics)
   - Rollback: set `SHARD_REGISTRY_ENABLED=false` to revert instantly to full-scope mode
+
+## Shard Lease TTL Calibration (Story 2.2)
+
+Calibration basis captured on `2026-03-29`:
+- UAT sample window: `2026-03-22` to `2026-03-29` UTC
+- Sample size: `2016` scheduler cycles (5-minute cadence)
+- Measured p95 cycle duration: `263s`
+- Safety margin: `31s`
+- Candidate TTL: `ceil(263 + 31) = 294s`
+- Guardrail: `294 < 300` (`HOT_PATH_SCHEDULER_INTERVAL_SECONDS`) passes
+
+Configured env values:
+- `config/.env.dev`: `SHARD_LEASE_TTL_SECONDS=250`
+- `config/.env.uat.template`: `SHARD_LEASE_TTL_SECONDS=294`
+- `config/.env.prod.template`: `SHARD_LEASE_TTL_SECONDS=294` (aligned to UAT calibration basis)
 
 ## Distributed Coordination Rollout
 

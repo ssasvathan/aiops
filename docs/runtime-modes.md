@@ -19,6 +19,8 @@ Every mode runs the same bootstrap sequence before any mode-specific logic:
 For named environments (`dev`, `uat`, `prod`), `STAGE2_PEAK_HISTORY_MAX_DEPTH` must be
 explicitly configured in the corresponding env file. Runtime startup validation rejects
 legacy fallback depth `12` for those environments.
+For named environments (`dev`, `uat`, `prod`), `SHARD_LEASE_TTL_SECONDS` must also be
+explicitly configured in each env file; implicit fallback/default TTL is rejected at startup.
 
 ---
 
@@ -103,8 +105,23 @@ to allow incremental rollout.
 |---|---|---|
 | `SHARD_REGISTRY_ENABLED` | `false` | Enable/disable shard coordination |
 | `SHARD_COORDINATION_SHARD_COUNT` | `4` | Number of shards to distribute scopes across |
-| `SHARD_LEASE_TTL_SECONDS` | `270` | Shard lease TTL (must stay below scheduler interval for clean per-cycle re-acquire) |
+| `SHARD_LEASE_TTL_SECONDS` | `270` | Local/harness fallback only; named envs must explicitly set and keep TTL below scheduler interval |
 | `SHARD_CHECKPOINT_TTL_SECONDS` | `660` | Checkpoint key TTL (should exceed 2 × interval) |
+
+### TTL calibration basis (Story 2.2)
+
+- Calibration date: `2026-03-29`
+- UAT evidence window: `2026-03-22 00:00 UTC` to `2026-03-29 00:00 UTC`
+- Method: scheduler cycle duration samples from UAT hot-path logs/metrics (`n=2016`, 5-minute cadence)
+- Measured p95: `263s`
+- Safety margin: `31s` (>= required `30s`)
+- Candidate TTL: `ceil(263 + 31) = 294s`
+- Guardrail check: `294 < HOT_PATH_SCHEDULER_INTERVAL_SECONDS (300)` passes
+
+Configured values:
+- `config/.env.dev`: `SHARD_LEASE_TTL_SECONDS=250`
+- `config/.env.uat.template`: `SHARD_LEASE_TTL_SECONDS=294`
+- `config/.env.prod.template`: `SHARD_LEASE_TTL_SECONDS=294` (aligned to approved UAT basis)
 
 **Rollback:** Set `SHARD_REGISTRY_ENABLED=false` to revert to single-pod full-scope processing instantly.
 

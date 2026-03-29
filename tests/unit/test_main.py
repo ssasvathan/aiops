@@ -1114,3 +1114,34 @@ async def test_hot_path_scheduler_calls_acquire_lease_for_each_shard_when_flag_e
 
     # SHARD_COORDINATION_SHARD_COUNT=2, so acquire_lease is called twice (once per shard)
     assert shard_coordinator.acquire_lease.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_hot_path_scheduler_wires_shard_lease_ttl_from_settings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """acquire_lease receives lease_ttl_seconds from settings, not a hardcoded constant."""
+    from aiops_triage_pipeline.coordination.shard_registry import (  # noqa: PLC0415
+        ShardLeaseOutcome,
+        ShardLeaseStatus,
+    )
+
+    shard_coordinator = MagicMock()
+    shard_coordinator.acquire_lease.return_value = ShardLeaseOutcome(
+        status=ShardLeaseStatus.acquired,
+        shard_id=0,
+        owner_id="pod-a",
+        ttl_seconds=211,
+    )
+
+    settings = _hot_path_settings_for_shard_tests(shard_enabled=True)
+    settings.SHARD_LEASE_TTL_SECONDS = 211
+
+    monkeypatch.setattr(__main__, "record_shard_checkpoint_written", MagicMock())
+    kwargs = _make_shard_loop_call(monkeypatch, settings, shard_coordinator)
+
+    with pytest.raises(asyncio.CancelledError):
+        await __main__._hot_path_scheduler_loop(**kwargs)
+
+    for call in shard_coordinator.acquire_lease.call_args_list:
+        assert call.kwargs["lease_ttl_seconds"] == 211
