@@ -1,0 +1,3187 @@
+OpenAI Codex v0.111.0 (research preview)
+--------
+workdir: /home/sas/workspace/aiops
+model: gpt-5.3-codex
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, /home/sas/.codex/memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019d177a-92b8-7cf2-b311-b3af59147063
+--------
+user
+You are executing exactly one BMAD workflow step for story `3-1-implement-cold-path-kafka-consumer-runtime-mode`.
+Use the exact skill name `bmad-bmm-create-story`.
+Run in full auto / yolo style within the current workspace.
+Stop immediately and report failure if you hit any usage limit, rate limit, quota issue, or blocked prerequisite.
+Do not start any later workflow step yourself.
+Sprint source of truth: `/home/sas/workspace/aiops/artifact/implementation-artifacts/sprint-status.yaml`.
+Expected story artifact: `/home/sas/workspace/aiops/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md`.
+
+
+Create or refresh the story artifact for this story so it is implementation-ready. If the artifact already exists, update it safely instead of duplicating it.
+
+The orchestrator will run final gates directly after the BMAD steps:
+- `uv run ruff check`
+- `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
+Do not mark the story done unless your work is actually complete; the orchestrator will verify and repair status tracking after final success.
+
+Final response format:
+Success: yes|no
+Story: 3-1-implement-cold-path-kafka-consumer-runtime-mode
+Step: bmad-bmm-create-story
+Files changed: comma-separated list or 'none'
+Notes: one concise paragraph
+mcp startup: no servers
+codex
+Using the `bmad-bmm-create-story` skill now to generate or refresh the implementation-ready story file for `3-1-implement-cold-path-kafka-consumer-runtime-mode`. I’ll load that skill’s instructions first, then update the target artifact based on the sprint status source of truth only.
+exec
+/bin/bash -lc "ls -la /home/sas/workspace/aiops/.agents/skills/bmad-bmm-create-story && sed -n '1,240p' /home/sas/workspace/aiops/.agents/skills/bmad-bmm-create-story/SKILL.md" in /home/sas/workspace/aiopsexec
+/bin/bash -lc "sed -n '1,260p' /home/sas/workspace/aiops/artifact/implementation-artifacts/sprint-status.yaml && echo '---' && ls -la /home/sas/workspace/aiops/artifact/implementation-artifacts | sed -n '1,200p'" in /home/sas/workspace/aiops succeeded in 51ms:
+total 12
+drwxrwxr-x  2 sas sas 4096 Mar  5 10:03 .
+drwxrwxr-x 64 sas sas 4096 Mar  5 10:03 ..
+-rw-rw-r--  1 sas sas  983 Mar  5 10:03 SKILL.md
+---
+name: bmad-bmm-create-story
+description: Creates a dedicated story file with all the context the agent will need to implement it later. Use when the user says "create the next story" or "create story [story identifier]"
+---
+
+IT IS CRITICAL THAT YOU FOLLOW THESE STEPS - while staying in character as the current agent persona you may have loaded:
+
+<steps CRITICAL="TRUE">
+1. Always LOAD the FULL {project-root}/_bmad/core/tasks/workflow.xml
+2. READ its entire contents - this is the CORE OS for EXECUTING the specific workflow-config {project-root}/_bmad/bmm/workflows/4-implementation/create-story/workflow.yaml
+3. Pass the yaml path _bmad/bmm/workflows/4-implementation/create-story/workflow.yaml as 'workflow-config' parameter to the workflow.xml instructions
+4. Follow workflow.xml instructions EXACTLY as written to process and follow the specific workflow config and its instructions
+5. Save outputs after EACH section when generating any documents from templates
+</steps>
+ succeeded in 51ms:
+# generated: 2026-03-22T14:11:36-04:00
+# project: aiOps
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: /home/sas/workspace/aiops/artifact/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+codex
+I’ve loaded the skill and confirmed the target story is still `backlog` in sprint status. Next I’m following the skill’s required workflow engine files (`workflow.xml` + create-story workflow YAML) to execute this step exactly before touching the artifact.
+exec
+/bin/bash -lc "sed -n '1,260p' /home/sas/workspace/aiops/_bmad/core/tasks/workflow.xml" in /home/sas/workspace/aiopsexec
+/bin/bash -lc "sed -n '1,320p' /home/sas/workspace/aiops/_bmad/bmm/workflows/4-implementation/create-story/workflow.yaml" in /home/sas/workspace/aiops succeeded in 51ms:
+<task id="_bmad/core/tasks/workflow.xml" name="Execute Workflow" internal="true">
+  <objective>Execute given workflow by loading its configuration, following instructions, and producing output</objective>
+
+  <llm critical="true">
+    <mandate>Always read COMPLETE files - NEVER use offset/limit when reading any workflow related files</mandate>
+    <mandate>Instructions are MANDATORY - either as file path, steps or embedded list in YAML, XML or markdown</mandate>
+    <mandate>Execute ALL steps in instructions IN EXACT ORDER</mandate>
+    <mandate>Save to template output file after EVERY "template-output" tag</mandate>
+    <mandate>NEVER skip a step - YOU are responsible for every steps execution without fail or excuse</mandate>
+  </llm>
+
+  <WORKFLOW-RULES critical="true">
+    <rule n="1">Steps execute in exact numerical order (1, 2, 3...)</rule>
+    <rule n="2">Optional steps: Ask user unless #yolo mode active</rule>
+    <rule n="3">Template-output tags: Save content, discuss with the user the section completed, and NEVER proceed until the users indicates
+      to proceed (unless YOLO mode has been activated)</rule>
+  </WORKFLOW-RULES>
+
+  <flow>
+    <step n="1" title="Load and Initialize Workflow">
+ succeeded in 50ms:
+name: create-story
+description: 'Creates a dedicated story file with all the context the agent will need to implement it later. Use when the user says "create the next story" or "create story [story identifier]"'
+
+# Critical variables from config
+config_source: "{project-root}/_bmad/bmm/config.yaml"
+user_name: "{config_source}:user_name"
+communication_language: "{config_source}:communication_language"
+document_output_language: "{config_source}:document_output_language"
+user_skill_level: "{config_source}:user_skill_level"
+date: system-generated
+planning_artifacts: "{config_source}:planning_artifacts"
+implementation_artifacts: "{config_source}:implementation_artifacts"
+
+# Workflow components
+installed_path: "{project-root}/_bmad/bmm/workflows/4-implementation/create-story"
+template: "{installed_path}/template.md"
+instructions: "{installed_path}/instructions.xml"
+validation: "{installed_path}/checklist.md"
+
+# Variables and inputs
+exec
+/bin/bash -lc 'cat /home/sas/workspace/aiops/_bmad/core/tasks/workflow.xml' in /home/sas/workspace/aiopsexec
+/bin/bash -lc 'cat /home/sas/workspace/aiops/_bmad/bmm/workflows/4-implementation/create-story/workflow.yaml' in /home/sas/workspace/aiops succeeded in 50ms:
+<task id="_bmad/core/tasks/workflow.xml" name="Execute Workflow" internal="true">
+  <objective>Execute given workflow by loading its configuration, following instructions, and producing output</objective>
+
+  <llm critical="true">
+    <mandate>Always read COMPLETE files - NEVER use offset/limit when reading any workflow related files</mandate>
+    <mandate>Instructions are MANDATORY - either as file path, steps or embedded list in YAML, XML or markdown</mandate>
+    <mandate>Execute ALL steps in instructions IN EXACT ORDER</mandate>
+    <mandate>Save to template output file after EVERY "template-output" tag</mandate>
+    <mandate>NEVER skip a step - YOU are responsible for every steps execution without fail or excuse</mandate>
+  </llm>
+
+  <WORKFLOW-RULES critical="true">
+    <rule n="1">Steps execute in exact numerical order (1, 2, 3...)</rule>
+    <rule n="2">Optional steps: Ask user unless #yolo mode active</rule>
+    <rule n="3">Template-output tags: Save content, discuss with the user the section completed, and NEVER proceed until the users indicates
+      to proceed (unless YOLO mode has been activated)</rule>
+  </WORKFLOW-RULES>
+
+  <flow>
+    <step n="1" title="Load and Initialize Workflow">
+ succeeded in 51ms:
+name: create-story
+description: 'Creates a dedicated story file with all the context the agent will need to implement it later. Use when the user says "create the next story" or "create story [story identifier]"'
+
+# Critical variables from config
+config_source: "{project-root}/_bmad/bmm/config.yaml"
+user_name: "{config_source}:user_name"
+communication_language: "{config_source}:communication_language"
+document_output_language: "{config_source}:document_output_language"
+user_skill_level: "{config_source}:user_skill_level"
+date: system-generated
+planning_artifacts: "{config_source}:planning_artifacts"
+implementation_artifacts: "{config_source}:implementation_artifacts"
+
+# Workflow components
+installed_path: "{project-root}/_bmad/bmm/workflows/4-implementation/create-story"
+template: "{installed_path}/template.md"
+instructions: "{installed_path}/instructions.xml"
+validation: "{installed_path}/checklist.md"
+
+# Variables and inputs
+codex
+I’m now loading the workflow components referenced by `create-story` (`config.yaml`, `instructions.xml`, and the story template/checklist) so I can execute the step sequence exactly and write the story file incrementally as required.
+exec
+/bin/bash -lc 'cat /home/sas/workspace/aiops/_bmad/bmm/config.yaml' in /home/sas/workspace/aiopsexec
+/bin/bash -lc 'cat /home/sas/workspace/aiops/_bmad/bmm/workflows/4-implementation/create-story/instructions.xml' in /home/sas/workspace/aiopsexec
+/bin/bash -lc "cat /home/sas/workspace/aiops/_bmad/bmm/workflows/4-implementation/create-story/template.md && echo '---' && cat /home/sas/workspace/aiops/_bmad/bmm/workflows/4-implementation/create-story/checklist.md" in /home/sas/workspace/aiops succeeded in 50ms:
+# BMM Module Configuration
+# Generated by BMAD installer
+# Version: 6.0.4
+# Date: 2026-03-05T15:03:25.109Z
+
+project_name: aiOps
+user_skill_level: intermediate
+planning_artifacts: "{project-root}/artifact/planning-artifacts"
+implementation_artifacts: "{project-root}/artifact/implementation-artifacts"
+project_knowledge: "{project-root}/docs"
+
+# Core Configuration Values
+user_name: Sas
+communication_language: English
+document_output_language: English
+output_folder: "{project-root}/artifact"
+ succeeded in 51ms:
+<workflow>
+  <critical>The workflow execution engine is governed by: {project-root}/_bmad/core/tasks/workflow.xml</critical>
+  <critical>You MUST have already loaded and processed: {installed_path}/workflow.yaml</critical>
+  <critical>Communicate all responses in {communication_language} and generate all documents in {document_output_language}</critical>
+
+  <critical>🔥 CRITICAL MISSION: You are creating the ULTIMATE story context engine that prevents LLM developer mistakes, omissions or
+    disasters! 🔥</critical>
+  <critical>Your purpose is NOT to copy from epics - it's to create a comprehensive, optimized story file that gives the DEV agent
+    EVERYTHING needed for flawless implementation</critical>
+  <critical>COMMON LLM MISTAKES TO PREVENT: reinventing wheels, wrong libraries, wrong file locations, breaking regressions, ignoring UX,
+    vague implementations, lying about completion, not learning from past work</critical>
+  <critical>🚨 EXHAUSTIVE ANALYSIS REQUIRED: You must thoroughly analyze ALL artifacts to extract critical context - do NOT be lazy or skim!
+    This is the most important function in the entire development process!</critical>
+  <critical>🔬 UTILIZE SUBPROCESSES AND SUBAGENTS: Use research subagents, subprocesses or parallel processing if available to thoroughly
+    analyze different artifacts simultaneously and thoroughly</critical>
+  <critical>❓ SAVE QUESTIONS: If you think of questions or clarifications during analysis, save them for the end after the complete story is
+    written</critical>
+  <critical>🎯 ZERO USER INTERVENTION: Process should be fully automated except for initial epic/story selection or missing documents</critical>
+
+  <step n="1" goal="Determine target story">
+ succeeded in 51ms:
+# Story {{epic_num}}.{{story_num}}: {{story_title}}
+
+Status: ready-for-dev
+
+<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+## Story
+
+As a {{role}},
+I want {{action}},
+so that {{benefit}}.
+
+## Acceptance Criteria
+
+1. [Add acceptance criteria from epics/PRD]
+
+## Tasks / Subtasks
+
+- [ ] Task 1 (AC: #)
+  - [ ] Subtask 1.1
+codex
+I’ve resolved the workflow variables and selected the user-specified story key directly (`3-1-implement-cold-path-kafka-consumer-runtime-mode`). Next I’ll load the planning and architecture artifacts for Epic 3 plus prior implementation patterns, then generate the story file section-by-section and update sprint tracking to `ready-for-dev`.
+exec
+/bin/bash -lc 'ls -la /home/sas/workspace/aiops/artifact/planning-artifacts && rg --files /home/sas/workspace/aiops/artifact/planning-artifacts' in /home/sas/workspace/aiopsexec
+/bin/bash -lc 'git -C /home/sas/workspace/aiops rev-parse --is-inside-work-tree && git -C /home/sas/workspace/aiops log --oneline -n 8' in /home/sas/workspace/aiopsexec
+/bin/bash -lc "rg --files /home/sas/workspace/aiops | rg 'project-context\\.md"'$'"'" in /home/sas/workspace/aiops succeeded in 50ms:
+total 128
+drwxrwxr-x 4 sas sas  4096 Mar 22 00:09 .
+drwxrwxr-x 6 sas sas  4096 Mar 22 11:23 ..
+drwxrwxr-x 2 sas sas  4096 Mar 21 23:30 architecture
+-rw-rw-r-- 1 sas sas 43390 Mar 21 23:51 epics.md
+-rw-rw-r-- 1 sas sas 43744 Mar 22 00:09 implementation-readiness-report-2026-03-21.md
+drwxrwxr-x 2 sas sas  4096 Mar 21 23:30 prd
+-rw-rw-r-- 1 sas sas 21034 Mar 21 18:57 product-brief-aiOps-2026-03-21.md
+/home/sas/workspace/aiops/artifact/planning-artifacts/product-brief-aiOps-2026-03-21.md
+/home/sas/workspace/aiops/artifact/planning-artifacts/prd/user-journeys.md
+/home/sas/workspace/aiops/artifact/planning-artifacts/prd/event-driven-pipeline-specific-requirements.md
+/home/sas/workspace/aiops/artifact/planning-artifacts/prd/index.md
+/home/sas/workspace/aiops/artifact/planning-artifacts/prd/functional-requirements.md
+/home/sas/workspace/aiops/artifact/planning-artifacts/prd/non-functional-requirements.md
+/home/sas/workspace/aiops/artifact/planning-artifacts/prd/process-governance-requirements.md
+/home/sas/workspace/aiops/artifact/planning-artifacts/prd/product-scope.md
+/home/sas/workspace/aiops/artifact/planning-artifacts/prd/executive-summary.md
+/home/sas/workspace/aiops/artifact/planning-artifacts/prd/success-criteria.md
+/home/sas/workspace/aiops/artifact/planning-artifacts/prd/project-classification.md
+/home/sas/workspace/aiops/artifact/planning-artifacts/prd/domain-specific-requirements.md
+ succeeded in 51ms:
+true
+a556547 chore(sprint): close epic 2 and start epic 3
+34e73cf bmad(epic-2/2-5-run-casefile-lifecycle-retention-purge): complete workflow and quality gates
+4a7117a bmad(epic-2/2-4-dispatch-pagerduty-and-slack-actions-with-denylist-safety): complete workflow and quality gates
+0b670fd bmad(epic-2/2-2-enforce-outbox-source-state-transitions): Review complete
+7aa68be bmad(epic-2/2-2-enforce-outbox-source-state-transitions): complete workflow and quality gates
+7d2f3e2 bmad(epic-2/2-1-write-triage-casefiles-with-hash-chain-and-policy-stamps): code review fixes, ATDD artifact, traceability report
+0c17da5 bmad(epic-2/2-1-write-triage-casefiles-with-hash-chain-and-policy-stamps): complete workflow and quality gates
+6c9e362 epic-1 completed
+ succeeded in 51ms:
+/home/sas/workspace/aiops/archive/project-context.md
+exec
+/bin/bash -lc 'rg -n "epic 3|Epic 3|3-1-implement-cold-path-kafka-consumer-runtime-mode|Story 3.1|cold-path|kafka consumer runtime" /home/sas/workspace/aiops/artifact/planning-artifacts/epics.md' in /home/sas/workspace/aiops succeeded in 51ms:
+71:FR36: The cold-path can consume CaseHeaderEventV1 from Kafka as an independent consumer pod
+72:FR37: The cold-path can retrieve full case context from S3, reconstruct triage excerpt and evidence summary from persisted casefile data
+73:FR38: The cold-path can produce a deterministic text evidence summary rendering a case's evidence state for LLM consumption, distinguishing PRESENT/UNKNOWN/ABSENT/STALE evidence and including anomaly findings, temporal context, and topic role
+74:FR39: The cold-path can invoke LLM diagnosis for every case regardless of environment, criticality tier, or sustained status
+75:FR40: The cold-path can submit an enriched prompt including full Finding fields (severity, reason_codes, evidence_required, is_primary), topic_role, routing_key, anomaly family domain descriptions, confidence calibration guidance, fault domain examples, and a few-shot example
+76:FR41: The cold-path can produce a schema-validated DiagnosisReportV1 with structured evidence citations, verdict, fault domain, confidence, next checks, and evidence gaps
+77:FR42: The cold-path can produce a deterministic fallback report when LLM invocation fails (timeout, unavailability, schema validation failure)
+78:FR43: The cold-path can write diagnosis.json to object storage with SHA-256 hash chain linking to triage.json
+159:- Kafka via confluent-kafka 2.13.0 — outbox publication and cold-path consumption
+160:- LangGraph 1.0.9 for cold-path LLM diagnosis orchestration
+182:- D6: Cold-path consumer uses confluent-kafka, sequential processing, thin adapter protocol for testability. Consumer group: `aiops-cold-path-diagnosis` on `aiops-case-header` topic.
+238:FR36: Epic 3 - LLM-enriched diagnosis on the cold path
+239:FR37: Epic 3 - LLM-enriched diagnosis on the cold path
+240:FR38: Epic 3 - LLM-enriched diagnosis on the cold path
+241:FR39: Epic 3 - LLM-enriched diagnosis on the cold path
+242:FR40: Epic 3 - LLM-enriched diagnosis on the cold path
+243:FR41: Epic 3 - LLM-enriched diagnosis on the cold path
+244:FR42: Epic 3 - LLM-enriched diagnosis on the cold path
+245:FR43: Epic 3 - LLM-enriched diagnosis on the cold path
+272:### Epic 3: LLM-Enriched Diagnosis on the Cold Path
+exec
+/bin/bash -lc 'cat /home/sas/workspace/aiops/artifact/planning-artifacts/epics.md' in /home/sas/workspace/aiops succeeded in 50ms:
+Total output lines: 742
+
+---
+stepsCompleted: ["step-01-validate-prerequisites", "step-02-design-epics", "step-03-create-stories", "step-04-final-validation"]
+inputDocuments:
+  - artifact/planning-artifacts/prd/index.md
+  - artifact/planning-artifacts/prd/executive-summary.md
+  - artifact/planning-artifacts/prd/project-classification.md
+  - artifact/planning-artifacts/prd/success-criteria.md
+  - artifact/planning-artifacts/prd/product-scope.md
+  - artifact/planning-artifacts/prd/user-journeys.md
+  - artifact/planning-artifacts/prd/domain-specific-requirements.md
+  - artifact/planning-artifacts/prd/event-driven-pipeline-specific-requirements.md
+  - artifact/planning-artifacts/prd/functional-requirements.md
+  - artifact/planning-artifacts/prd/non-functional-requirements.md
+  - artifact/planning-artifacts/prd/process-governance-requirements.md
+  - artifact/planning-artifacts/architecture/index.md
+  - artifact/planning-artifacts/architecture/project-context-analysis.md
+  - artifact/planning-artifacts/architecture/starter-template-evaluation.md
+  - artifact/planning-artifacts/architecture/core-architectural-decisions.md
+exec
+/bin/bash -lc 'cat /home/sas/workspace/aiops/artifact/planning-artifacts/epics.md' in /home/sas/workspace/aiops succeeded in 50ms:
+---
+stepsCompleted: ["step-01-validate-prerequisites", "step-02-design-epics", "step-03-create-stories", "step-04-final-validation"]
+inputDocuments:
+  - artifact/planning-artifacts/prd/index.md
+  - artifact/planning-artifacts/prd/executive-summary.md
+  - artifact/planning-artifacts/prd/project-classification.md
+  - artifact/planning-artifacts/prd/success-criteria.md
+  - artifact/planning-artifacts/prd/product-scope.md
+  - artifact/planning-artifacts/prd/user-journeys.md
+  - artifact/planning-artifacts/prd/domain-specific-requirements.md
+  - artifact/planning-artifacts/prd/event-driven-pipeline-specific-requirements.md
+  - artifact/planning-artifacts/prd/functional-requirements.md
+  - artifact/planning-artifacts/prd/non-functional-requirements.md
+  - artifact/planning-artifacts/prd/process-governance-requirements.md
+  - artifact/planning-artifacts/architecture/index.md
+  - artifact/planning-artifacts/architecture/project-context-analysis.md
+  - artifact/planning-artifacts/architecture/starter-template-evaluation.md
+  - artifact/planning-artifacts/architecture/core-architectural-decisions.md
+  - artifact/planning-artifacts/architecture/implementation-patterns-consistency-rules.md
+  - artifact/planning-artifacts/architecture/project-structure-boundaries.md
+codex
+I’m extracting the architecture and PRD source context next, focusing on cold-path runtime behavior, runtime modes, Kafka consumer patterns, health/observability, and testing constraints so the story can include concrete guardrails and file-level guidance.
+exec
+/bin/bash -lc 'for f in /home/sas/workspace/aiops/artifact/planning-artifacts/architecture/*.md; do echo "===== FILE: $f ====="; cat "$f"; echo; done' in /home/sas/workspace/aiops succeeded in 51ms:
+===== FILE: /home/sas/workspace/aiops/artifact/planning-artifacts/architecture/architecture-validation-results.md =====
+# Architecture Validation Results
+
+## Coherence Validation
+
+**Decision Compatibility:** All 13 decisions are internally consistent. D1 (key namespace) + D13 (connection pool) define the Redis foundation that D2, D3, D5, D8 build upon. D4 (rule engine isolation) has zero dependency conflicts. D5 (cycle lock fail-open) aligns with D3 (degradation matrix). D2 (ephemerality) is consistent with D3. D8 → D9 → D6 chain is internally consistent.
+
+**Pattern Consistency:** Implementation patterns align with all decisions. Two-tier Redis error handling matches D3's degradation matrix exactly. DI approach supports D4's isolation requirement and D5's composition. Config variable naming matches existing Settings class conventions.
+
+**Structure Alignment:** Project structure directly maps every decision to specific files. No orphaned decisions, no undecided structural questions.
+
+## Requirements Coverage
+
+**All 58 FRs covered:**
+
+| FR Range | Coverage | Architecture Support |
+|---|---|---|
+| FR1-FR7 (Evidence) | 7/7 | D8 (baselines), D1/D3 (Redis), CR-01/CR-03/CR-10 |
+| FR8-FR11 (Peak/Sustained) | 4/4 | D8, CR-03/CR-05/CR-10 |
+| FR12-FR16 (Topology) | 5/5 | D10 (clean cut), CR-11 |
+exec
+/bin/bash -lc 'cat /home/sas/workspace/aiops/artifact/planning-artifacts/architecture/index.md' in /home/sas/workspace/aiopsexec
+/bin/bash -lc 'cat /home/sas/workspace/aiops/artifact/planning-artifacts/architecture/project-context-analysis.md' in /home/sas/workspace/aiopsexec
+/bin/bash -lc 'cat /home/sas/workspace/aiops/artifact/planning-artifacts/architecture/implementation-patterns-consistency-rules.md' in /home/sas/workspace/aiops succeeded in 50ms:
+# Project Context Analysis
+
+## Requirements Overview
+
+**Functional Requirements:**
+
+60 FRs across 10 capability areas, plus 2 process/governance requirements:
+
+| Area | FRs | Architectural Impact |
+|---|---|---|
+| Evidence Collection & Anomaly Detection | FR1-FR7 | Per-scope baselines from Redis, Prometheus ingestion, UNKNOWN propagation |
+| Peak & Sustained Classification | FR8-FR11 | Externalized Redis state, parallelized computation, bounded memory |
+| Topology Resolution & Ownership Routing | FR12-FR16 | Single-format YAML in config/, reload-on-change, multi-level ownership |
+| Deterministic Gating & Action Decisions | FR17-FR25 | YAML-authoritative DSL engine, handler registry, post-condition safety assertions |
+| Case Management & Persistence | FR26-FR31 | Write-once S3, SHA-256 hash chains, outbox state machine, policy stamps |
+| Action Dispatch | FR32-FR35 | PagerDuty/Slack/ServiceNow adapters, denylist enforcement, structured log fallback |
+| LLM Diagnosis (Cold Path) | FR36-FR43 | Independent Kafka consumer pod, evidence summary builder, enriched prompts, fallback reports |
+| Distributed Operations | FR44-FR48 | Cycle lock, scope sharding, lease/fence, feature-flagged rollout |
+| Configuration & Policy Management | FR49-FR53 | YAML policies loaded at startup, APP_ENV resolution, SASL_SSL validation |
+| Observability & Health | FR54-FR58 | Health endpoint per pod, coordination state, OTLP metrics, structured logs with pod identity |
+ succeeded in 50ms:
+# Architecture Decision Document
+
+## Table of Contents
+
+- [Architecture Decision Document](#table-of-contents)
+  - [Project Context Analysis](./project-context-analysis.md)
+    - [Requirements Overview](./project-context-analysis.md#requirements-overview)
+    - [CR Dependency Graph](./project-context-analysis.md#cr-dependency-graph)
+    - [Redis Role Expansion and Concentrated-Risk Trade-off](./project-context-analysis.md#redis-role-expansion-and-concentrated-risk-trade-off)
+    - [Architectural Invariants (Stability Foundation)](./project-context-analysis.md#architectural-invariants-stability-foundation)
+    - [Technical Constraints & Dependencies](./project-context-analysis.md#technical-constraints-dependencies)
+    - [Cross-Cutting Concerns (Prioritized by Blast Radius)](./project-context-analysis.md#cross-cutting-concerns-prioritized-by-blast-radius)
+    - [Operational Readiness Definition](./project-context-analysis.md#operational-readiness-definition)
+  - [Starter Template Evaluation](./starter-template-evaluation.md)
+    - [Primary Technology Domain](./starter-template-evaluation.md#primary-technology-domain)
+    - [Starter Template: Not Applicable (Brownfield)](./starter-template-evaluation.md#starter-template-not-applicable-brownfield)
+    - [Established Technology Foundation](./starter-template-evaluation.md#established-technology-foundation)
+  - [Core Architectural Decisions](./core-architectural-decisions.md)
+    - [Decision Priority Analysis](./core-architectural-decisions.md#decision-priority-analysis)
+    - [Standing Architectural Principle](./core-architectural-decisions.md#standing-architectural-principle)
+ succeeded in 51ms:
+# Implementation Patterns & Consistency Rules
+
+## Critical Conflict Points Identified
+
+7 areas where AI agents could make different implementation choices during the revision phase, all resolved below.
+
+## Redis Interaction Patterns
+
+**Connection:** Singleton `Redis.from_url()` created in `__main__.py`, passed as constructor or function parameter. Never imported as a module-level singleton.
+
+**Two-tier error handling:**
+- **Critical consumers** (dedupe/AG5, cycle lock): catch → track health state → re-raise. Caller applies degraded-mode effects.
+- **Cache consumers** (findings, peak, baselines, sustained state, shard checkpoint): catch → warn-log → continue with fallback value. Pipeline never halts for cache failures.
+
+**Key construction:** Module-level builder functions in the consuming module, following D1 namespace convention (`aiops:{type}:{scope}`).
+
+**Test doubles:** Per-file dict-backed fake implementations (`_FakeRedis`, `_StubRedis`). No shared Redis fixture across unit test files.
+
+## Package & Module Naming
+
+exec
+/bin/bash -lc 'for f in /home/sas/workspace/aiops/artifact/planning-artifacts/prd/*.md; do echo "===== FILE: $f ====="; cat "$f"; echo; done' in /home/sas/workspace/aiops succeeded in 51ms:
+===== FILE: /home/sas/workspace/aiops/artifact/planning-artifacts/prd/domain-specific-requirements.md =====
+# Domain-Specific Requirements
+
+The following requirements reflect AIOps domain constraints that shape the system's architecture independently of any specific CR — they are standing invariants that every revision change must preserve.
+
+## Audit & Decision Reproducibility
+
+- 25-month casefile retention with write-once semantics and SHA-256 hash chains ensuring tamper-evident artifact integrity
+- Policy version stamping in every casefile — any historical decision can be replayed with the exact rulebook, peak policy, denylist, and anomaly detection policy versions active at decision time
+- Schema envelope versioning with perpetual read support across the retention window — old casefiles remain deserializable as schema versions evolve
+- Structured logs with correlation IDs (case_id) enabling field-level querying of the full decision trail in Elastic (LASS)
+
+## Operational Safety Invariants
+
+- PAGE is structurally impossible outside PROD+TIER_0 — enforced by environment caps and post-condition safety assertions independent of YAML correctness
+- Actions only cap downward, never escalate — monotonic reduction is a design invariant, not a configuration choice
+- Environment-based action caps: local=OBSERVE, dev=NOTIFY, uat=TICKET, prod=PAGE
+- Hot/cold path separation — the LLM advisory path has no import path, no shared state, and no conditional wait on the deterministic hot path
+
+## Degraded Mode Handling
+exec
+/bin/bash -lc 'cat /home/sas/workspace/aiops/artifact/implementation-artifacts/2-5-run-casefile-lifecycle-retention-purge.md' in /home/sas/workspace/aiops succeeded in 51ms:
+# Story 2.5: Run Casefile Lifecycle Retention Purge
+
+Status: done
+
+<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+## Story
+
+As a platform operator,  
+I want expired casefiles to be purged by lifecycle policy,  
+so that storage retention remains compliant and bounded.
+
+**Implements:** FR30
+
+## Acceptance Criteria
+
+1. **Given** retention policy and object storage access are configured  
+   **When** the casefile-lifecycle runner scans casefile objects  
+   **Then** expired artifacts are identified and purged according to policy  
+   **And** non-expired artifacts remain untouched.
+exec
+/bin/bash -lc 'ls -la src/aiops_triage_pipeline/integrations && ls -la src/aiops_triage_pipeline/diagnosis && ls -la src/aiops_triage_pipeline/health' in /home/sas/workspace/aiopsexec
+/bin/bash -lc 'rg -n "cold-path|cold_path|CaseHeaderEventV1|aiops-cold-path-diagnosis|aiops-case-header|run_cold_path_diagnosis|--mode" src tests README.md docs -S' in /home/sas/workspace/aiopsexec
+/bin/bash -lc "sed -n '1,260p' src/aiops_triage_pipeline/__main__.py && echo '---' && sed -n '260,560p' src/aiops_triage_pipeline/__main__.py" in /home/sas/workspace/aiops succeeded in 51ms:
+total 108
+drwxrwxr-x  3 sas sas  4096 Mar  9 10:16 .
+drwxrwxr-x 20 sas sas  4096 Mar 22 12:27 ..
+-rw-rw-r--  1 sas sas     0 Feb 28 16:20 __init__.py
+drwxrwxr-x  2 sas sas  4096 Mar 22 16:53 __pycache__
+-rw-rw-r--  1 sas sas     0 Feb 28 16:20 base.py
+-rw-rw-r--  1 sas sas  6851 Mar  5 20:08 kafka.py
+-rw-rw-r--  1 sas sas  5280 Mar  9 10:16 llm.py
+-rw-rw-r--  1 sas sas  8153 Mar 22 16:52 pagerduty.py
+-rw-rw-r--  1 sas sas  4025 Mar  2 19:41 prometheus.py
+-rw-rw-r--  1 sas sas 50019 Mar  8 12:51 servicenow.py
+-rw-rw-r--  1 sas sas 15135 Mar 22 16:52 slack.py
+total 40
+drwxrwxr-x  3 sas sas  4096 Mar 21 15:36 .
+drwxrwxr-x 20 sas sas  4096 Mar 22 12:27 ..
+-rw-rw-r--  1 sas sas     0 Feb 28 16:20 __init__.py
+drwxrwxr-x  2 sas sas  4096 Mar 22 00:35 __pycache__
+-rw-rw-r--  1 sas sas   975 Mar  9 10:16 fallback.py
+-rw-rw-r--  1 sas sas 17800 Mar 21 15:36 graph.py
+-rw-rw-r--  1 sas sas  3171 Mar  7 20:17 prompt.py
+ succeeded in 51ms:
+README.md:14:- [Cold Path — LLM Diagnosis](#cold-path--llm-diagnosis)
+README.md:43:- Publishes typed Kafka events (`CaseHeaderEventV1`, `TriageExcerptV1`) through a Postgres-backed durable outbox for at-least-once delivery (Invariant B2).
+README.md:230:| `CaseHeaderEventV1` | `contracts/case_header_event.py` |
+README.md:287:APP_ENV=local uv run python -m aiops_triage_pipeline --mode outbox-publisher
+README.md:290:APP_ENV=local uv run python -m aiops_triage_pipeline --mode casefile-lifecycle
+README.md:293:APP_ENV=local uv run python -m aiops_triage_pipeline --mode outbox-publisher --once
+README.md:294:APP_ENV=local uv run python -m aiops_triage_pipeline --mode casefile-lifecycle --once
+README.md:301:The entry point (`__main__.py`) dispatches to one of four modes via `--mode`.
+README.md:306:| `cold-path` | Bootstrap only | Same bootstrap; cold-path invocation wired through dedicated entrypoint |
+docs/contracts.md:17:| `CaseHeaderEventV1` | `contracts/case_header_event.py` |
+docs/deployment-guide.md:26:uv run python -m aiops_triage_pipeline --mode outbox-publisher
+docs/architecture.md:47:- Kafka topic publication (`aiops-case-header`, `aiops-triage-excerpt`)
+docs/schema-evolution-strategy.md:367:        case_header_event.py     # CaseHeaderEventV1
+docs/development-guide.md:25:APP_ENV=local uv run python -m aiops_triage_pipeline --mode hot-path
+docs/development-guide.md:26:APP_ENV=local uv run python -m aiops_triage_pipeline --mode cold-path
+docs/development-guide.md:27:APP_ENV=local uv run python -m aiops_triage_pipeline --mode outbox-publisher
+docs/development-guide.md:28:APP_ENV=local uv run python -m aiops_triage_pipeline --mode casefile-lifecycle --once
+docs/archive/api-contracts-core.md:55:  - `aiops-case-header`
+docs/archive/api-contracts-core.md:58:  - `CaseHeaderEventV1`
+docs/archive/api-contracts-core.md:63:- `CaseHeaderEventV1`, `TriageExcerptV1`, `ActionDecisionV1`, `GateInputV1`, `DiagnosisReportV1`
+ succeeded in 50ms:
+"""Entry point for aiops-triage-pipeline."""
+
+import argparse
+import asyncio
+import time
+from collections import deque
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Mapping
+
+import redis as redis_lib
+import structlog
+from sqlalchemy import create_engine
+
+from aiops_triage_pipeline.cache.dedupe import RedisActionDedupeStore
+from aiops_triage_pipeline.cache.evidence_window import (
+    load_sustained_window_states,
+    persist_sustained_window_states,
+)
+from aiops_triage_pipeline.cache.peak_cache import (
+exec
+/bin/bash -lc "sed -n '560,860p' src/aiops_triage_pipeline/__main__.py" in /home/sas/workspace/aiops succeeded in 51ms:
+            produced_cases=produced_cases,
+            sleep_seconds=round(sleep_seconds, 1),
+        )
+        await asyncio.sleep(sleep_seconds)
+
+
+def _peak_scopes_from_rows(rows: tuple[EvidenceRow, ...]) -> list[tuple[str, str, str]]:
+    scopes: set[tuple[str, str, str]] = set()
+    for row in rows:
+        if len(row.scope) == 3:
+            scopes.add((row.scope[0], row.scope[1], row.scope[2]))
+            continue
+        if len(row.scope) == 4:
+            scopes.add((row.scope[0], row.scope[1], row.scope[3]))
+    return sorted(scopes)
+
+
+def _resolve_routing_context_for_scope(
+    *,
+    scope: tuple[str, ...],
+codex
+I confirmed the current code still has `cold-path` as a stub in `__main__.py`, so the story should drive concrete runtime-mode wiring (new consumer adapter, startup/shutdown behavior, health transitions, and tests). I’ll now collect exact config/contract/test hooks to make the task list implementation-ready and repo-accurate.
+exec
+/bin/bash -lc 'cat src/aiops_triage_pipeline/config/settings.py' in /home/sas/workspace/aiopsexec
+/bin/bash -lc 'cat src/aiops_triage_pipeline/integrations/kafka.py' in /home/sas/workspace/aiopsexec
+/bin/bash -lc "cat src/aiops_triage_pipeline/contracts/case_header_event.py && echo '---' && cat src/aiops_triage_pipeline/contracts/triage_excerpt.py" in /home/sas/workspace/aiops succeeded in 50ms:
+import functools
+import os
+from enum import Enum
+from pathlib import Path
+from typing import TypeVar
+
+import structlog
+from pydantic import BaseModel, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Read APP_ENV BEFORE class definition to select the correct .env file.
+# Direct env var takes precedence over any .env file value (K8s injection pattern).
+_APP_ENV = os.getenv("APP_ENV", "local")
+
+
+class AppEnv(str, Enum):
+    local = "local"
+    harness = "harness"
+    dev = "dev"
+    uat = "uat"
+ succeeded in 50ms:
+"""Kafka publisher adapter for durable outbox event emission."""
+
+from __future__ import annotations
+
+import os
+from typing import Any, Protocol
+
+from aiops_triage_pipeline.config.settings import Settings, get_settings
+from aiops_triage_pipeline.contracts.case_header_event import CaseHeaderEventV1
+from aiops_triage_pipeline.contracts.triage_excerpt import TriageExcerptV1
+from aiops_triage_pipeline.errors.exceptions import CriticalDependencyError, InvariantViolation
+from aiops_triage_pipeline.outbox.publisher import (
+    CaseEventPublisherProtocol,
+    CaseHeaderPublisherProtocol,
+)
+
+CASE_HEADER_CONTRACT_ID = "CaseHeaderEvent.v1"
+TRIAGE_EXCERPT_CONTRACT_ID = "TriageExcerpt.v1"
+DEFAULT_CASE_HEADER_TOPIC = "aiops-case-header"
+DEFAULT_TRIAGE_EXCERPT_TOPIC = "aiops-triage-excerpt"
+ succeeded in 51ms:
+"""CaseHeaderEventV1 — Kafka event published via durable outbox (small header payload)."""
+
+from typing import Literal
+
+from pydantic import AwareDatetime, BaseModel
+
+from aiops_triage_pipeline.contracts.enums import Action, CriticalityTier, Environment
+
+
+class CaseHeaderEventV1(BaseModel, frozen=True):
+    schema_version: Literal["v1"] = "v1"
+    case_id: str  # Stable case identifier
+    env: Environment
+    cluster_id: str
+    stream_id: str
+    topic: str
+    anomaly_family: Literal["CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY"]
+    criticality_tier: CriticalityTier
+    final_action: Action  # Gated action decision
+    routing_key: str  # Team routing key from topology registry
+exec
+/bin/bash -lc "cat src/aiops_triage_pipeline/health/registry.py && echo '---' && cat src/aiops_triage_pipeline/health/server.py" in /home/sas/workspace/aiopsexec
+/bin/bash -lc 'cat src/aiops_triage_pipeline/diagnosis/graph.py' in /home/sas/workspace/aiopsexec
+/bin/bash -lc 'cat tests/unit/test_main.py' in /home/sas/workspace/aiops succeeded in 50ms:
+"""Centralized health registry — asyncio-safe, singleton, per-component status tracking."""
+
+import asyncio
+import functools
+from datetime import datetime, timezone
+
+from aiops_triage_pipeline.health.metrics import record_status
+from aiops_triage_pipeline.models.health import ComponentHealth, HealthStatus
+
+
+class HealthRegistry:
+    """Singleton tracking per-component health status (HEALTHY/DEGRADED/UNAVAILABLE).
+
+    Asyncio-safe: uses asyncio.Lock for write operations. Read operations
+    (get, get_all, is_degraded) are lock-free — safe for single-threaded asyncio.
+
+    Usage pattern in pipeline stages:
+        registry = get_health_registry()
+        if registry.is_degraded("redis"):
+            action = min(action, "NOTIFY")  # Cap to NOTIFY-only
+ succeeded in 51ms:
+"""Cold-path LangGraph diagnosis graph and fire-and-forget launcher.
+
+Implements structured prompt construction via diagnosis/prompt.py, triage_hash
+hash chain injection, and diagnosis.json write-once persistence after successful LLM response.
+Handles targeted exception handling per failure scenario (timeout, schema-invalid,
+unavailable, error) with fallback DiagnosisReport written to diagnosis.json for all failure paths.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import time
+from typing import Any, TypedDict
+
+import httpx
+import pydantic
+from langgraph.graph import END, START, StateGraph
+
+from aiops_triage_pipeline.config.settings import AppEnv
+from aiops_triage_pipeline.contracts.diagnosis_report import DiagnosisReportV1
+ succeeded in 51ms:
+from __future__ import annotations
+
+import sys
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
+import pytest
+
+from aiops_triage_pipeline import __main__
+from aiops_triage_pipeline.models.anomaly import AnomalyFinding
+
+
+def test_main_dispatches_casefile_lifecycle_mode_once(monkeypatch) -> None:
+    calls: list[bool] = []
+    monkeypatch.setattr(__main__, "_run_casefile_lifecycle", lambda *, once: calls.append(once))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["aiops-triage-pipeline", "--mode", "casefile-lifecycle", "--once"],
+    )
+exec
+/bin/bash -lc 'cat docs/runtime-modes.md' in /home/sas/workspace/aiopsexec
+/bin/bash -lc 'cat docs/local-development.md' in /home/sas/workspace/aiopsexec
+/bin/bash -lc 'cat README.md' in /home/sas/workspace/aiops succeeded in 51ms:
+# Runtime Modes
+
+The entry point `src/aiops_triage_pipeline/__main__.py` dispatches to one of four modes via the `--mode` argument. Each mode is a self-contained process designed to run independently.
+
+```bash
+uv run python -m aiops_triage_pipeline --mode <mode> [--once]
+```
+
+## Common Bootstrap
+
+Every mode runs the same bootstrap sequence before any mode-specific logic:
+
+1. Load settings from `config/.env.<APP_ENV>` via `pydantic-settings`
+2. Configure structured logging (`structlog`)
+3. Load the operational alert policy (`config/policies/operational-alert-policy-v1.yaml`)
+4. Initialise the `OperationalAlertEvaluator` scoped to `APP_ENV`
+5. Configure OTLP metrics export
+
+---
+
+ succeeded in 50ms:
+# Local Development
+
+## Prerequisites
+
+- Python 3.13+
+- `uv`
+- Docker + Docker Compose
+
+## Repository Setup
+
+```bash
+uv sync --dev
+```
+
+## Start Local Infrastructure
+
+```bash
+docker compose up -d --build
+```
+
+ succeeded in 50ms:
+# AIOps Triage Pipeline
+
+> Intelligent, multi-signal infrastructure triage — unified telemetry ingestion, AI-powered diagnosis, and deterministic safety gating across metrics, logs, and traces from any source.
+
+**AIOps Triage Pipeline** is a production-grade AIOps platform that ingests infrastructure telemetry across metrics, logs, and traces — from multiple configurable sources — and automatically triages anomalies into auditable, coordinated incident responses. Platform engineering and SRE teams use it to detect infrastructure signals at scale, assemble durable evidence cases, and execute downstream actions — PagerDuty pages, Slack notifications, and ServiceNow postmortem workflows — without manual intervention on the hot path.
+
+Designed from the ground up for multi-telemetry, multi-source observability: the platform's extensible signal layer abstracts individual data origins, with Prometheus metrics as the first production-grade telemetry integration. Every triage decision is AI-enriched, deterministically gated, and reproducibly traceable to the policy version that produced it.
+
+## Table of Contents
+
+- [What This Project Does](#what-this-project-does)
+- [Architecture at a Glance](#architecture-at-a-glance)
+- [Pipeline Stages](#pipeline-stages)
+- [Cold Path — LLM Diagnosis](#cold-path--llm-diagnosis)
+- [Durable Persistence Layer](#durable-persistence-layer)
+- [Integration Boundaries](#integration-boundaries)
+- [Observability and Governance](#observability-and-governance)
+- [Contracts](#contracts)
+- [Quick Start (Local)](#quick-start-local)
+- [Runtime Modes](#runtime-modes)
+exec
+/bin/bash -lc 'for f in config/.env.local config/.env.dev config/.env.docker config/.env.uat.template config/.env.prod.template; do echo "===== FILE: $f ====="; cat "$f"; echo; done' in /home/sas/workspace/aiops succeeded in 50ms:
+===== FILE: config/.env.local =====
+APP_ENV=local
+
+# Kafka (PLAINTEXT for local)
+KAFKA_BOOTSTRAP_SERVERS=localhost:9092
+KAFKA_SECURITY_PROTOCOL=PLAINTEXT
+
+# Postgres
+DATABASE_URL=postgresql+psycopg://aiops:aiops@localhost:5432/aiops
+
+# Redis
+REDIS_URL=redis://localhost:6379/0
+
+# MinIO (S3-compatible)
+S3_ENDPOINT_URL=http://localhost:9000
+S3_ACCESS_KEY=minioadmin
+S3_SECRET_KEY=minioadmin
+S3_BUCKET=aiops-cases
+
+# Integration modes (all LOG for local — no outbound calls)
+exec
+/bin/bash -lc 'cat src/aiops_triage_pipeline/outbox/worker.py' in /home/sas/workspace/aiopsexec
+/bin/bash -lc 'cat tests/integration/conftest.py' in /home/sas/workspace/aiops succeeded in 50ms:
+"""Durable outbox publisher loop for READY/RETRY recovery and Kafka emission."""
+
+from __future__ import annotations
+
+import time
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from math import ceil
+from typing import Protocol
+
+from aiops_triage_pipeline.contracts.outbox_policy import OutboxPolicyV1
+from aiops_triage_pipeline.denylist.loader import DenylistV1
+from aiops_triage_pipeline.errors.exceptions import (
+    DenylistSanitizationError,
+    PublishAfterDenylistError,
+)
+from aiops_triage_pipeline.health.alerts import (
+    OperationalAlertEvaluation,
+    OperationalAlertEvaluator,
+)
+exec
+/bin/bash -lc 'cat src/aiops_triage_pipeline/storage/casefile_io.py' in /home/sas/workspace/aiops succeeded in 51ms:
+"""Integration test bootstrap for Docker/Testcontainers defaults."""
+
+from __future__ import annotations
+
+import os
+import time
+from http.client import RemoteDisconnected
+from pathlib import Path
+from urllib.error import URLError
+from urllib.request import urlopen
+
+import pytest
+import redis as redis_lib
+from testcontainers.core.container import DockerContainer
+
+_DOCKER_DESKTOP_SOCKET = Path.home() / ".docker" / "desktop" / "docker.sock"
+_DOCKER_ENGINE_SOCKET = Path("/var/run/docker.sock")
+
+
+def _configure_testcontainers_environment() -> None:
+ succeeded in 50ms:
+"""CaseFile serialization and hashing helpers."""
+
+from __future__ import annotations
+
+import base64
+import hashlib
+from typing import Literal, TypeVar, cast
+
+from pydantic import BaseModel
+
+from aiops_triage_pipeline.errors.exceptions import (
+    IntegrationError,
+    InvariantViolation,
+    ObjectNotFoundError,
+)
+from aiops_triage_pipeline.models.case_file import (
+    DIAGNOSIS_HASH_PLACEHOLDER,
+    LABELS_HASH_PLACEHOLDER,
+    LINKAGE_HASH_PLACEHOLDER,
+    TRIAGE_HASH_PLACEHOLDER,
+exec
+/bin/bash -lc 'cat pyproject.toml' in /home/sas/workspace/aiops succeeded in 51ms:
+[project]
+name = "aiops-triage-pipeline"
+version = "0.1.0"
+description = "AIOps triage pipeline"
+readme = "README.md"
+authors = [
+    { name = "ssasvathan", email = "s.sasavathan@yahoo.com" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "confluent-kafka==2.13.0",
+    "SQLAlchemy==2.0.47",
+    "pydantic==2.12.5",
+    "redis==7.2.1",
+    "boto3~=1.42",
+    "opentelemetry-sdk==1.39.1",
+    "opentelemetry-exporter-otlp==1.39.1",
+    "httpx==0.28.1",
+    "langgraph==1.0.9",
+    "pydantic-settings~=2.13.1",
+🌐 Searching the web...
+🌐 Searched: Confluent Kafka Python Consumer close commit offsets documentation
+codex
+I have enough context to draft concrete implementation tasks, but I’m first pulling existing integration/test patterns for Kafka adapters so the story points directly to the right protocol and test style used in this repo.
+exec
+/bin/bash -lc 'cat tests/unit/integrations/test_kafka.py' in /home/sas/workspace/aiopsexec
+/bin/bash -lc 'cat src/aiops_triage_pipeline/outbox/publisher.py' in /home/sas/workspace/aiopsexec
+/bin/bash -lc 'cat src/aiops_triage_pipeline/models/health.py' in /home/sas/workspace/aiops succeeded in 50ms:
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+import pytest
+
+from aiops_triage_pipeline.contracts.case_header_event import CaseHeaderEventV1
+from aiops_triage_pipeline.contracts.enums import (
+    Action,
+    CriticalityTier,
+    Environment,
+    EvidenceStatus,
+)
+from aiops_triage_pipeline.contracts.gate_input import Finding
+from aiops_triage_pipeline.contracts.triage_excerpt import TriageExcerptV1
+from aiops_triage_pipeline.errors.exceptions import CriticalDependencyError
+from aiops_triage_pipeline.integrations.kafka import ConfluentKafkaCaseEventPublisher
+
+
+class _RecordingProducer:
+ succeeded in 50ms:
+"""Outbox publish helpers that enforce Invariant A before Kafka emission."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from typing import Protocol
+
+from pydantic import AwareDatetime, BaseModel, ValidationError
+
+from aiops_triage_pipeline.contracts.case_header_event import CaseHeaderEventV1
+from aiops_triage_pipeline.contracts.triage_excerpt import TriageExcerptV1
+from aiops_triage_pipeline.denylist.enforcement import apply_denylist_with_removed_count
+from aiops_triage_pipeline.denylist.loader import DenylistV1
+from aiops_triage_pipeline.errors.exceptions import (
+    CriticalDependencyError,
+    DenylistSanitizationError,
+    InvariantViolation,
+    PublishAfterDenylistError,
+)
+from aiops_triage_pipeline.models.case_file import CaseFileTriageV1
+ succeeded in 51ms:
+"""Internal health domain models — not part of the frozen contracts package."""
+
+from enum import Enum
+
+from pydantic import AwareDatetime, BaseModel
+
+
+class HealthStatus(str, Enum):
+    """Per-component health state tracked by HealthRegistry."""
+
+    HEALTHY = "HEALTHY"
+    DEGRADED = "DEGRADED"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
+class ComponentHealth(BaseModel, frozen=True):
+    """Snapshot of a single component's health at a point in time.
+
+    Stored in HealthRegistry._components. Immutable — each status change
+    replaces the entry rather than mutating in place.
+exec
+/bin/bash -lc 'cat /home/sas/workspace/aiops/archive/project-context.md' in /home/sas/workspace/aiops succeeded in 51ms:
+---
+project_name: 'aiOps'
+user_name: 'Sas'
+date: '2026-03-02T18:13:10-05:00'
+sections_completed: ['technology_stack', 'language_rules', 'framework_rules', 'testing_rules', 'quality_rules', 'workflow_rules', 'anti_patterns']
+status: 'complete'
+rule_count: 50
+optimized_for_llm: true
+existing_patterns_found: 18
+---
+
+# Project Context for AI Agents
+
+_This file contains critical rules and patterns that AI agents must follow when implementing code in this project. Focus on unobvious details that agents might otherwise miss._
+
+---
+
+## Technology Stack & Versions
+
+- Python: >=3.13
+exec
+/bin/bash -lc 'test -f /home/sas/workspace/aiops/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md && echo exists || echo missing' in /home/sas/workspace/aiops succeeded in 51ms:
+missing
+codex
+Plan for this single `bmad-bmm-create-story` step (YOLO/auto mode):
+
+1. Build story context packet from source artifacts:
+- Epic 3 + Story 3.1 requirements and ACs from `artifact/planning-artifacts/epics.md`
+- Cold-path architecture constraints (D6, runtime-mode boundaries, file targets, test strategy) from architecture docs
+- PRD/NFR constraints for graceful commit, health, and non-blocking semantics
+
+2. Add current codebase intelligence:
+- Confirm current `cold-path` state in `__main__.py` (bootstrap stub)
+- Identify exact files likely touched for this story (`__main__.py`, new `integrations/kafka_consumer.py`, settings/env/docs/tests)
+- Capture existing patterns for adapter protocols and unit/integration test style
+
+3. Complete required latest-tech check:
+- Pull official Kafka Python client docs/release references needed for commit/close and consumer loop guardrails
+- Add concise “latest tech information” section with verification date and links
+
+4. Generate the story artifact at:
+- `artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md`
+- Include implementation-ready tasks/subtasks, concrete file map, architecture compliance guardrails, test plan, and references
+- Set story status to `ready-for-dev`
+
+5. Update sprint tracking:
+- Set `development_status.3-1-implement-cold-path-kafka-consumer-runtime-mode` from `backlog` to `ready-for-dev` in `artifact/implementation-artifacts/sprint-status.yaml`
+- Leave all later workflow steps untouched (no dev-story work).
+🌐 Searching the web...
+🌐 Searched: docs.confluent.io confluent-kafka-python Consumer close commit offsets enable.auto.commit
+🌐 Searching the web...
+🌐 Searched: https://docs.confluent.io/kafka-clients/python/current/overview.html
+🌐 Searching the web...
+🌐 Searched: https://docs.confluent.io/platform/7.0/clients/confluent-kafka-python/html/index.html
+🌐 Searching the web...
+🌐 Searched: 'close(' in https://docs.confluent.io/platform/7.0/clients/confluent-kafka-python/html/index.html
+🌐 Searching the web...
+🌐 Searched: https://pypi.org/project/confluent-kafka/
+exec
+/bin/bash -lc 'rg -n "signal|SIGTERM|graceful|shutdown" src tests -S' in /home/sas/workspace/aiops succeeded in 50ms:
+tests/unit/pipeline/stages/test_evidence.py:91:            role="signal",
+tests/unit/pipeline/stages/test_evidence.py:119:            role="signal",
+tests/unit/pipeline/stages/test_evidence.py:124:            role="signal",
+tests/unit/pipeline/stages/test_evidence.py:164:            role="signal",
+tests/unit/pipeline/stages/test_evidence.py:169:            role="signal",
+tests/unit/pipeline/stages/test_evidence.py:196:            role="signal",
+tests/unit/pipeline/stages/test_evidence.py:201:            role="signal",
+tests/unit/pipeline/stages/test_evidence.py:230:            role="signal",
+tests/unit/pipeline/stages/test_evidence.py:235:            role="signal",
+tests/unit/pipeline/stages/test_casefile.py:172:                role="Primary throughput signal",
+tests/unit/pipeline/stages/test_casefile.py:176:                role="Secondary throughput signal",
+tests/unit/pipeline/stages/test_evidence_metrics.py:56:        "ok": MetricQueryDefinition(metric_key="ok", metric_name="ok.metric", role="signal"),
+tests/unit/pipeline/stages/test_evidence_metrics.py:57:        "bad": MetricQueryDefinition(metric_key="bad", metric_name="bad.metric", role="signal"),
+tests/unit/pipeline/test_scheduler.py:120:            role="signal",
+tests/unit/pipeline/test_scheduler.py:125:            role="signal",
+tests/unit/pipeline/test_scheduler.py:291:                role="signal",
+tests/unit/pipeline/test_scheduler.py:296:                role="signal",
+tests/unit/pipeline/test_scheduler.py:301:                role="signal",
+tests/unit/pipeline/test_scheduler.py:358:                role="signal",
+tests/unit/pipeline/test_scheduler.py:363:                role="signal",
+exec
+/bin/bash -lc 'cat src/aiops_triage_pipeline/errors/exceptions.py' in /home/sas/workspace/aiops succeeded in 51ms:
+"""Custom exception hierarchy for aiops-triage-pipeline."""
+
+
+class PipelineError(Exception):
+    """Base exception for all pipeline errors."""
+
+
+# Critical path — halt pipeline (NFR-R2)
+class InvariantViolation(PipelineError):
+    """Invariant A/B2 broken — NEVER catch, always halt."""
+
+
+class DenylistSanitizationError(InvariantViolation):
+    """Denylist sanitization produced schema-invalid output at an output boundary."""
+
+    def __init__(self, message: str, *, boundary_id: str, removed_field_count: int) -> None:
+        super().__init__(message)
+        self.boundary_id = boundary_id
+        self.removed_field_count = removed_field_count
+
+🌐 Searching the web...
+🌐 Searched: github confluentinc confluent-kafka-python releases 2.13.2
+🌐 Searching the web...
+🌐 Searched: https://pypi.org/project/confluent-kafka/
+🌐 Searching the web...
+🌐 Searched the web
+🌐 Searching the web...
+🌐 Searched: https://docs.confluent.io/platform/current/clients/confluent-kafka-python/html/index.html
+🌐 Searching the web...
+🌐 Searched: 'Closing / Auto-Commit' in https://docs.confluent.io/platform/current/clients/confluent-kafka-python/html/index.html
+exec
+/bin/bash -lc "find tests -maxdepth 3 -type d | sort | rg 'cold_path|integration"'$|unit/integrations|unit/health|unit/config'"'" in /home/sas/workspace/aiops succeeded in 51ms:
+tests/integration
+tests/unit/config
+tests/unit/config/__pycache__
+tests/unit/health
+tests/unit/health/__pycache__
+tests/unit/integrations
+tests/unit/integrations/__pycache__
+codex
+I’ve finished artifact analysis and am now writing the story file with concrete, file-level implementation tasks and guardrails (without starting dev work). After writing it, I’ll update `sprint-status.yaml` to move this story from `backlog` to `ready-for-dev` only.
+file update
+A /home/sas/workspace/aiops/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md
+# Story 3.1: Implement Cold-Path Kafka Consumer Runtime Mode
+
+Status: ready-for-dev
+
+<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+## Story
+
+As an SRE/platform engineer,  
+I want a dedicated cold-path consumer mode for case header events,  
+so that diagnosis processing is decoupled from hot-path execution.
+
+**Implements:** FR36
+
+## Acceptance Criteria
+
+1. **Given** runtime mode is set to `cold-path`  
+   **When** the service starts  
+   **Then** it joins consumer group `aiops-cold-path-diagnosis` and subscribes to `aiops-case-header`  
+   **And** processes messages sequentially through a testable consumer adapter abstraction.
+
+2. **Given** shutdown is requested  
+   **When** the consumer exits  
+   **Then** offsets are committed gracefully before close  
+   **And** health status reflects connected/lag/poll state transitions.
+
+## Tasks / Subtasks
+
+- [ ] Task 1: Create a cold-path Kafka consumer adapter with a thin protocol boundary (AC: 1, 2)
+  - [ ] Add `src/aiops_triage_pipeline/integrations/kafka_consumer.py`.
+  - [ ] Define a minimal protocol for cold-path consumption (subscribe, poll, commit, close) so tests can inject fakes without importing confluent internals.
+  - [ ] Implement a concrete confluent-kafka adapter that builds `Consumer` config from `Settings` and validates required consumer fields.
+  - [ ] Deserialize polled records into `CaseHeaderEventV1` with schema validation; normalize malformed payloads to structured error logging and skip/continue behavior.
+  - [ ] Wrap transport/client initialization failures as `CriticalDependencyError` to preserve startup failure semantics.
+
+- [ ] Task 2: Replace cold-path runtime stub in entrypoint with a sequential consume loop (AC: 1, 2)
+  - [ ] Update `src/aiops_triage_pipeline/__main__.py` `_run_cold_path()` to initialize dependencies and run the real loop.
+  - [ ] Join consumer group `aiops-cold-path-diagnosis` and subscribe to topic `aiops-case-header` (via settings defaults/overrides).
+  - [ ] Process one message at a time in strict poll-process-commit order; do not introduce batch or concurrent processing in this story.
+  - [ ] Add a small processor boundary (callable/protocol) for message handling so Story 3.2 can plug in case-context reconstruction without refactoring the runtime loop.
+  - [ ] Ensure loop termination path commits offsets and closes the consumer reliably.
+
+- [ ] Task 3: Add cold-path health transition reporting for runtime lifecycle (AC: 2)
+  - [ ] Use `HealthRegistry` updates to reflect state transitions for consumer connectivity and poll/commit lifecycle.
+  - [ ] Emit explicit transition reasons for startup connected state, poll timeout/empty poll, poll error, commit success/failure, and shutdown close.
+  - [ ] Keep `/health` response contract unchanged (component map); add cold-path component entries rather than changing endpoint shape.
+
+- [ ] Task 4: Extend cold-path configuration surface in settings and env templates (AC: 1, 2)
+  - [ ] Add explicit settings for cold-path consumer group and poll timeout with safe defaults aligned to ACs.
+  - [ ] Validate new numeric fields in `Settings` validators (positive timeout/interval constraints).
+  - [ ] Include new settings in startup config logging with secret-safe output.
+  - [ ] Update `config/.env.local`, `config/.env.dev`, `config/.env.docker`, `config/.env.uat.template`, and `config/.env.prod.template`.
+
+- [ ] Task 5: Add unit and integration coverage for runtime mode activation and graceful shutdown (AC: 1, 2)
+  - [ ] Add `tests/unit/integrations/test_kafka_consumer.py` with fake consumer tests for subscribe/poll/commit/close behavior and error handling.
+  - [ ] Update `tests/unit/test_main.py` to assert cold-path mode no longer logs a stub warning and now executes runtime loop wiring.
+  - [ ] Add `tests/integration/cold_path/test_consumer_lifecycle.py` for Docker-backed consumer lifecycle verification (group join, topic subscribe, sequential consume, graceful close/commit path).
+  - [ ] Keep regression quality gate posture at zero skipped tests.
+
+- [ ] Task 6: Update runtime-mode documentation to remove cold-path stub messaging (AC: 1, 2)
+  - [ ] Update `docs/runtime-modes.md` cold-path section to reflect implemented runtime loop and dependencies.
+  - [ ] Update `docs/local-development.md` runtime status table and local run guidance for `--mode cold-path`.
+  - [ ] Update `README.md` runtime-mode status and component references (including new consumer adapter module).
+
+## Dev Notes
+
+### Developer Context Section
+
+- This story activates runtime mode wiring only for cold-path Kafka consumption and lifecycle behavior.
+- Current repository state confirms `--mode cold-path` is a bootstrap stub in `src/aiops_triage_pipeline/__main__.py` and must be replaced with a real consumer loop.
+- Do not implement Story 3.2/3.3/3.4 scope here:
+  - No full case-context reconstruction from S3 in this story (Story 3.2).
+  - No prompt enrichment/schema-validation orchestration changes in this story (Story 3.3).
+  - No diagnosis artifact fallback persistence changes in this story (Story 3.4).
+- Preserve deterministic hot/cold separation: cold-path must not block hot-path execution semantics.
+
+### Technical Requirements
+
+- FR36 is the primary functional requirement for this story.
+- NFR-I4 applies directly: graceful shutdown must commit offsets and avoid avoidable reprocessing.
+- NFR-R6/NFR-R7 behavior boundary:
+  - Critical startup failures (e.g., consumer bootstrap misconfiguration) should fail loudly.
+  - Runtime degradable conditions should update health and continue/retry according to mode loop logic.
+- Keep integration mode safety posture and denylist/shared policy patterns unchanged.
+
+### Architecture Compliance
+
+- Follow D6 exactly:
+  - Use `confluent-kafka` consumer.
+  - Sequential processing.
+  - Thin adapter protocol for testability.
+  - Consumer group `aiops-cold-path-diagnosis` on topic `aiops-case-header`.
+- Respect runtime boundaries from `project-structure-boundaries.md`:
+  - Entry dispatch in `__main__.py`.
+  - Kafka adapter in `integrations/`.
+  - Health signaling through `health/registry.py` and existing `/health` server path.
+- Reuse existing exception taxonomy in `errors/exceptions.py`; do not introduce parallel error frameworks.
+
+### Library / Framework Requirements
+
+- Locked dependencies in this repo:
+  - `confluent-kafka==2.13.0`
+  - `pydantic==2.12.5`
+  - `pydantic-settings~=2.13.1`
+  - `pytest==9.0.2`
+  - `testcontainers==4.14.1`
+- Keep Kafka client implementation on `confluent-kafka`; do not introduce `kafka-python` or additional Kafka client libraries.
+- Keep runtime implementation synchronous for consumer poll loop (consistent with current architecture and D6).
+
+### File Structure Requirements
+
+Primary implementation files:
+- `src/aiops_triage_pipeline/__main__.py`
+- `src/aiops_triage_pipeline/integrations/kafka_consumer.py` (new)
+- `src/aiops_triage_pipeline/config/settings.py`
+
+Primary test files:
+- `tests/unit/test_main.py`
+- `tests/unit/integrations/test_kafka_consumer.py` (new)
+- `tests/integration/cold_path/test_consumer_lifecycle.py` (new)
+- `tests/integration/conftest.py` (only if shared fixture support is required)
+
+Documentation/config files:
+- `docs/runtime-modes.md`
+- `docs/local-development.md`
+- `README.md`
+- `config/.env.local`
+- `config/.env.dev`
+- `config/.env.docker`
+- `config/.env.uat.template`
+- `config/.env.prod.template`
+
+### Testing Requirements
+
+- Unit tests must cover:
+  - consumer adapter configuration and protocol behavior
+  - poll return handling (`None`, message with error, valid message)
+  - message decode/contract validation handling for `CaseHeaderEventV1`
+  - commit and close paths, including failure mapping
+- Runtime unit tests must cover:
+  - `--mode cold-path` dispatch path in `main()`
+  - `_run_cold_path()` startup and loop wiring
+  - non-stub logging behavior and graceful shutdown path
+- Integration tests must cover:
+  - cold-path consumer can subscribe and consume from `aiops-case-header`
+  - sequential processing behavior (ordered one-by-one handling)
+  - graceful close path with commit semantics under testcontainer Kafka
+- Regression gates for this sprint remain:
+  - `uv run ruff check`
+  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
+  - zero skipped tests is required.
+
+### Latest Tech Information
+
+External verification date: 2026-03-22.
+
+- Confluent Python consumer guidance (official docs) continues to center on `subscribe()` + `poll()` loops, and explicitly recommends calling `consumer.close()` to trigger immediate rebalance and clean shutdown.
+- Confluent docs identify `group.id` as mandatory for consumer configuration and describe `poll()` return/error-handling requirements for loop correctness.
+- PyPI shows `confluent-kafka` latest available release as `2.13.2` (released 2026-03-02), while this codebase intentionally pins `2.13.0`; this story should implement against the pinned version and avoid dependency upgrade scope.
+
+### Project Context Reference
+
+Applied `archive/project-context.md` guidance:
+- Keep contract-first schema validation at I/O boundaries.
+- Preserve hot/cold separation and deterministic hot-path safety invariants.
+- Reuse shared logging, health registry, and exception taxonomy patterns.
+- Maintain integration safety defaults and avoid introducing parallel cross-cutting frameworks.
+
+### References
+
+- [Source: `artifact/planning-artifacts/epics.md` — Epic 3, Story 3.1, FR36]
+- [Source: `artifact/planning-artifacts/prd/functional-requirements.md` — FR36, NFR-I4]
+- [Source: `artifact/planning-artifacts/prd/event-driven-pipeline-specific-requirements.md` — cold-path runtime requirements]
+- [Source: `artifact/planning-artifacts/architecture/core-architectural-decisions.md` — D6 cold-path consumer architecture]
+- [Source: `artifact/planning-artifacts/architecture/project-structure-boundaries.md`]
+- [Source: `artifact/planning-artifacts/architecture/implementation-patterns-consistency-rules.md`]
+- [Source: `archive/project-context.md`]
+- [Source: `src/aiops_triage_pipeline/__main__.py`]
+- [Source: `src/aiops_triage_pipeline/config/settings.py`]
+- [Source: `src/aiops_triage_pipeline/integrations/kafka.py`]
+- [Source: `src/aiops_triage_pipeline/health/registry.py`]
+- [Source: `src/aiops_triage_pipeline/health/server.py`]
+- [Source: `tests/unit/test_main.py`]
+- [Source: `tests/unit/integrations/test_kafka.py`]
+- [Source: `https://docs.confluent.io/kafka-clients/python/current/overview.html`]
+- [Source: `https://docs.confluent.io/platform/current/clients/confluent-kafka-python/html/index.html`]
+- [Source: `https://pypi.org/project/confluent-kafka/`]
+
+## Dev Agent Record
+
+### Agent Model Used
+
+{{agent_model_name_version}}
+
+### Debug Log References
+
+- Workflow executed: `bmad-bmm-create-story` (YOLO/full-auto)
+- Target story: `3-1-implement-cold-path-kafka-consumer-runtime-mode`
+- Source-of-truth status file: `artifact/implementation-artifacts/sprint-status.yaml`
+
+### Completion Notes List
+
+- Story artifact created with implementation-ready scope, tasks, architecture guardrails, and test strategy.
+- Story status set to `ready-for-dev`; no implementation/code-delivery workflow executed in this step.
+
+### File List
+
+- `artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md`
+- `artifact/implementation-artifacts/sprint-status.yaml`
+
+## Story Completion Status
+
+- Story status: `ready-for-dev`
+- Completion note: Ultimate context engine analysis completed - comprehensive developer guide created.
+apply_patch(auto_approved=true) exited 0 in 19ms:
+Success. Updated the following files:
+A /home/sas/workspace/aiops/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md
+file update:
+diff --git a/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md b/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f4186264af49ef2abd341ca882f3914bdc2c7029
+--- /dev/null
++++ b/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md
+@@ -0,0 +1,214 @@
++# Story 3.1: Implement Cold-Path Kafka Consumer Runtime Mode
++
++Status: ready-for-dev
++
++<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
++
++## Story
++
++As an SRE/platform engineer,  
++I want a dedicated cold-path consumer mode for case header events,  
++so that diagnosis processing is decoupled from hot-path execution.
++
++**Implements:** FR36
++
++## Acceptance Criteria
++
++1. **Given** runtime mode is set to `cold-path`  
++   **When** the service starts  
++   **Then** it joins consumer group `aiops-cold-path-diagnosis` and subscribes to `aiops-case-header`  
++   **And** processes messages sequentially through a testable consumer adapter abstraction.
++
++2. **Given** shutdown is requested  
++   **When** the consumer exits  
++   **Then** offsets are committed gracefully before close  
++   **And** health status reflects connected/lag/poll state transitions.
++
++## Tasks / Subtasks
++
++- [ ] Task 1: Create a cold-path Kafka consumer adapter with a thin protocol boundary (AC: 1, 2)
++  - [ ] Add `src/aiops_triage_pipeline/integrations/kafka_consumer.py`.
++  - [ ] Define a minimal protocol for cold-path consumption (subscribe, poll, commit, close) so tests can inject fakes without importing confluent internals.
++  - [ ] Implement a concrete confluent-kafka adapter that builds `Consumer` config from `Settings` and validates required consumer fields.
++  - [ ] Deserialize polled records into `CaseHeaderEventV1` with schema validation; normalize malformed payloads to structured error logging and skip/continue behavior.
++  - [ ] Wrap transport/client initialization failures as `CriticalDependencyError` to preserve startup failure semantics.
++
++- [ ] Task 2: Replace cold-path runtime stub in entrypoint with a sequential consume loop (AC: 1, 2)
++  - [ ] Update `src/aiops_triage_pipeline/__main__.py` `_run_cold_path()` to initialize dependencies and run the real loop.
++  - [ ] Join consumer group `aiops-cold-path-diagnosis` and subscribe to topic `aiops-case-header` (via settings defaults/overrides).
++  - [ ] Process one message at a time in strict poll-process-commit order; do not introduce batch or concurrent processing in this story.
++  - [ ] Add a small processor boundary (callable/protocol) for message handling so Story 3.2 can plug in case-context reconstruction without refactoring the runtime loop.
++  - [ ] Ensure loop termination path commits offsets and closes the consumer reliably.
++
++- [ ] Task 3: Add cold-path health transition reporting for runtime lifecycle (AC: 2)
++  - [ ] Use `HealthRegistry` updates to reflect state transitions for consumer connectivity and poll/commit lifecycle.
++  - [ ] Emit explicit transition reasons for startup connected state, poll timeout/empty poll, poll error, commit success/failure, and shutdown close.
++  - [ ] Keep `/health` response contract unchanged (component map); add cold-path component entries rather than changing endpoint shape.
++
++- [ ] Task 4: Extend cold-path configuration surface in settings and env templates (AC: 1, 2)
++  - [ ] Add explicit settings for cold-path consumer group and poll timeout with safe defaults aligned to ACs.
++  - [ ] Validate new numeric fields in `Settings` validators (positive timeout/interval constraints).
++  - [ ] Include new settings in startup config logging with secret-safe output.
++  - [ ] Update `config/.env.local`, `config/.env.dev`, `config/.env.docker`, `config/.env.uat.template`, and `config/.env.prod.template`.
++
++- [ ] Task 5: Add unit and integration coverage for runtime mode activation and graceful shutdown (AC: 1, 2)
++  - [ ] Add `tests/unit/integrations/test_kafka_consumer.py` with fake consumer tests for subscribe/poll/commit/close behavior and error handling.
++  - [ ] Update `tests/unit/test_main.py` to assert cold-path mode no longer logs a stub warning and now executes runtime loop wiring.
++  - [ ] Add `tests/integration/cold_path/test_consumer_lifecycle.py` for Docker-backed consumer lifecycle verification (group join, topic subscribe, sequential consume, graceful close/commit path).
++  - [ ] Keep regression quality gate posture at zero skipped tests.
++
++- [ ] Task 6: Update runtime-mode documentation to remove cold-path stub messaging (AC: 1, 2)
++  - [ ] Update `docs/runtime-modes.md` cold-path section to reflect implemented runtime loop and dependencies.
++  - [ ] Update `docs/local-development.md` runtime status table and local run guidance for `--mode cold-path`.
++  - [ ] Update `README.md` runtime-mode status and component references (including new consumer adapter module).
++
++## Dev Notes
++
++### Developer Context Section
++
++- This story activates runtime mode wiring only for cold-path Kafka consumption and lifecycle behavior.
++- Current repository state confirms `--mode cold-path` is a bootstrap stub in `src/aiops_triage_pipeline/__main__.py` and must be replaced with a real consumer loop.
++- Do not implement Story 3.2/3.3/3.4 scope here:
++  - No full case-context reconstruction from S3 in this story (Story 3.2).
++  - No prompt enrichment/schema-validation orchestration changes in this story (Story 3.3).
++  - No diagnosis artifact fallback persistence changes in this story (Story 3.4).
++- Preserve deterministic hot/cold separation: cold-path must not block hot-path execution semantics.
++
++### Technical Requirements
++
++- FR36 is the primary functional requirement for this story.
++- NFR-I4 applies directly: graceful shutdown must commit offsets and avoid avoidable reprocessing.
++- NFR-R6/NFR-R7 behavior boundary:
++  - Critical startup failures (e.g., consumer bootstrap misconfiguration) should fail loudly.
++  - Runtime degradable conditions should update health and continue/retry according to mode loop logic.
++- Keep integration mode safety posture and denylist/shared policy patterns unchanged.
++
++### Architecture Compliance
++
++- Follow D6 exactly:
++  - Use `confluent-kafka` consumer.
++  - Sequential processing.
++  - Thin adapter protocol for testability.
++  - Consumer group `aiops-cold-path-diagnosis` on topic `aiops-case-header`.
++- Respect runtime boundaries from `project-structure-boundaries.md`:
++  - Entry dispatch in `__main__.py`.
++  - Kafka adapter in `integrations/`.
++  - Health signaling through `health/registry.py` and existing `/health` server path.
++- Reuse existing exception taxonomy in `errors/exceptions.py`; do not introduce parallel error frameworks.
++
++### Library / Framework Requirements
++
++- Locked dependencies in this repo:
++  - `confluent-kafka==2.13.0`
++  - `pydantic==2.12.5`
++  - `pydantic-settings~=2.13.1`
++  - `pytest==9.0.2`
++  - `testcontainers==4.14.1`
++- Keep Kafka client implementation on `confluent-kafka`; do not introduce `kafka-python` or additional Kafka client libraries.
++- Keep runtime implementation synchronous for consumer poll loop (consistent with current architecture and D6).
++
++### File Structure Requirements
++
++Primary implementation files:
++- `src/aiops_triage_pipeline/__main__.py`
++- `src/aiops_triage_pipeline/integrations/kafka_consumer.py` (new)
++- `src/aiops_triage_pipeline/config/settings.py`
++
++Primary test files:
++- `tests/unit/test_main.py`
++- `tests/unit/integrations/test_kafka_consumer.py` (new)
++- `tests/integration/cold_path/test_consumer_lifecycle.py` (new)
++- `tests/integration/conftest.py` (only if shared fixture support is required)
++
++Documentation/config files:
++- `docs/runtime-modes.md`
++- `docs/local-development.md`
++- `README.md`
++- `config/.env.local`
++- `config/.env.dev`
++- `config/.env.docker`
++- `config/.env.uat.template`
++- `config/.env.prod.template`
++
++### Testing Requirements
++
++- Unit tests must cover:
++  - consumer adapter configuration and protocol behavior
++  - poll return handling (`None`, message with error, valid message)
++  - message decode/contract validation handling for `CaseHeaderEventV1`
++  - commit and close paths, including failure mapping
++- Runtime unit tests must cover:
++  - `--mode cold-path` dispatch path in `main()`
++  - `_run_cold_path()` startup and loop wiring
++  - non-stub logging behavior and graceful shutdown path
++- Integration tests must cover:
++  - cold-path consumer can subscribe and consume from `aiops-case-header`
++  - sequential processing behavior (ordered one-by-one handling)
++  - graceful close path with commit semantics under testcontainer Kafka
++- Regression gates for this sprint remain:
++  - `uv run ruff check`
++  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
++  - zero skipped tests is required.
++
++### Latest Tech Information
++
++External verification date: 2026-03-22.
++
++- Confluent Python consumer guidance (official docs) continues to center on `subscribe()` + `poll()` loops, and explicitly recommends calling `consumer.close()` to trigger immediate rebalance and clean shutdown.
++- Confluent docs identify `group.id` as mandatory for consumer configuration and describe `poll()` return/error-handling requirements for loop correctness.
++- PyPI shows `confluent-kafka` latest available release as `2.13.2` (released 2026-03-02), while this codebase intentionally pins `2.13.0`; this story should implement against the pinned version and avoid dependency upgrade scope.
++
++### Project Context Reference
++
++Applied `archive/project-context.md` guidance:
++- Keep contract-first schema validation at I/O boundaries.
++- Preserve hot/cold separation and deterministic hot-path safety invariants.
++- Reuse shared logging, health registry, and exception taxonomy patterns.
++- Maintain integration safety defaults and avoid introducing parallel cross-cutting frameworks.
++
++### References
++
++- [Source: `artifact/planning-artifacts/epics.md` — Epic 3, Story 3.1, FR36]
++- [Source: `artifact/planning-artifacts/prd/functional-requirements.md` — FR36, NFR-I4]
++- [Source: `artifact/planning-artifacts/prd/event-driven-pipeline-specific-requirements.md` — cold-path runtime requirements]
++- [Source: `artifact/planning-artifacts/architecture/core-architectural-decisions.md` — D6 cold-path consumer architecture]
++- [Source: `artifact/planning-artifacts/architecture/project-structure-boundaries.md`]
++- [Source: `artifact/planning-artifacts/architecture/implementation-patterns-consistency-rules.md`]
++- [Source: `archive/project-context.md`]
++- [Source: `src/aiops_triage_pipeline/__main__.py`]
++- [Source: `src/aiops_triage_pipeline/config/settings.py`]
++- [Source: `src/aiops_triage_pipeline/integrations/kafka.py`]
++- [Source: `src/aiops_triage_pipeline/health/registry.py`]
++- [Source: `src/aiops_triage_pipeline/health/server.py`]
++- [Source: `tests/unit/test_main.py`]
++- [Source: `tests/unit/integrations/test_kafka.py`]
++- [Source: `https://docs.confluent.io/kafka-clients/python/current/overview.html`]
++- [Source: `https://docs.confluent.io/platform/current/clients/confluent-kafka-python/html/index.html`]
++- [Source: `https://pypi.org/project/confluent-kafka/`]
++
++## Dev Agent Record
++
++### Agent Model Used
++
++{{agent_model_name_version}}
++
++### Debug Log References
++
++- Workflow executed: `bmad-bmm-create-story` (YOLO/full-auto)
++- Target story: `3-1-implement-cold-path-kafka-consumer-runtime-mode`
++- Source-of-truth status file: `artifact/implementation-artifacts/sprint-status.yaml`
++
++### Completion Notes List
++
++- Story artifact created with implementation-ready scope, tasks, architecture guardrails, and test strategy.
++- Story status set to `ready-for-dev`; no implementation/code-delivery workflow executed in this step.
++
++### File List
++
++- `artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md`
++- `artifact/implementation-artifacts/sprint-status.yaml`
++
++## Story Completion Status
++
++- Story status: `ready-for-dev`
++- Completion note: Ultimate context engine analysis completed - comprehensive developer guide created.
+
+file update:
+diff --git a/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md b/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f4186264af49ef2abd341ca882f3914bdc2c7029
+--- /dev/null
++++ b/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md
+@@ -0,0 +1,214 @@
++# Story 3.1: Implement Cold-Path Kafka Consumer Runtime Mode
++
++Status: ready-for-dev
++
++<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
++
++## Story
++
++As an SRE/platform engineer,  
++I want a dedicated cold-path consumer mode for case header events,  
++so that diagnosis processing is decoupled from hot-path execution.
++
++**Implements:** FR36
++
++## Acceptance Criteria
++
++1. **Given** runtime mode is set to `cold-path`  
++   **When** the service starts  
++   **Then** it joins consumer group `aiops-cold-path-diagnosis` and subscribes to `aiops-case-header`  
++   **And** processes messages sequentially through a testable consumer adapter abstraction.
++
++2. **Given** shutdown is requested  
++   **When** the consumer exits  
++   **Then** offsets are committed gracefully before close  
++   **And** health status reflects connected/lag/poll state transitions.
++
++## Tasks / Subtasks
++
++- [ ] Task 1: Create a cold-path Kafka consumer adapter with a thin protocol boundary (AC: 1, 2)
++  - [ ] Add `src/aiops_triage_pipeline/integrations/kafka_consumer.py`.
++  - [ ] Define a minimal protocol for cold-path consumption (subscribe, poll, commit, close) so tests can inject fakes without importing confluent internals.
++  - [ ] Implement a concrete confluent-kafka adapter that builds `Consumer` config from `Settings` and validates required consumer fields.
++  - [ ] Deserialize polled records into `CaseHeaderEventV1` with schema validation; normalize malformed payloads to structured error logging and skip/continue behavior.
++  - [ ] Wrap transport/client initialization failures as `CriticalDependencyError` to preserve startup failure semantics.
++
++- [ ] Task 2: Replace cold-path runtime stub in entrypoint with a sequential consume loop (AC: 1, 2)
++  - [ ] Update `src/aiops_triage_pipeline/__main__.py` `_run_cold_path()` to initialize dependencies and run the real loop.
++  - [ ] Join consumer group `aiops-cold-path-diagnosis` and subscribe to topic `aiops-case-header` (via settings defaults/overrides).
++  - [ ] Process one message at a time in strict poll-process-commit order; do not introduce batch or concurrent processing in this story.
++  - [ ] Add a small processor boundary (callable/protocol) for message handling so Story 3.2 can plug in case-context reconstruction without refactoring the runtime loop.
++  - [ ] Ensure loop termination path commits offsets and closes the consumer reliably.
++
++- [ ] Task 3: Add cold-path health transition reporting for runtime lifecycle (AC: 2)
++  - [ ] Use `HealthRegistry` updates to reflect state transitions for consumer connectivity and poll/commit lifecycle.
++  - [ ] Emit explicit transition reasons for startup connected state, poll timeout/empty poll, poll error, commit success/failure, and shutdown close.
++  - [ ] Keep `/health` response contract unchanged (component map); add cold-path component entries rather than changing endpoint shape.
++
++- [ ] Task 4: Extend cold-path configuration surface in settings and env templates (AC: 1, 2)
++  - [ ] Add explicit settings for cold-path consumer group and poll timeout with safe defaults aligned to ACs.
++  - [ ] Validate new numeric fields in `Settings` validators (positive timeout/interval constraints).
++  - [ ] Include new settings in startup config logging with secret-safe output.
++  - [ ] Update `config/.env.local`, `config/.env.dev`, `config/.env.docker`, `config/.env.uat.template`, and `config/.env.prod.template`.
++
++- [ ] Task 5: Add unit and integration coverage for runtime mode activation and graceful shutdown (AC: 1, 2)
++  - [ ] Add `tests/unit/integrations/test_kafka_consumer.py` with fake consumer tests for subscribe/poll/commit/close behavior and error handling.
++  - [ ] Update `tests/unit/test_main.py` to assert cold-path mode no longer logs a stub warning and now executes runtime loop wiring.
++  - [ ] Add `tests/integration/cold_path/test_consumer_lifecycle.py` for Docker-backed consumer lifecycle verification (group join, topic subscribe, sequential consume, graceful close/commit path).
++  - [ ] Keep regression quality gate posture at zero skipped tests.
++
++- [ ] Task 6: Update runtime-mode documentation to remove cold-path stub messaging (AC: 1, 2)
++  - [ ] Update `docs/runtime-modes.md` cold-path section to reflect implemented runtime loop and dependencies.
++  - [ ] Update `docs/local-development.md` runtime status table and local run guidance for `--mode cold-path`.
++  - [ ] Update `README.md` runtime-mode status and component references (including new consumer adapter module).
++
++## Dev Notes
++
++### Developer Context Section
++
++- This story activates runtime mode wiring only for cold-path Kafka consumption and lifecycle behavior.
++- Current repository state confirms `--mode cold-path` is a bootstrap stub in `src/aiops_triage_pipeline/__main__.py` and must be replaced with a real consumer loop.
++- Do not implement Story 3.2/3.3/3.4 scope here:
++  - No full case-context reconstruction from S3 in this story (Story 3.2).
++  - No prompt enrichment/schema-validation orchestration changes in this story (Story 3.3).
++  - No diagnosis artifact fallback persistence changes in this story (Story 3.4).
++- Preserve deterministic hot/cold separation: cold-path must not block hot-path execution semantics.
++
++### Technical Requirements
++
++- FR36 is the primary functional requirement for this story.
++- NFR-I4 applies directly: graceful shutdown must commit offsets and avoid avoidable reprocessing.
++- NFR-R6/NFR-R7 behavior boundary:
++  - Critical startup failures (e.g., consumer bootstrap misconfiguration) should fail loudly.
++  - Runtime degradable conditions should update health and continue/retry according to mode loop logic.
++- Keep integration mode safety posture and denylist/shared policy patterns unchanged.
++
++### Architecture Compliance
++
++- Follow D6 exactly:
++  - Use `confluent-kafka` consumer.
++  - Sequential processing.
++  - Thin adapter protocol for testability.
++  - Consumer group `aiops-cold-path-diagnosis` on topic `aiops-case-header`.
++- Respect runtime boundaries from `project-structure-boundaries.md`:
++  - Entry dispatch in `__main__.py`.
++  - Kafka adapter in `integrations/`.
++  - Health signaling through `health/registry.py` and existing `/health` server path.
++- Reuse existing exception taxonomy in `errors/exceptions.py`; do not introduce parallel error frameworks.
++
++### Library / Framework Requirements
++
++- Locked dependencies in this repo:
++  - `confluent-kafka==2.13.0`
++  - `pydantic==2.12.5`
++  - `pydantic-settings~=2.13.1`
++  - `pytest==9.0.2`
++  - `testcontainers==4.14.1`
++- Keep Kafka client implementation on `confluent-kafka`; do not introduce `kafka-python` or additional Kafka client libraries.
++- Keep runtime implementation synchronous for consumer poll loop (consistent with current architecture and D6).
++
++### File Structure Requirements
++
++Primary implementation files:
++- `src/aiops_triage_pipeline/__main__.py`
++- `src/aiops_triage_pipeline/integrations/kafka_consumer.py` (new)
++- `src/aiops_triage_pipeline/config/settings.py`
++
++Primary test files:
++- `tests/unit/test_main.py`
++- `tests/unit/integrations/test_kafka_consumer.py` (new)
++- `tests/integration/cold_path/test_consumer_lifecycle.py` (new)
++- `tests/integration/conftest.py` (only if shared fixture support is required)
++
++Documentation/config files:
++- `docs/runtime-modes.md`
++- `docs/local-development.md`
++- `README.md`
++- `config/.env.local`
++- `config/.env.dev`
++- `config/.env.docker`
++- `config/.env.uat.template`
++- `config/.env.prod.template`
++
++### Testing Requirements
++
++- Unit tests must cover:
++  - consumer adapter configuration and protocol behavior
++  - poll return handling (`None`, message with error, valid message)
++  - message decode/contract validation handling for `CaseHeaderEventV1`
++  - commit and close paths, including failure mapping
++- Runtime unit tests must cover:
++  - `--mode cold-path` dispatch path in `main()`
++  - `_run_cold_path()` startup and loop wiring
++  - non-stub logging behavior and graceful shutdown path
++- Integration tests must cover:
++  - cold-path consumer can subscribe and consume from `aiops-case-header`
++  - sequential processing behavior (ordered one-by-one handling)
++  - graceful close path with commit semantics under testcontainer Kafka
++- Regression gates for this sprint remain:
++  - `uv run ruff check`
++  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
++  - zero skipped tests is required.
++
++### Latest Tech Information
++
++External verification date: 2026-03-22.
++
++- Confluent Python consumer guidance (official docs) continues to center on `subscribe()` + `poll()` loops, and explicitly recommends calling `consumer.close()` to trigger immediate rebalance and clean shutdown.
++- Confluent docs identify `group.id` as mandatory for consumer configuration and describe `poll()` return/error-handling requirements for loop correctness.
++- PyPI shows `confluent-kafka` latest available release as `2.13.2` (released 2026-03-02), while this codebase intentionally pins `2.13.0`; this story should implement against the pinned version and avoid dependency upgrade scope.
++
++### Project Context Reference
++
++Applied `archive/project-context.md` guidance:
++- Keep contract-first schema validation at I/O boundaries.
++- Preserve hot/cold separation and deterministic hot-path safety invariants.
++- Reuse shared logging, health registry, and exception taxonomy patterns.
++- Maintain integration safety defaults and avoid introducing parallel cross-cutting frameworks.
++
++### References
++
++- [Source: `artifact/planning-artifacts/epics.md` — Epic 3, Story 3.1, FR36]
++- [Source: `artifact/planning-artifacts/prd/functional-requirements.md` — FR36, NFR-I4]
++- [Source: `artifact/planning-artifacts/prd/event-driven-pipeline-specific-requirements.md` — cold-path runtime requirements]
++- [Source: `artifact/planning-artifacts/architecture/core-architectural-decisions.md` — D6 cold-path consumer architecture]
++- [Source: `artifact/planning-artifacts/architecture/project-structure-boundaries.md`]
++- [Source: `artifact/planning-artifacts/architecture/implementation-patterns-consistency-rules.md`]
++- [Source: `archive/project-context.md`]
++- [Source: `src/aiops_triage_pipeline/__main__.py`]
++- [Source: `src/aiops_triage_pipeline/config/settings.py`]
++- [Source: `src/aiops_triage_pipeline/integrations/kafka.py`]
++- [Source: `src/aiops_triage_pipeline/health/registry.py`]
++- [Source: `src/aiops_triage_pipeline/health/server.py`]
++- [Source: `tests/unit/test_main.py`]
++- [Source: `tests/unit/integrations/test_kafka.py`]
++- [Source: `https://docs.confluent.io/kafka-clients/python/current/overview.html`]
++- [Source: `https://docs.confluent.io/platform/current/clients/confluent-kafka-python/html/index.html`]
++- [Source: `https://pypi.org/project/confluent-kafka/`]
++
++## Dev Agent Record
++
++### Agent Model Used
++
++{{agent_model_name_version}}
++
++### Debug Log References
++
++- Workflow executed: `bmad-bmm-create-story` (YOLO/full-auto)
++- Target story: `3-1-implement-cold-path-kafka-consumer-runtime-mode`
++- Source-of-truth status file: `artifact/implementation-artifacts/sprint-status.yaml`
++
++### Completion Notes List
++
++- Story artifact created with implementation-ready scope, tasks, architecture guardrails, and test strategy.
++- Story status set to `ready-for-dev`; no implementation/code-delivery workflow executed in this step.
++
++### File List
++
++- `artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md`
++- `artifact/implementation-artifacts/sprint-status.yaml`
++
++## Story Completion Status
++
++- Story status: `ready-for-dev`
++- Completion note: Ultimate context engine analysis completed - comprehensive developer guide created.
+
+codex
+I’ve written the story artifact and now I’m applying the required sprint-status transition for this story key from `backlog` to `ready-for-dev`, with no other workflow/state changes.
+file update
+M /home/sas/workspace/aiops/artifact/implementation-artifacts/sprint-status.yaml
+@@ -58,3 +58,3 @@
+   epic-3: in-progress
+-  3-1-implement-cold-path-kafka-consumer-runtime-mode: backlog
++  3-1-implement-cold-path-kafka-consumer-runtime-mode: ready-for-dev
+   3-2-reconstruct-case-context-and-build-deterministic-evidence-summary: backlog
+apply_patch(auto_approved=true) exited 0 in 14ms:
+Success. Updated the following files:
+M /home/sas/workspace/aiops/artifact/implementation-artifacts/sprint-status.yaml
+file update:
+diff --git a/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md b/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f4186264af49ef2abd341ca882f3914bdc2c7029
+--- /dev/null
++++ b/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md
+@@ -0,0 +1,214 @@
++# Story 3.1: Implement Cold-Path Kafka Consumer Runtime Mode
++
++Status: ready-for-dev
++
++<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
++
++## Story
++
++As an SRE/platform engineer,  
++I want a dedicated cold-path consumer mode for case header events,  
++so that diagnosis processing is decoupled from hot-path execution.
++
++**Implements:** FR36
++
++## Acceptance Criteria
++
++1. **Given** runtime mode is set to `cold-path`  
++   **When** the service starts  
++   **Then** it joins consumer group `aiops-cold-path-diagnosis` and subscribes to `aiops-case-header`  
++   **And** processes messages sequentially through a testable consumer adapter abstraction.
++
++2. **Given** shutdown is requested  
++   **When** the consumer exits  
++   **Then** offsets are committed gracefully before close  
++   **And** health status reflects connected/lag/poll state transitions.
++
++## Tasks / Subtasks
++
++- [ ] Task 1: Create a cold-path Kafka consumer adapter with a thin protocol boundary (AC: 1, 2)
++  - [ ] Add `src/aiops_triage_pipeline/integrations/kafka_consumer.py`.
++  - [ ] Define a minimal protocol for cold-path consumption (subscribe, poll, commit, close) so tests can inject fakes without importing confluent internals.
++  - [ ] Implement a concrete confluent-kafka adapter that builds `Consumer` config from `Settings` and validates required consumer fields.
++  - [ ] Deserialize polled records into `CaseHeaderEventV1` with schema validation; normalize malformed payloads to structured error logging and skip/continue behavior.
++  - [ ] Wrap transport/client initialization failures as `CriticalDependencyError` to preserve startup failure semantics.
++
++- [ ] Task 2: Replace cold-path runtime stub in entrypoint with a sequential consume loop (AC: 1, 2)
++  - [ ] Update `src/aiops_triage_pipeline/__main__.py` `_run_cold_path()` to initialize dependencies and run the real loop.
++  - [ ] Join consumer group `aiops-cold-path-diagnosis` and subscribe to topic `aiops-case-header` (via settings defaults/overrides).
++  - [ ] Process one message at a time in strict poll-process-commit order; do not introduce batch or concurrent processing in this story.
++  - [ ] Add a small processor boundary (callable/protocol) for message handling so Story 3.2 can plug in case-context reconstruction without refactoring the runtime loop.
++  - [ ] Ensure loop termination path commits offsets and closes the consumer reliably.
++
++- [ ] Task 3: Add cold-path health transition reporting for runtime lifecycle (AC: 2)
++  - [ ] Use `HealthRegistry` updates to reflect state transitions for consumer connectivity and poll/commit lifecycle.
++  - [ ] Emit explicit transition reasons for startup connected state, poll timeout/empty poll, poll error, commit success/failure, and shutdown close.
++  - [ ] Keep `/health` response contract unchanged (component map); add cold-path component entries rather than changing endpoint shape.
++
++- [ ] Task 4: Extend cold-path configuration surface in settings and env templates (AC: 1, 2)
++  - [ ] Add explicit settings for cold-path consumer group and poll timeout with safe defaults aligned to ACs.
++  - [ ] Validate new numeric fields in `Settings` validators (positive timeout/interval constraints).
++  - [ ] Include new settings in startup config logging with secret-safe output.
++  - [ ] Update `config/.env.local`, `config/.env.dev`, `config/.env.docker`, `config/.env.uat.template`, and `config/.env.prod.template`.
++
++- [ ] Task 5: Add unit and integration coverage for runtime mode activation and graceful shutdown (AC: 1, 2)
++  - [ ] Add `tests/unit/integrations/test_kafka_consumer.py` with fake consumer tests for subscribe/poll/commit/close behavior and error handling.
++  - [ ] Update `tests/unit/test_main.py` to assert cold-path mode no longer logs a stub warning and now executes runtime loop wiring.
++  - [ ] Add `tests/integration/cold_path/test_consumer_lifecycle.py` for Docker-backed consumer lifecycle verification (group join, topic subscribe, sequential consume, graceful close/commit path).
++  - [ ] Keep regression quality gate posture at zero skipped tests.
++
++- [ ] Task 6: Update runtime-mode documentation to remove cold-path stub messaging (AC: 1, 2)
++  - [ ] Update `docs/runtime-modes.md` cold-path section to reflect implemented runtime loop and dependencies.
++  - [ ] Update `docs/local-development.md` runtime status table and local run guidance for `--mode cold-path`.
++  - [ ] Update `README.md` runtime-mode status and component references (including new consumer adapter module).
++
++## Dev Notes
++
++### Developer Context Section
++
++- This story activates runtime mode wiring only for cold-path Kafka consumption and lifecycle behavior.
++- Current repository state confirms `--mode cold-path` is a bootstrap stub in `src/aiops_triage_pipeline/__main__.py` and must be replaced with a real consumer loop.
++- Do not implement Story 3.2/3.3/3.4 scope here:
++  - No full case-context reconstruction from S3 in this story (Story 3.2).
++  - No prompt enrichment/schema-validation orchestration changes in this story (Story 3.3).
++  - No diagnosis artifact fallback persistence changes in this story (Story 3.4).
++- Preserve deterministic hot/cold separation: cold-path must not block hot-path execution semantics.
++
++### Technical Requirements
++
++- FR36 is the primary functional requirement for this story.
++- NFR-I4 applies directly: graceful shutdown must commit offsets and avoid avoidable reprocessing.
++- NFR-R6/NFR-R7 behavior boundary:
++  - Critical startup failures (e.g., consumer bootstrap misconfiguration) should fail loudly.
++  - Runtime degradable conditions should update health and continue/retry according to mode loop logic.
++- Keep integration mode safety posture and denylist/shared policy patterns unchanged.
++
++### Architecture Compliance
++
++- Follow D6 exactly:
++  - Use `confluent-kafka` consumer.
++  - Sequential processing.
++  - Thin adapter protocol for testability.
++  - Consumer group `aiops-cold-path-diagnosis` on topic `aiops-case-header`.
++- Respect runtime boundaries from `project-structure-boundaries.md`:
++  - Entry dispatch in `__main__.py`.
++  - Kafka adapter in `integrations/`.
++  - Health signaling through `health/registry.py` and existing `/health` server path.
++- Reuse existing exception taxonomy in `errors/exceptions.py`; do not introduce parallel error frameworks.
++
++### Library / Framework Requirements
++
++- Locked dependencies in this repo:
++  - `confluent-kafka==2.13.0`
++  - `pydantic==2.12.5`
++  - `pydantic-settings~=2.13.1`
++  - `pytest==9.0.2`
++  - `testcontainers==4.14.1`
++- Keep Kafka client implementation on `confluent-kafka`; do not introduce `kafka-python` or additional Kafka client libraries.
++- Keep runtime implementation synchronous for consumer poll loop (consistent with current architecture and D6).
++
++### File Structure Requirements
++
++Primary implementation files:
++- `src/aiops_triage_pipeline/__main__.py`
++- `src/aiops_triage_pipeline/integrations/kafka_consumer.py` (new)
++- `src/aiops_triage_pipeline/config/settings.py`
++
++Primary test files:
++- `tests/unit/test_main.py`
++- `tests/unit/integrations/test_kafka_consumer.py` (new)
++- `tests/integration/cold_path/test_consumer_lifecycle.py` (new)
++- `tests/integration/conftest.py` (only if shared fixture support is required)
++
++Documentation/config files:
++- `docs/runtime-modes.md`
++- `docs/local-development.md`
++- `README.md`
++- `config/.env.local`
++- `config/.env.dev`
++- `config/.env.docker`
++- `config/.env.uat.template`
++- `config/.env.prod.template`
++
++### Testing Requirements
++
++- Unit tests must cover:
++  - consumer adapter configuration and protocol behavior
++  - poll return handling (`None`, message with error, valid message)
++  - message decode/contract validation handling for `CaseHeaderEventV1`
++  - commit and close paths, including failure mapping
++- Runtime unit tests must cover:
++  - `--mode cold-path` dispatch path in `main()`
++  - `_run_cold_path()` startup and loop wiring
++  - non-stub logging behavior and graceful shutdown path
++- Integration tests must cover:
++  - cold-path consumer can subscribe and consume from `aiops-case-header`
++  - sequential processing behavior (ordered one-by-one handling)
++  - graceful close path with commit semantics under testcontainer Kafka
++- Regression gates for this sprint remain:
++  - `uv run ruff check`
++  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
++  - zero skipped tests is required.
++
++### Latest Tech Information
++
++External verification date: 2026-03-22.
++
++- Confluent Python consumer guidance (official docs) continues to center on `subscribe()` + `poll()` loops, and explicitly recommends calling `consumer.close()` to trigger immediate rebalance and clean shutdown.
++- Confluent docs identify `group.id` as mandatory for consumer configuration and describe `poll()` return/error-handling requirements for loop correctness.
++- PyPI shows `confluent-kafka` latest available release as `2.13.2` (released 2026-03-02), while this codebase intentionally pins `2.13.0`; this story should implement against the pinned version and avoid dependency upgrade scope.
++
++### Project Context Reference
++
++Applied `archive/project-context.md` guidance:
++- Keep contract-first schema validation at I/O boundaries.
++- Preserve hot/cold separation and deterministic hot-path safety invariants.
++- Reuse shared logging, health registry, and exception taxonomy patterns.
++- Maintain integration safety defaults and avoid introducing parallel cross-cutting frameworks.
++
++### References
++
++- [Source: `artifact/planning-artifacts/epics.md` — Epic 3, Story 3.1, FR36]
++- [Source: `artifact/planning-artifacts/prd/functional-requirements.md` — FR36, NFR-I4]
++- [Source: `artifact/planning-artifacts/prd/event-driven-pipeline-specific-requirements.md` — cold-path runtime requirements]
++- [Source: `artifact/planning-artifacts/architecture/core-architectural-decisions.md` — D6 cold-path consumer architecture]
++- [Source: `artifact/planning-artifacts/architecture/project-structure-boundaries.md`]
++- [Source: `artifact/planning-artifacts/architecture/implementation-patterns-consistency-rules.md`]
++- [Source: `archive/project-context.md`]
++- [Source: `src/aiops_triage_pipeline/__main__.py`]
++- [Source: `src/aiops_triage_pipeline/config/settings.py`]
++- [Source: `src/aiops_triage_pipeline/integrations/kafka.py`]
++- [Source: `src/aiops_triage_pipeline/health/registry.py`]
++- [Source: `src/aiops_triage_pipeline/health/server.py`]
++- [Source: `tests/unit/test_main.py`]
++- [Source: `tests/unit/integrations/test_kafka.py`]
++- [Source: `https://docs.confluent.io/kafka-clients/python/current/overview.html`]
++- [Source: `https://docs.confluent.io/platform/current/clients/confluent-kafka-python/html/index.html`]
++- [Source: `https://pypi.org/project/confluent-kafka/`]
++
++## Dev Agent Record
++
++### Agent Model Used
++
++{{agent_model_name_version}}
++
++### Debug Log References
++
++- Workflow executed: `bmad-bmm-create-story` (YOLO/full-auto)
++- Target story: `3-1-implement-cold-path-kafka-consumer-runtime-mode`
++- Source-of-truth status file: `artifact/implementation-artifacts/sprint-status.yaml`
++
++### Completion Notes List
++
++- Story artifact created with implementation-ready scope, tasks, architecture guardrails, and test strategy.
++- Story status set to `ready-for-dev`; no implementation/code-delivery workflow executed in this step.
++
++### File List
++
++- `artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md`
++- `artifact/implementation-artifacts/sprint-status.yaml`
++
++## Story Completion Status
++
++- Story status: `ready-for-dev`
++- Completion note: Ultimate context engine analysis completed - comprehensive developer guide created.
+diff --git a/artifact/implementation-artifacts/sprint-status.yaml b/artifact/implementation-artifacts/sprint-status.yaml
+index c4f62a720af57622ef535d63a361ff5b0670548d..1eac40428402a16b545e29d722fb26fd7f5b3619
+--- a/artifact/implementation-artifacts/sprint-status.yaml
++++ b/artifact/implementation-artifacts/sprint-status.yaml
+@@ -56,7 +56,7 @@
+   2-5-run-casefile-lifecycle-retention-purge: done
+   epic-2-retrospective: done
+   epic-3: in-progress
+-  3-1-implement-cold-path-kafka-consumer-runtime-mode: backlog
++  3-1-implement-cold-path-kafka-consumer-runtime-mode: ready-for-dev
+   3-2-reconstruct-case-context-and-build-deterministic-evidence-summary: backlog
+   3-3-invoke-llm-for-all-cases-with-enriched-prompt-and-schema-validation: backlog
+   3-4-persist-diagnosis-artifact-with-fallback-guarantees: backlog
+
+file update:
+diff --git a/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md b/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f4186264af49ef2abd341ca882f3914bdc2c7029
+--- /dev/null
++++ b/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md
+@@ -0,0 +1,214 @@
++# Story 3.1: Implement Cold-Path Kafka Consumer Runtime Mode
++
++Status: ready-for-dev
++
++<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
++
++## Story
++
++As an SRE/platform engineer,  
++I want a dedicated cold-path consumer mode for case header events,  
++so that diagnosis processing is decoupled from hot-path execution.
++
++**Implements:** FR36
++
++## Acceptance Criteria
++
++1. **Given** runtime mode is set to `cold-path`  
++   **When** the service starts  
++   **Then** it joins consumer group `aiops-cold-path-diagnosis` and subscribes to `aiops-case-header`  
++   **And** processes messages sequentially through a testable consumer adapter abstraction.
++
++2. **Given** shutdown is requested  
++   **When** the consumer exits  
++   **Then** offsets are committed gracefully before close  
++   **And** health status reflects connected/lag/poll state transitions.
++
++## Tasks / Subtasks
++
++- [ ] Task 1: Create a cold-path Kafka consumer adapter with a thin protocol boundary (AC: 1, 2)
++  - [ ] Add `src/aiops_triage_pipeline/integrations/kafka_consumer.py`.
++  - [ ] Define a minimal protocol for cold-path consumption (subscribe, poll, commit, close) so tests can inject fakes without importing confluent internals.
++  - [ ] Implement a concrete confluent-kafka adapter that builds `Consumer` config from `Settings` and validates required consumer fields.
++  - [ ] Deserialize polled records into `CaseHeaderEventV1` with schema validation; normalize malformed payloads to structured error logging and skip/continue behavior.
++  - [ ] Wrap transport/client initialization failures as `CriticalDependencyError` to preserve startup failure semantics.
++
++- [ ] Task 2: Replace cold-path runtime stub in entrypoint with a sequential consume loop (AC: 1, 2)
++  - [ ] Update `src/aiops_triage_pipeline/__main__.py` `_run_cold_path()` to initialize dependencies and run the real loop.
++  - [ ] Join consumer group `aiops-cold-path-diagnosis` and subscribe to topic `aiops-case-header` (via settings defaults/overrides).
++  - [ ] Process one message at a time in strict poll-process-commit order; do not introduce batch or concurrent processing in this story.
++  - [ ] Add a small processor boundary (callable/protocol) for message handling so Story 3.2 can plug in case-context reconstruction without refactoring the runtime loop.
++  - [ ] Ensure loop termination path commits offsets and closes the consumer reliably.
++
++- [ ] Task 3: Add cold-path health transition reporting for runtime lifecycle (AC: 2)
++  - [ ] Use `HealthRegistry` updates to reflect state transitions for consumer connectivity and poll/commit lifecycle.
++  - [ ] Emit explicit transition reasons for startup connected state, poll timeout/empty poll, poll error, commit success/failure, and shutdown close.
++  - [ ] Keep `/health` response contract unchanged (component map); add cold-path component entries rather than changing endpoint shape.
++
++- [ ] Task 4: Extend cold-path configuration surface in settings and env templates (AC: 1, 2)
++  - [ ] Add explicit settings for cold-path consumer group and poll timeout with safe defaults aligned to ACs.
++  - [ ] Validate new numeric fields in `Settings` validators (positive timeout/interval constraints).
++  - [ ] Include new settings in startup config logging with secret-safe output.
++  - [ ] Update `config/.env.local`, `config/.env.dev`, `config/.env.docker`, `config/.env.uat.template`, and `config/.env.prod.template`.
++
++- [ ] Task 5: Add unit and integration coverage for runtime mode activation and graceful shutdown (AC: 1, 2)
++  - [ ] Add `tests/unit/integrations/test_kafka_consumer.py` with fake consumer tests for subscribe/poll/commit/close behavior and error handling.
++  - [ ] Update `tests/unit/test_main.py` to assert cold-path mode no longer logs a stub warning and now executes runtime loop wiring.
++  - [ ] Add `tests/integration/cold_path/test_consumer_lifecycle.py` for Docker-backed consumer lifecycle verification (group join, topic subscribe, sequential consume, graceful close/commit path).
++  - [ ] Keep regression quality gate posture at zero skipped tests.
++
++- [ ] Task 6: Update runtime-mode documentation to remove cold-path stub messaging (AC: 1, 2)
++  - [ ] Update `docs/runtime-modes.md` cold-path section to reflect implemented runtime loop and dependencies.
++  - [ ] Update `docs/local-development.md` runtime status table and local run guidance for `--mode cold-path`.
++  - [ ] Update `README.md` runtime-mode status and component references (including new consumer adapter module).
++
++## Dev Notes
++
++### Developer Context Section
++
++- This story activates runtime mode wiring only for cold-path Kafka consumption and lifecycle behavior.
++- Current repository state confirms `--mode cold-path` is a bootstrap stub in `src/aiops_triage_pipeline/__main__.py` and must be replaced with a real consumer loop.
++- Do not implement Story 3.2/3.3/3.4 scope here:
++  - No full case-context reconstruction from S3 in this story (Story 3.2).
++  - No prompt enrichment/schema-validation orchestration changes in this story (Story 3.3).
++  - No diagnosis artifact fallback persistence changes in this story (Story 3.4).
++- Preserve deterministic hot/cold separation: cold-path must not block hot-path execution semantics.
++
++### Technical Requirements
++
++- FR36 is the primary functional requirement for this story.
++- NFR-I4 applies directly: graceful shutdown must commit offsets and avoid avoidable reprocessing.
++- NFR-R6/NFR-R7 behavior boundary:
++  - Critical startup failures (e.g., consumer bootstrap misconfiguration) should fail loudly.
++  - Runtime degradable conditions should update health and continue/retry according to mode loop logic.
++- Keep integration mode safety posture and denylist/shared policy patterns unchanged.
++
++### Architecture Compliance
++
++- Follow D6 exactly:
++  - Use `confluent-kafka` consumer.
++  - Sequential processing.
++  - Thin adapter protocol for testability.
++  - Consumer group `aiops-cold-path-diagnosis` on topic `aiops-case-header`.
++- Respect runtime boundaries from `project-structure-boundaries.md`:
++  - Entry dispatch in `__main__.py`.
++  - Kafka adapter in `integrations/`.
++  - Health signaling through `health/registry.py` and existing `/health` server path.
++- Reuse existing exception taxonomy in `errors/exceptions.py`; do not introduce parallel error frameworks.
++
++### Library / Framework Requirements
++
++- Locked dependencies in this repo:
++  - `confluent-kafka==2.13.0`
++  - `pydantic==2.12.5`
++  - `pydantic-settings~=2.13.1`
++  - `pytest==9.0.2`
++  - `testcontainers==4.14.1`
++- Keep Kafka client implementation on `confluent-kafka`; do not introduce `kafka-python` or additional Kafka client libraries.
++- Keep runtime implementation synchronous for consumer poll loop (consistent with current architecture and D6).
++
++### File Structure Requirements
++
++Primary implementation files:
++- `src/aiops_triage_pipeline/__main__.py`
++- `src/aiops_triage_pipeline/integrations/kafka_consumer.py` (new)
++- `src/aiops_triage_pipeline/config/settings.py`
++
++Primary test files:
++- `tests/unit/test_main.py`
++- `tests/unit/integrations/test_kafka_consumer.py` (new)
++- `tests/integration/cold_path/test_consumer_lifecycle.py` (new)
++- `tests/integration/conftest.py` (only if shared fixture support is required)
++
++Documentation/config files:
++- `docs/runtime-modes.md`
++- `docs/local-development.md`
++- `README.md`
++- `config/.env.local`
++- `config/.env.dev`
++- `config/.env.docker`
++- `config/.env.uat.template`
++- `config/.env.prod.template`
++
++### Testing Requirements
++
++- Unit tests must cover:
++  - consumer adapter configuration and protocol behavior
++  - poll return handling (`None`, message with error, valid message)
++  - message decode/contract validation handling for `CaseHeaderEventV1`
++  - commit and close paths, including failure mapping
++- Runtime unit tests must cover:
++  - `--mode cold-path` dispatch path in `main()`
++  - `_run_cold_path()` startup and loop wiring
++  - non-stub logging behavior and graceful shutdown path
++- Integration tests must cover:
++  - cold-path consumer can subscribe and consume from `aiops-case-header`
++  - sequential processing behavior (ordered one-by-one handling)
++  - graceful close path with commit semantics under testcontainer Kafka
++- Regression gates for this sprint remain:
++  - `uv run ruff check`
++  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
++  - zero skipped tests is required.
++
++### Latest Tech Information
++
++External verification date: 2026-03-22.
++
++- Confluent Python consumer guidance (official docs) continues to center on `subscribe()` + `poll()` loops, and explicitly recommends calling `consumer.close()` to trigger immediate rebalance and clean shutdown.
++- Confluent docs identify `group.id` as mandatory for consumer configuration and describe `poll()` return/error-handling requirements for loop correctness.
++- PyPI shows `confluent-kafka` latest available release as `2.13.2` (released 2026-03-02), while this codebase intentionally pins `2.13.0`; this story should implement against the pinned version and avoid dependency upgrade scope.
++
++### Project Context Reference
++
++Applied `archive/project-context.md` guidance:
++- Keep contract-first schema validation at I/O boundaries.
++- Preserve hot/cold separation and deterministic hot-path safety invariants.
++- Reuse shared logging, health registry, and exception taxonomy patterns.
++- Maintain integration safety defaults and avoid introducing parallel cross-cutting frameworks.
++
++### References
++
++- [Source: `artifact/planning-artifacts/epics.md` — Epic 3, Story 3.1, FR36]
++- [Source: `artifact/planning-artifacts/prd/functional-requirements.md` — FR36, NFR-I4]
++- [Source: `artifact/planning-artifacts/prd/event-driven-pipeline-specific-requirements.md` — cold-path runtime requirements]
++- [Source: `artifact/planning-artifacts/architecture/core-architectural-decisions.md` — D6 cold-path consumer architecture]
++- [Source: `artifact/planning-artifacts/architecture/project-structure-boundaries.md`]
++- [Source: `artifact/planning-artifacts/architecture/implementation-patterns-consistency-rules.md`]
++- [Source: `archive/project-context.md`]
++- [Source: `src/aiops_triage_pipeline/__main__.py`]
++- [Source: `src/aiops_triage_pipeline/config/settings.py`]
++- [Source: `src/aiops_triage_pipeline/integrations/kafka.py`]
++- [Source: `src/aiops_triage_pipeline/health/registry.py`]
++- [Source: `src/aiops_triage_pipeline/health/server.py`]
++- [Source: `tests/unit/test_main.py`]
++- [Source: `tests/unit/integrations/test_kafka.py`]
++- [Source: `https://docs.confluent.io/kafka-clients/python/current/overview.html`]
++- [Source: `https://docs.confluent.io/platform/current/clients/confluent-kafka-python/html/index.html`]
++- [Source: `https://pypi.org/project/confluent-kafka/`]
++
++## Dev Agent Record
++
++### Agent Model Used
++
++{{agent_model_name_version}}
++
++### Debug Log References
++
++- Workflow executed: `bmad-bmm-create-story` (YOLO/full-auto)
++- Target story: `3-1-implement-cold-path-kafka-consumer-runtime-mode`
++- Source-of-truth status file: `artifact/implementation-artifacts/sprint-status.yaml`
++
++### Completion Notes List
++
++- Story artifact created with implementation-ready scope, tasks, architecture guardrails, and test strategy.
++- Story status set to `ready-for-dev`; no implementation/code-delivery workflow executed in this step.
++
++### File List
++
++- `artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md`
++- `artifact/implementation-artifacts/sprint-status.yaml`
++
++## Story Completion Status
++
++- Story status: `ready-for-dev`
++- Completion note: Ultimate context engine analysis completed - comprehensive developer guide created.
+diff --git a/artifact/implementation-artifacts/sprint-status.yaml b/artifact/implementation-artifacts/sprint-status.yaml
+index c4f62a720af57622ef535d63a361ff5b0670548d..1eac40428402a16b545e29d722fb26fd7f5b3619
+--- a/artifact/implementation-artifacts/sprint-status.yaml
++++ b/artifact/implementation-artifacts/sprint-status.yaml
+@@ -56,7 +56,7 @@
+   2-5-run-casefile-lifecycle-retention-purge: done
+   epic-2-retrospective: done
+   epic-3: in-progress
+-  3-1-implement-cold-path-kafka-consumer-runtime-mode: backlog
++  3-1-implement-cold-path-kafka-consumer-runtime-mode: ready-for-dev
+   3-2-reconstruct-case-context-and-build-deterministic-evidence-summary: backlog
+   3-3-invoke-llm-for-all-cases-with-enriched-prompt-and-schema-validation: backlog
+   3-4-persist-diagnosis-artifact-with-fallback-guarantees: backlog
+
+exec
+/bin/bash -lc 'git -C /home/sas/workspace/aiops status --short' in /home/sas/workspace/aiops succeeded in 51ms:
+ M artifact/implementation-artifacts/sprint-status.yaml
+?? artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md
+?? artifact/implementation-artifacts/runner-logs/20260322T213642Z/
+file update:
+diff --git a/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md b/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f4186264af49ef2abd341ca882f3914bdc2c7029
+--- /dev/null
++++ b/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md
+@@ -0,0 +1,214 @@
++# Story 3.1: Implement Cold-Path Kafka Consumer Runtime Mode
++
++Status: ready-for-dev
++
++<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
++
++## Story
++
++As an SRE/platform engineer,  
++I want a dedicated cold-path consumer mode for case header events,  
++so that diagnosis processing is decoupled from hot-path execution.
++
++**Implements:** FR36
++
++## Acceptance Criteria
++
++1. **Given** runtime mode is set to `cold-path`  
++   **When** the service starts  
++   **Then** it joins consumer group `aiops-cold-path-diagnosis` and subscribes to `aiops-case-header`  
++   **And** processes messages sequentially through a testable consumer adapter abstraction.
++
++2. **Given** shutdown is requested  
++   **When** the consumer exits  
++   **Then** offsets are committed gracefully before close  
++   **And** health status reflects connected/lag/poll state transitions.
++
++## Tasks / Subtasks
++
++- [ ] Task 1: Create a cold-path Kafka consumer adapter with a thin protocol boundary (AC: 1, 2)
++  - [ ] Add `src/aiops_triage_pipeline/integrations/kafka_consumer.py`.
++  - [ ] Define a minimal protocol for cold-path consumption (subscribe, poll, commit, close) so tests can inject fakes without importing confluent internals.
++  - [ ] Implement a concrete confluent-kafka adapter that builds `Consumer` config from `Settings` and validates required consumer fields.
++  - [ ] Deserialize polled records into `CaseHeaderEventV1` with schema validation; normalize malformed payloads to structured error logging and skip/continue behavior.
++  - [ ] Wrap transport/client initialization failures as `CriticalDependencyError` to preserve startup failure semantics.
++
++- [ ] Task 2: Replace cold-path runtime stub in entrypoint with a sequential consume loop (AC: 1, 2)
++  - [ ] Update `src/aiops_triage_pipeline/__main__.py` `_run_cold_path()` to initialize dependencies and run the real loop.
++  - [ ] Join consumer group `aiops-cold-path-diagnosis` and subscribe to topic `aiops-case-header` (via settings defaults/overrides).
++  - [ ] Process one message at a time in strict poll-process-commit order; do not introduce batch or concurrent processing in this story.
++  - [ ] Add a small processor boundary (callable/protocol) for message handling so Story 3.2 can plug in case-context reconstruction without refactoring the runtime loop.
++  - [ ] Ensure loop termination path commits offsets and closes the consumer reliably.
++
++- [ ] Task 3: Add cold-path health transition reporting for runtime lifecycle (AC: 2)
++  - [ ] Use `HealthRegistry` updates to reflect state transitions for consumer connectivity and poll/commit lifecycle.
++  - [ ] Emit explicit transition reasons for startup connected state, poll timeout/empty poll, poll error, commit success/failure, and shutdown close.
++  - [ ] Keep `/health` response contract unchanged (component map); add cold-path component entries rather than changing endpoint shape.
++
++- [ ] Task 4: Extend cold-path configuration surface in settings and env templates (AC: 1, 2)
++  - [ ] Add explicit settings for cold-path consumer group and poll timeout with safe defaults aligned to ACs.
++  - [ ] Validate new numeric fields in `Settings` validators (positive timeout/interval constraints).
++  - [ ] Include new settings in startup config logging with secret-safe output.
++  - [ ] Update `config/.env.local`, `config/.env.dev`, `config/.env.docker`, `config/.env.uat.template`, and `config/.env.prod.template`.
++
++- [ ] Task 5: Add unit and integration coverage for runtime mode activation and graceful shutdown (AC: 1, 2)
++  - [ ] Add `tests/unit/integrations/test_kafka_consumer.py` with fake consumer tests for subscribe/poll/commit/close behavior and error handling.
++  - [ ] Update `tests/unit/test_main.py` to assert cold-path mode no longer logs a stub warning and now executes runtime loop wiring.
++  - [ ] Add `tests/integration/cold_path/test_consumer_lifecycle.py` for Docker-backed consumer lifecycle verification (group join, topic subscribe, sequential consume, graceful close/commit path).
++  - [ ] Keep regression quality gate posture at zero skipped tests.
++
++- [ ] Task 6: Update runtime-mode documentation to remove cold-path stub messaging (AC: 1, 2)
++  - [ ] Update `docs/runtime-modes.md` cold-path section to reflect implemented runtime loop and dependencies.
++  - [ ] Update `docs/local-development.md` runtime status table and local run guidance for `--mode cold-path`.
++  - [ ] Update `README.md` runtime-mode status and component references (including new consumer adapter module).
++
++## Dev Notes
++
++### Developer Context Section
++
++- This story activates runtime mode wiring only for cold-path Kafka consumption and lifecycle behavior.
++- Current repository state confirms `--mode cold-path` is a bootstrap stub in `src/aiops_triage_pipeline/__main__.py` and must be replaced with a real consumer loop.
++- Do not implement Story 3.2/3.3/3.4 scope here:
++  - No full case-context reconstruction from S3 in this story (Story 3.2).
++  - No prompt enrichment/schema-validation orchestration changes in this story (Story 3.3).
++  - No diagnosis artifact fallback persistence changes in this story (Story 3.4).
++- Preserve deterministic hot/cold separation: cold-path must not block hot-path execution semantics.
++
++### Technical Requirements
++
++- FR36 is the primary functional requirement for this story.
++- NFR-I4 applies directly: graceful shutdown must commit offsets and avoid avoidable reprocessing.
++- NFR-R6/NFR-R7 behavior boundary:
++  - Critical startup failures (e.g., consumer bootstrap misconfiguration) should fail loudly.
++  - Runtime degradable conditions should update health and continue/retry according to mode loop logic.
++- Keep integration mode safety posture and denylist/shared policy patterns unchanged.
++
++### Architecture Compliance
++
++- Follow D6 exactly:
++  - Use `confluent-kafka` consumer.
++  - Sequential processing.
++  - Thin adapter protocol for testability.
++  - Consumer group `aiops-cold-path-diagnosis` on topic `aiops-case-header`.
++- Respect runtime boundaries from `project-structure-boundaries.md`:
++  - Entry dispatch in `__main__.py`.
++  - Kafka adapter in `integrations/`.
++  - Health signaling through `health/registry.py` and existing `/health` server path.
++- Reuse existing exception taxonomy in `errors/exceptions.py`; do not introduce parallel error frameworks.
++
++### Library / Framework Requirements
++
++- Locked dependencies in this repo:
++  - `confluent-kafka==2.13.0`
++  - `pydantic==2.12.5`
++  - `pydantic-settings~=2.13.1`
++  - `pytest==9.0.2`
++  - `testcontainers==4.14.1`
++- Keep Kafka client implementation on `confluent-kafka`; do not introduce `kafka-python` or additional Kafka client libraries.
++- Keep runtime implementation synchronous for consumer poll loop (consistent with current architecture and D6).
++
++### File Structure Requirements
++
++Primary implementation files:
++- `src/aiops_triage_pipeline/__main__.py`
++- `src/aiops_triage_pipeline/integrations/kafka_consumer.py` (new)
++- `src/aiops_triage_pipeline/config/settings.py`
++
++Primary test files:
++- `tests/unit/test_main.py`
++- `tests/unit/integrations/test_kafka_consumer.py` (new)
++- `tests/integration/cold_path/test_consumer_lifecycle.py` (new)
++- `tests/integration/conftest.py` (only if shared fixture support is required)
++
++Documentation/config files:
++- `docs/runtime-modes.md`
++- `docs/local-development.md`
++- `README.md`
++- `config/.env.local`
++- `config/.env.dev`
++- `config/.env.docker`
++- `config/.env.uat.template`
++- `config/.env.prod.template`
++
++### Testing Requirements
++
++- Unit tests must cover:
++  - consumer adapter configuration and protocol behavior
++  - poll return handling (`None`, message with error, valid message)
++  - message decode/contract validation handling for `CaseHeaderEventV1`
++  - commit and close paths, including failure mapping
++- Runtime unit tests must cover:
++  - `--mode cold-path` dispatch path in `main()`
++  - `_run_cold_path()` startup and loop wiring
++  - non-stub logging behavior and graceful shutdown path
++- Integration tests must cover:
++  - cold-path consumer can subscribe and consume from `aiops-case-header`
++  - sequential processing behavior (ordered one-by-one handling)
++  - graceful close path with commit semantics under testcontainer Kafka
++- Regression gates for this sprint remain:
++  - `uv run ruff check`
++  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
++  - zero skipped tests is required.
++
++### Latest Tech Information
++
++External verification date: 2026-03-22.
++
++- Confluent Python consumer guidance (official docs) continues to center on `subscribe()` + `poll()` loops, and explicitly recommends calling `consumer.close()` to trigger immediate rebalance and clean shutdown.
++- Confluent docs identify `group.id` as mandatory for consumer configuration and describe `poll()` return/error-handling requirements for loop correctness.
++- PyPI shows `confluent-kafka` latest available release as `2.13.2` (released 2026-03-02), while this codebase intentionally pins `2.13.0`; this story should implement against the pinned version and avoid dependency upgrade scope.
++
++### Project Context Reference
++
++Applied `archive/project-context.md` guidance:
++- Keep contract-first schema validation at I/O boundaries.
++- Preserve hot/cold separation and deterministic hot-path safety invariants.
++- Reuse shared logging, health registry, and exception taxonomy patterns.
++- Maintain integration safety defaults and avoid introducing parallel cross-cutting frameworks.
++
++### References
++
++- [Source: `artifact/planning-artifacts/epics.md` — Epic 3, Story 3.1, FR36]
++- [Source: `artifact/planning-artifacts/prd/functional-requirements.md` — FR36, NFR-I4]
++- [Source: `artifact/planning-artifacts/prd/event-driven-pipeline-specific-requirements.md` — cold-path runtime requirements]
++- [Source: `artifact/planning-artifacts/architecture/core-architectural-decisions.md` — D6 cold-path consumer architecture]
++- [Source: `artifact/planning-artifacts/architecture/project-structure-boundaries.md`]
++- [Source: `artifact/planning-artifacts/architecture/implementation-patterns-consistency-rules.md`]
++- [Source: `archive/project-context.md`]
++- [Source: `src/aiops_triage_pipeline/__main__.py`]
++- [Source: `src/aiops_triage_pipeline/config/settings.py`]
++- [Source: `src/aiops_triage_pipeline/integrations/kafka.py`]
++- [Source: `src/aiops_triage_pipeline/health/registry.py`]
++- [Source: `src/aiops_triage_pipeline/health/server.py`]
++- [Source: `tests/unit/test_main.py`]
++- [Source: `tests/unit/integrations/test_kafka.py`]
++- [Source: `https://docs.confluent.io/kafka-clients/python/current/overview.html`]
++- [Source: `https://docs.confluent.io/platform/current/clients/confluent-kafka-python/html/index.html`]
++- [Source: `https://pypi.org/project/confluent-kafka/`]
++
++## Dev Agent Record
++
++### Agent Model Used
++
++{{agent_model_name_version}}
++
++### Debug Log References
++
++- Workflow executed: `bmad-bmm-create-story` (YOLO/full-auto)
++- Target story: `3-1-implement-cold-path-kafka-consumer-runtime-mode`
++- Source-of-truth status file: `artifact/implementation-artifacts/sprint-status.yaml`
++
++### Completion Notes List
++
++- Story artifact created with implementation-ready scope, tasks, architecture guardrails, and test strategy.
++- Story status set to `ready-for-dev`; no implementation/code-delivery workflow executed in this step.
++
++### File List
++
++- `artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md`
++- `artifact/implementation-artifacts/sprint-status.yaml`
++
++## Story Completion Status
++
++- Story status: `ready-for-dev`
++- Completion note: Ultimate context engine analysis completed - comprehensive developer guide created.
+diff --git a/artifact/implementation-artifacts/sprint-status.yaml b/artifact/implementation-artifacts/sprint-status.yaml
+index c4f62a720af57622ef535d63a361ff5b0670548d..1eac40428402a16b545e29d722fb26fd7f5b3619
+--- a/artifact/implementation-artifacts/sprint-status.yaml
++++ b/artifact/implementation-artifacts/sprint-status.yaml
+@@ -56,7 +56,7 @@
+   2-5-run-casefile-lifecycle-retention-purge: done
+   epic-2-retrospective: done
+   epic-3: in-progress
+-  3-1-implement-cold-path-kafka-consumer-runtime-mode: backlog
++  3-1-implement-cold-path-kafka-consumer-runtime-mode: ready-for-dev
+   3-2-reconstruct-case-context-and-build-deterministic-evidence-summary: backlog
+   3-3-invoke-llm-for-all-cases-with-enriched-prompt-and-schema-validation: backlog
+   3-4-persist-diagnosis-artifact-with-fallback-guarantees: backlog
+
+exec
+/bin/bash -lc "sed -n '1,260p' /home/sas/workspace/aiops/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md" in /home/sas/workspace/aiops succeeded in 50ms:
+# Story 3.1: Implement Cold-Path Kafka Consumer Runtime Mode
+
+Status: ready-for-dev
+
+<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+## Story
+
+As an SRE/platform engineer,  
+I want a dedicated cold-path consumer mode for case header events,  
+so that diagnosis processing is decoupled from hot-path execution.
+
+**Implements:** FR36
+
+## Acceptance Criteria
+
+1. **Given** runtime mode is set to `cold-path`  
+   **When** the service starts  
+   **Then** it joins consumer group `aiops-cold-path-diagnosis` and subscribes to `aiops-case-header`  
+   **And** processes messages sequentially through a testable consumer adapter abstraction.
+file update:
+diff --git a/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md b/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f4186264af49ef2abd341ca882f3914bdc2c7029
+--- /dev/null
++++ b/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md
+@@ -0,0 +1,214 @@
++# Story 3.1: Implement Cold-Path Kafka Consumer Runtime Mode
++
++Status: ready-for-dev
++
++<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
++
++## Story
++
++As an SRE/platform engineer,  
++I want a dedicated cold-path consumer mode for case header events,  
++so that diagnosis processing is decoupled from hot-path execution.
++
++**Implements:** FR36
++
++## Acceptance Criteria
++
++1. **Given** runtime mode is set to `cold-path`  
++   **When** the service starts  
++   **Then** it joins consumer group `aiops-cold-path-diagnosis` and subscribes to `aiops-case-header`  
++   **And** processes messages sequentially through a testable consumer adapter abstraction.
++
++2. **Given** shutdown is requested  
++   **When** the consumer exits  
++   **Then** offsets are committed gracefully before close  
++   **And** health status reflects connected/lag/poll state transitions.
++
++## Tasks / Subtasks
++
++- [ ] Task 1: Create a cold-path Kafka consumer adapter with a thin protocol boundary (AC: 1, 2)
++  - [ ] Add `src/aiops_triage_pipeline/integrations/kafka_consumer.py`.
++  - [ ] Define a minimal protocol for cold-path consumption (subscribe, poll, commit, close) so tests can inject fakes without importing confluent internals.
++  - [ ] Implement a concrete confluent-kafka adapter that builds `Consumer` config from `Settings` and validates required consumer fields.
++  - [ ] Deserialize polled records into `CaseHeaderEventV1` with schema validation; normalize malformed payloads to structured error logging and skip/continue behavior.
++  - [ ] Wrap transport/client initialization failures as `CriticalDependencyError` to preserve startup failure semantics.
++
++- [ ] Task 2: Replace cold-path runtime stub in entrypoint with a sequential consume loop (AC: 1, 2)
++  - [ ] Update `src/aiops_triage_pipeline/__main__.py` `_run_cold_path()` to initialize dependencies and run the real loop.
++  - [ ] Join consumer group `aiops-cold-path-diagnosis` and subscribe to topic `aiops-case-header` (via settings defaults/overrides).
++  - [ ] Process one message at a time in strict poll-process-commit order; do not introduce batch or concurrent processing in this story.
++  - [ ] Add a small processor boundary (callable/protocol) for message handling so Story 3.2 can plug in case-context reconstruction without refactoring the runtime loop.
++  - [ ] Ensure loop termination path commits offsets and closes the consumer reliably.
++
++- [ ] Task 3: Add cold-path health transition reporting for runtime lifecycle (AC: 2)
++  - [ ] Use `HealthRegistry` updates to reflect state transitions for consumer connectivity and poll/commit lifecycle.
++  - [ ] Emit explicit transition reasons for startup connected state, poll timeout/empty poll, poll error, commit success/failure, and shutdown close.
++  - [ ] Keep `/health` response contract unchanged (component map); add cold-path component entries rather than changing endpoint shape.
++
++- [ ] Task 4: Extend cold-path configuration surface in settings and env templates (AC: 1, 2)
++  - [ ] Add explicit settings for cold-path consumer group and poll timeout with safe defaults aligned to ACs.
++  - [ ] Validate new numeric fields in `Settings` validators (positive timeout/interval constraints).
++  - [ ] Include new settings in startup config logging with secret-safe output.
++  - [ ] Update `config/.env.local`, `config/.env.dev`, `config/.env.docker`, `config/.env.uat.template`, and `config/.env.prod.template`.
++
++- [ ] Task 5: Add unit and integration coverage for runtime mode activation and graceful shutdown (AC: 1, 2)
++  - [ ] Add `tests/unit/integrations/test_kafka_consumer.py` with fake consumer tests for subscribe/poll/commit/close behavior and error handling.
++  - [ ] Update `tests/unit/test_main.py` to assert cold-path mode no longer logs a stub warning and now executes runtime loop wiring.
++  - [ ] Add `tests/integration/cold_path/test_consumer_lifecycle.py` for Docker-backed consumer lifecycle verification (group join, topic subscribe, sequential consume, graceful close/commit path).
++  - [ ] Keep regression quality gate posture at zero skipped tests.
++
++- [ ] Task 6: Update runtime-mode documentation to remove cold-path stub messaging (AC: 1, 2)
++  - [ ] Update `docs/runtime-modes.md` cold-path section to reflect implemented runtime loop and dependencies.
++  - [ ] Update `docs/local-development.md` runtime status table and local run guidance for `--mode cold-path`.
++  - [ ] Update `README.md` runtime-mode status and component references (including new consumer adapter module).
++
++## Dev Notes
++
++### Developer Context Section
++
++- This story activates runtime mode wiring only for cold-path Kafka consumption and lifecycle behavior.
++- Current repository state confirms `--mode cold-path` is a bootstrap stub in `src/aiops_triage_pipeline/__main__.py` and must be replaced with a real consumer loop.
++- Do not implement Story 3.2/3.3/3.4 scope here:
++  - No full case-context reconstruction from S3 in this story (Story 3.2).
++  - No prompt enrichment/schema-validation orchestration changes in this story (Story 3.3).
++  - No diagnosis artifact fallback persistence changes in this story (Story 3.4).
++- Preserve deterministic hot/cold separation: cold-path must not block hot-path execution semantics.
++
++### Technical Requirements
++
++- FR36 is the primary functional requirement for this story.
++- NFR-I4 applies directly: graceful shutdown must commit offsets and avoid avoidable reprocessing.
++- NFR-R6/NFR-R7 behavior boundary:
++  - Critical startup failures (e.g., consumer bootstrap misconfiguration) should fail loudly.
++  - Runtime degradable conditions should update health and continue/retry according to mode loop logic.
++- Keep integration mode safety posture and denylist/shared policy patterns unchanged.
++
++### Architecture Compliance
++
++- Follow D6 exactly:
++  - Use `confluent-kafka` consumer.
++  - Sequential processing.
++  - Thin adapter protocol for testability.
++  - Consumer group `aiops-cold-path-diagnosis` on topic `aiops-case-header`.
++- Respect runtime boundaries from `project-structure-boundaries.md`:
++  - Entry dispatch in `__main__.py`.
++  - Kafka adapter in `integrations/`.
++  - Health signaling through `health/registry.py` and existing `/health` server path.
++- Reuse existing exception taxonomy in `errors/exceptions.py`; do not introduce parallel error frameworks.
++
++### Library / Framework Requirements
++
++- Locked dependencies in this repo:
++  - `confluent-kafka==2.13.0`
++  - `pydantic==2.12.5`
++  - `pydantic-settings~=2.13.1`
++  - `pytest==9.0.2`
++  - `testcontainers==4.14.1`
++- Keep Kafka client implementation on `confluent-kafka`; do not introduce `kafka-python` or additional Kafka client libraries.
++- Keep runtime implementation synchronous for consumer poll loop (consistent with current architecture and D6).
++
++### File Structure Requirements
++
++Primary implementation files:
++- `src/aiops_triage_pipeline/__main__.py`
++- `src/aiops_triage_pipeline/integrations/kafka_consumer.py` (new)
++- `src/aiops_triage_pipeline/config/settings.py`
++
++Primary test files:
++- `tests/unit/test_main.py`
++- `tests/unit/integrations/test_kafka_consumer.py` (new)
++- `tests/integration/cold_path/test_consumer_lifecycle.py` (new)
++- `tests/integration/conftest.py` (only if shared fixture support is required)
++
++Documentation/config files:
++- `docs/runtime-modes.md`
++- `docs/local-development.md`
++- `README.md`
++- `config/.env.local`
++- `config/.env.dev`
++- `config/.env.docker`
++- `config/.env.uat.template`
++- `config/.env.prod.template`
++
++### Testing Requirements
++
++- Unit tests must cover:
++  - consumer adapter configuration and protocol behavior
++  - poll return handling (`None`, message with error, valid message)
++  - message decode/contract validation handling for `CaseHeaderEventV1`
++  - commit and close paths, including failure mapping
++- Runtime unit tests must cover:
++  - `--mode cold-path` dispatch path in `main()`
++  - `_run_cold_path()` startup and loop wiring
++  - non-stub logging behavior and graceful shutdown path
++- Integration tests must cover:
++  - cold-path consumer can subscribe and consume from `aiops-case-header`
++  - sequential processing behavior (ordered one-by-one handling)
++  - graceful close path with commit semantics under testcontainer Kafka
++- Regression gates for this sprint remain:
++  - `uv run ruff check`
++  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
++  - zero skipped tests is required.
++
++### Latest Tech Information
++
++External verification date: 2026-03-22.
++
++- Confluent Python consumer guidance (official docs) continues to center on `subscribe()` + `poll()` loops, and explicitly recommends calling `consumer.close()` to trigger immediate rebalance and clean shutdown.
++- Confluent docs identify `group.id` as mandatory for consumer configuration and describe `poll()` return/error-handling requirements for loop correctness.
++- PyPI shows `confluent-kafka` latest available release as `2.13.2` (released 2026-03-02), while this codebase intentionally pins `2.13.0`; this story should implement against the pinned version and avoid dependency upgrade scope.
++
++### Project Context Reference
++
++Applied `archive/project-context.md` guidance:
++- Keep contract-first schema validation at I/O boundaries.
++- Preserve hot/cold separation and deterministic hot-path safety invariants.
++- Reuse shared logging, health registry, and exception taxonomy patterns.
++- Maintain integration safety defaults and avoid introducing parallel cross-cutting frameworks.
++
++### References
++
++- [Source: `artifact/planning-artifacts/epics.md` — Epic 3, Story 3.1, FR36]
++- [Source: `artifact/planning-artifacts/prd/functional-requirements.md` — FR36, NFR-I4]
++- [Source: `artifact/planning-artifacts/prd/event-driven-pipeline-specific-requirements.md` — cold-path runtime requirements]
++- [Source: `artifact/planning-artifacts/architecture/core-architectural-decisions.md` — D6 cold-path consumer architecture]
++- [Source: `artifact/planning-artifacts/architecture/project-structure-boundaries.md`]
++- [Source: `artifact/planning-artifacts/architecture/implementation-patterns-consistency-rules.md`]
++- [Source: `archive/project-context.md`]
++- [Source: `src/aiops_triage_pipeline/__main__.py`]
++- [Source: `src/aiops_triage_pipeline/config/settings.py`]
++- [Source: `src/aiops_triage_pipeline/integrations/kafka.py`]
++- [Source: `src/aiops_triage_pipeline/health/registry.py`]
++- [Source: `src/aiops_triage_pipeline/health/server.py`]
++- [Source: `tests/unit/test_main.py`]
++- [Source: `tests/unit/integrations/test_kafka.py`]
++- [Source: `https://docs.confluent.io/kafka-clients/python/current/overview.html`]
++- [Source: `https://docs.confluent.io/platform/current/clients/confluent-kafka-python/html/index.html`]
++- [Source: `https://pypi.org/project/confluent-kafka/`]
++
++## Dev Agent Record
++
++### Agent Model Used
++
++{{agent_model_name_version}}
++
++### Debug Log References
++
++- Workflow executed: `bmad-bmm-create-story` (YOLO/full-auto)
++- Target story: `3-1-implement-cold-path-kafka-consumer-runtime-mode`
++- Source-of-truth status file: `artifact/implementation-artifacts/sprint-status.yaml`
++
++### Completion Notes List
++
++- Story artifact created with implementation-ready scope, tasks, architecture guardrails, and test strategy.
++- Story status set to `ready-for-dev`; no implementation/code-delivery workflow executed in this step.
++
++### File List
++
++- `artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md`
++- `artifact/implementation-artifacts/sprint-status.yaml`
++
++## Story Completion Status
++
++- Story status: `ready-for-dev`
++- Completion note: Ultimate context engine analysis completed - comprehensive developer guide created.
+diff --git a/artifact/implementation-artifacts/sprint-status.yaml b/artifact/implementation-artifacts/sprint-status.yaml
+index c4f62a720af57622ef535d63a361ff5b0670548d..1eac40428402a16b545e29d722fb26fd7f5b3619
+--- a/artifact/implementation-artifacts/sprint-status.yaml
++++ b/artifact/implementation-artifacts/sprint-status.yaml
+@@ -56,7 +56,7 @@
+   2-5-run-casefile-lifecycle-retention-purge: done
+   epic-2-retrospective: done
+   epic-3: in-progress
+-  3-1-implement-cold-path-kafka-consumer-runtime-mode: backlog
++  3-1-implement-cold-path-kafka-consumer-runtime-mode: ready-for-dev
+   3-2-reconstruct-case-context-and-build-deterministic-evidence-summary: backlog
+   3-3-invoke-llm-for-all-cases-with-enriched-prompt-and-schema-validation: backlog
+   3-4-persist-diagnosis-artifact-with-fallback-guarantees: backlog
+
+exec
+/bin/bash -lc 'rg -n "3-1-implement-cold-path-kafka-consumer-runtime-mode" /home/sas/workspace/aiops/artifact/implementation-artifacts/sprint-status.yaml' in /home/sas/workspace/aiops succeeded in 51ms:
+59:  3-1-implement-cold-path-kafka-consumer-runtime-mode: ready-for-dev
+file update:
+diff --git a/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md b/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f4186264af49ef2abd341ca882f3914bdc2c7029
+--- /dev/null
++++ b/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md
+@@ -0,0 +1,214 @@
++# Story 3.1: Implement Cold-Path Kafka Consumer Runtime Mode
++
++Status: ready-for-dev
++
++<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
++
++## Story
++
++As an SRE/platform engineer,  
++I want a dedicated cold-path consumer mode for case header events,  
++so that diagnosis processing is decoupled from hot-path execution.
++
++**Implements:** FR36
++
++## Acceptance Criteria
++
++1. **Given** runtime mode is set to `cold-path`  
++   **When** the service starts  
++   **Then** it joins consumer group `aiops-cold-path-diagnosis` and subscribes to `aiops-case-header`  
++   **And** processes messages sequentially through a testable consumer adapter abstraction.
++
++2. **Given** shutdown is requested  
++   **When** the consumer exits  
++   **Then** offsets are committed gracefully before close  
++   **And** health status reflects connected/lag/poll state transitions.
++
++## Tasks / Subtasks
++
++- [ ] Task 1: Create a cold-path Kafka consumer adapter with a thin protocol boundary (AC: 1, 2)
++  - [ ] Add `src/aiops_triage_pipeline/integrations/kafka_consumer.py`.
++  - [ ] Define a minimal protocol for cold-path consumption (subscribe, poll, commit, close) so tests can inject fakes without importing confluent internals.
++  - [ ] Implement a concrete confluent-kafka adapter that builds `Consumer` config from `Settings` and validates required consumer fields.
++  - [ ] Deserialize polled records into `CaseHeaderEventV1` with schema validation; normalize malformed payloads to structured error logging and skip/continue behavior.
++  - [ ] Wrap transport/client initialization failures as `CriticalDependencyError` to preserve startup failure semantics.
++
++- [ ] Task 2: Replace cold-path runtime stub in entrypoint with a sequential consume loop (AC: 1, 2)
++  - [ ] Update `src/aiops_triage_pipeline/__main__.py` `_run_cold_path()` to initialize dependencies and run the real loop.
++  - [ ] Join consumer group `aiops-cold-path-diagnosis` and subscribe to topic `aiops-case-header` (via settings defaults/overrides).
++  - [ ] Process one message at a time in strict poll-process-commit order; do not introduce batch or concurrent processing in this story.
++  - [ ] Add a small processor boundary (callable/protocol) for message handling so Story 3.2 can plug in case-context reconstruction without refactoring the runtime loop.
++  - [ ] Ensure loop termination path commits offsets and closes the consumer reliably.
++
++- [ ] Task 3: Add cold-path health transition reporting for runtime lifecycle (AC: 2)
++  - [ ] Use `HealthRegistry` updates to reflect state transitions for consumer connectivity and poll/commit lifecycle.
++  - [ ] Emit explicit transition reasons for startup connected state, poll timeout/empty poll, poll error, commit success/failure, and shutdown close.
++  - [ ] Keep `/health` response contract unchanged (component map); add cold-path component entries rather than changing endpoint shape.
++
++- [ ] Task 4: Extend cold-path configuration surface in settings and env templates (AC: 1, 2)
++  - [ ] Add explicit settings for cold-path consumer group and poll timeout with safe defaults aligned to ACs.
++  - [ ] Validate new numeric fields in `Settings` validators (positive timeout/interval constraints).
++  - [ ] Include new settings in startup config logging with secret-safe output.
++  - [ ] Update `config/.env.local`, `config/.env.dev`, `config/.env.docker`, `config/.env.uat.template`, and `config/.env.prod.template`.
++
++- [ ] Task 5: Add unit and integration coverage for runtime mode activation and graceful shutdown (AC: 1, 2)
++  - [ ] Add `tests/unit/integrations/test_kafka_consumer.py` with fake consumer tests for subscribe/poll/commit/close behavior and error handling.
++  - [ ] Update `tests/unit/test_main.py` to assert cold-path mode no longer logs a stub warning and now executes runtime loop wiring.
++  - [ ] Add `tests/integration/cold_path/test_consumer_lifecycle.py` for Docker-backed consumer lifecycle verification (group join, topic subscribe, sequential consume, graceful close/commit path).
++  - [ ] Keep regression quality gate posture at zero skipped tests.
++
++- [ ] Task 6: Update runtime-mode documentation to remove cold-path stub messaging (AC: 1, 2)
++  - [ ] Update `docs/runtime-modes.md` cold-path section to reflect implemented runtime loop and dependencies.
++  - [ ] Update `docs/local-development.md` runtime status table and local run guidance for `--mode cold-path`.
++  - [ ] Update `README.md` runtime-mode status and component references (including new consumer adapter module).
++
++## Dev Notes
++
++### Developer Context Section
++
++- This story activates runtime mode wiring only for cold-path Kafka consumption and lifecycle behavior.
++- Current repository state confirms `--mode cold-path` is a bootstrap stub in `src/aiops_triage_pipeline/__main__.py` and must be replaced with a real consumer loop.
++- Do not implement Story 3.2/3.3/3.4 scope here:
++  - No full case-context reconstruction from S3 in this story (Story 3.2).
++  - No prompt enrichment/schema-validation orchestration changes in this story (Story 3.3).
++  - No diagnosis artifact fallback persistence changes in this story (Story 3.4).
++- Preserve deterministic hot/cold separation: cold-path must not block hot-path execution semantics.
++
++### Technical Requirements
++
++- FR36 is the primary functional requirement for this story.
++- NFR-I4 applies directly: graceful shutdown must commit offsets and avoid avoidable reprocessing.
++- NFR-R6/NFR-R7 behavior boundary:
++  - Critical startup failures (e.g., consumer bootstrap misconfiguration) should fail loudly.
++  - Runtime degradable conditions should update health and continue/retry according to mode loop logic.
++- Keep integration mode safety posture and denylist/shared policy patterns unchanged.
++
++### Architecture Compliance
++
++- Follow D6 exactly:
++  - Use `confluent-kafka` consumer.
++  - Sequential processing.
++  - Thin adapter protocol for testability.
++  - Consumer group `aiops-cold-path-diagnosis` on topic `aiops-case-header`.
++- Respect runtime boundaries from `project-structure-boundaries.md`:
++  - Entry dispatch in `__main__.py`.
++  - Kafka adapter in `integrations/`.
++  - Health signaling through `health/registry.py` and existing `/health` server path.
++- Reuse existing exception taxonomy in `errors/exceptions.py`; do not introduce parallel error frameworks.
++
++### Library / Framework Requirements
++
++- Locked dependencies in this repo:
++  - `confluent-kafka==2.13.0`
++  - `pydantic==2.12.5`
++  - `pydantic-settings~=2.13.1`
++  - `pytest==9.0.2`
++  - `testcontainers==4.14.1`
++- Keep Kafka client implementation on `confluent-kafka`; do not introduce `kafka-python` or additional Kafka client libraries.
++- Keep runtime implementation synchronous for consumer poll loop (consistent with current architecture and D6).
++
++### File Structure Requirements
++
++Primary implementation files:
++- `src/aiops_triage_pipeline/__main__.py`
++- `src/aiops_triage_pipeline/integrations/kafka_consumer.py` (new)
++- `src/aiops_triage_pipeline/config/settings.py`
++
++Primary test files:
++- `tests/unit/test_main.py`
++- `tests/unit/integrations/test_kafka_consumer.py` (new)
++- `tests/integration/cold_path/test_consumer_lifecycle.py` (new)
++- `tests/integration/conftest.py` (only if shared fixture support is required)
++
++Documentation/config files:
++- `docs/runtime-modes.md`
++- `docs/local-development.md`
++- `README.md`
++- `config/.env.local`
++- `config/.env.dev`
++- `config/.env.docker`
++- `config/.env.uat.template`
++- `config/.env.prod.template`
++
++### Testing Requirements
++
++- Unit tests must cover:
++  - consumer adapter configuration and protocol behavior
++  - poll return handling (`None`, message with error, valid message)
++  - message decode/contract validation handling for `CaseHeaderEventV1`
++  - commit and close paths, including failure mapping
++- Runtime unit tests must cover:
++  - `--mode cold-path` dispatch path in `main()`
++  - `_run_cold_path()` startup and loop wiring
++  - non-stub logging behavior and graceful shutdown path
++- Integration tests must cover:
++  - cold-path consumer can subscribe and consume from `aiops-case-header`
++  - sequential processing behavior (ordered one-by-one handling)
++  - graceful close path with commit semantics under testcontainer Kafka
++- Regression gates for this sprint remain:
++  - `uv run ruff check`
++  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
++  - zero skipped tests is required.
++
++### Latest Tech Information
++
++External verification date: 2026-03-22.
++
++- Confluent Python consumer guidance (official docs) continues to center on `subscribe()` + `poll()` loops, and explicitly recommends calling `consumer.close()` to trigger immediate rebalance and clean shutdown.
++- Confluent docs identify `group.id` as mandatory for consumer configuration and describe `poll()` return/error-handling requirements for loop correctness.
++- PyPI shows `confluent-kafka` latest available release as `2.13.2` (released 2026-03-02), while this codebase intentionally pins `2.13.0`; this story should implement against the pinned version and avoid dependency upgrade scope.
++
++### Project Context Reference
++
++Applied `archive/project-context.md` guidance:
++- Keep contract-first schema validation at I/O boundaries.
++- Preserve hot/cold separation and deterministic hot-path safety invariants.
++- Reuse shared logging, health registry, and exception taxonomy patterns.
++- Maintain integration safety defaults and avoid introducing parallel cross-cutting frameworks.
++
++### References
++
++- [Source: `artifact/planning-artifacts/epics.md` — Epic 3, Story 3.1, FR36]
++- [Source: `artifact/planning-artifacts/prd/functional-requirements.md` — FR36, NFR-I4]
++- [Source: `artifact/planning-artifacts/prd/event-driven-pipeline-specific-requirements.md` — cold-path runtime requirements]
++- [Source: `artifact/planning-artifacts/architecture/core-architectural-decisions.md` — D6 cold-path consumer architecture]
++- [Source: `artifact/planning-artifacts/architecture/project-structure-boundaries.md`]
++- [Source: `artifact/planning-artifacts/architecture/implementation-patterns-consistency-rules.md`]
++- [Source: `archive/project-context.md`]
++- [Source: `src/aiops_triage_pipeline/__main__.py`]
++- [Source: `src/aiops_triage_pipeline/config/settings.py`]
++- [Source: `src/aiops_triage_pipeline/integrations/kafka.py`]
++- [Source: `src/aiops_triage_pipeline/health/registry.py`]
++- [Source: `src/aiops_triage_pipeline/health/server.py`]
++- [Source: `tests/unit/test_main.py`]
++- [Source: `tests/unit/integrations/test_kafka.py`]
++- [Source: `https://docs.confluent.io/kafka-clients/python/current/overview.html`]
++- [Source: `https://docs.confluent.io/platform/current/clients/confluent-kafka-python/html/index.html`]
++- [Source: `https://pypi.org/project/confluent-kafka/`]
++
++## Dev Agent Record
++
++### Agent Model Used
++
++{{agent_model_name_version}}
++
++### Debug Log References
++
++- Workflow executed: `bmad-bmm-create-story` (YOLO/full-auto)
++- Target story: `3-1-implement-cold-path-kafka-consumer-runtime-mode`
++- Source-of-truth status file: `artifact/implementation-artifacts/sprint-status.yaml`
++
++### Completion Notes List
++
++- Story artifact created with implementation-ready scope, tasks, architecture guardrails, and test strategy.
++- Story status set to `ready-for-dev`; no implementation/code-delivery workflow executed in this step.
++
++### File List
++
++- `artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md`
++- `artifact/implementation-artifacts/sprint-status.yaml`
++
++## Story Completion Status
++
++- Story status: `ready-for-dev`
++- Completion note: Ultimate context engine analysis completed - comprehensive developer guide created.
+diff --git a/artifact/implementation-artifacts/sprint-status.yaml b/artifact/implementation-artifacts/sprint-status.yaml
+index c4f62a720af57622ef535d63a361ff5b0670548d..1eac40428402a16b545e29d722fb26fd7f5b3619
+--- a/artifact/implementation-artifacts/sprint-status.yaml
++++ b/artifact/implementation-artifacts/sprint-status.yaml
+@@ -56,7 +56,7 @@
+   2-5-run-casefile-lifecycle-retention-purge: done
+   epic-2-retrospective: done
+   epic-3: in-progress
+-  3-1-implement-cold-path-kafka-consumer-runtime-mode: backlog
++  3-1-implement-cold-path-kafka-consumer-runtime-mode: ready-for-dev
+   3-2-reconstruct-case-context-and-build-deterministic-evidence-summary: backlog
+   3-3-invoke-llm-for-all-cases-with-enriched-prompt-and-schema-validation: backlog
+   3-4-persist-diagnosis-artifact-with-fallback-guarantees: backlog
+
+codex
+Success: yes
+Story: 3-1-implement-cold-path-kafka-consumer-runtime-mode
+Step: bmad-bmm-create-story
+Files changed: /home/sas/workspace/aiops/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md, /home/sas/workspace/aiops/artifact/implementation-artifacts/sprint-status.yaml
+Notes: Created the story artifact as implementation-ready with AC-mapped tasks, concrete code/test/doc file targets, architecture and project-context guardrails, and current external Kafka client references, then updated sprint tracking for this story from `backlog` to `ready-for-dev` without executing any later workflow step.
+file update:
+diff --git a/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md b/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md
+new file mode 100644
+index 0000000000000000000000000000000000000000..f4186264af49ef2abd341ca882f3914bdc2c7029
+--- /dev/null
++++ b/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md
+@@ -0,0 +1,214 @@
++# Story 3.1: Implement Cold-Path Kafka Consumer Runtime Mode
++
++Status: ready-for-dev
++
++<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
++
++## Story
++
++As an SRE/platform engineer,  
++I want a dedicated cold-path consumer mode for case header events,  
++so that diagnosis processing is decoupled from hot-path execution.
++
++**Implements:** FR36
++
++## Acceptance Criteria
++
++1. **Given** runtime mode is set to `cold-path`  
++   **When** the service starts  
++   **Then** it joins consumer group `aiops-cold-path-diagnosis` and subscribes to `aiops-case-header`  
++   **And** processes messages sequentially through a testable consumer adapter abstraction.
++
++2. **Given** shutdown is requested  
++   **When** the consumer exits  
++   **Then** offsets are committed gracefully before close  
++   **And** health status reflects connected/lag/poll state transitions.
++
++## Tasks / Subtasks
++
++- [ ] Task 1: Create a cold-path Kafka consumer adapter with a thin protocol boundary (AC: 1, 2)
++  - [ ] Add `src/aiops_triage_pipeline/integrations/kafka_consumer.py`.
++  - [ ] Define a minimal protocol for cold-path consumption (subscribe, poll, commit, close) so tests can inject fakes without importing confluent internals.
++  - [ ] Implement a concrete confluent-kafka adapter that builds `Consumer` config from `Settings` and validates required consumer fields.
++  - [ ] Deserialize polled records into `CaseHeaderEventV1` with schema validation; normalize malformed payloads to structured error logging and skip/continue behavior.
++  - [ ] Wrap transport/client initialization failures as `CriticalDependencyError` to preserve startup failure semantics.
++
++- [ ] Task 2: Replace cold-path runtime stub in entrypoint with a sequential consume loop (AC: 1, 2)
++  - [ ] Update `src/aiops_triage_pipeline/__main__.py` `_run_cold_path()` to initialize dependencies and run the real loop.
++  - [ ] Join consumer group `aiops-cold-path-diagnosis` and subscribe to topic `aiops-case-header` (via settings defaults/overrides).
++  - [ ] Process one message at a time in strict poll-process-commit order; do not introduce batch or concurrent processing in this story.
++  - [ ] Add a small processor boundary (callable/protocol) for message handling so Story 3.2 can plug in case-context reconstruction without refactoring the runtime loop.
++  - [ ] Ensure loop termination path commits offsets and closes the consumer reliably.
++
++- [ ] Task 3: Add cold-path health transition reporting for runtime lifecycle (AC: 2)
++  - [ ] Use `HealthRegistry` updates to reflect state transitions for consumer connectivity and poll/commit lifecycle.
++  - [ ] Emit explicit transition reasons for startup connected state, poll timeout/empty poll, poll error, commit success/failure, and shutdown close.
++  - [ ] Keep `/health` response contract unchanged (component map); add cold-path component entries rather than changing endpoint shape.
++
++- [ ] Task 4: Extend cold-path configuration surface in settings and env templates (AC: 1, 2)
++  - [ ] Add explicit settings for cold-path consumer group and poll timeout with safe defaults aligned to ACs.
++  - [ ] Validate new numeric fields in `Settings` validators (positive timeout/interval constraints).
++  - [ ] Include new settings in startup config logging with secret-safe output.
++  - [ ] Update `config/.env.local`, `config/.env.dev`, `config/.env.docker`, `config/.env.uat.template`, and `config/.env.prod.template`.
++
++- [ ] Task 5: Add unit and integration coverage for runtime mode activation and graceful shutdown (AC: 1, 2)
++  - [ ] Add `tests/unit/integrations/test_kafka_consumer.py` with fake consumer tests for subscribe/poll/commit/close behavior and error handling.
++  - [ ] Update `tests/unit/test_main.py` to assert cold-path mode no longer logs a stub warning and now executes runtime loop wiring.
++  - [ ] Add `tests/integration/cold_path/test_consumer_lifecycle.py` for Docker-backed consumer lifecycle verification (group join, topic subscribe, sequential consume, graceful close/commit path).
++  - [ ] Keep regression quality gate posture at zero skipped tests.
++
++- [ ] Task 6: Update runtime-mode documentation to remove cold-path stub messaging (AC: 1, 2)
++  - [ ] Update `docs/runtime-modes.md` cold-path section to reflect implemented runtime loop and dependencies.
++  - [ ] Update `docs/local-development.md` runtime status table and local run guidance for `--mode cold-path`.
++  - [ ] Update `README.md` runtime-mode status and component references (including new consumer adapter module).
++
++## Dev Notes
++
++### Developer Context Section
++
++- This story activates runtime mode wiring only for cold-path Kafka consumption and lifecycle behavior.
++- Current repository state confirms `--mode cold-path` is a bootstrap stub in `src/aiops_triage_pipeline/__main__.py` and must be replaced with a real consumer loop.
++- Do not implement Story 3.2/3.3/3.4 scope here:
++  - No full case-context reconstruction from S3 in this story (Story 3.2).
++  - No prompt enrichment/schema-validation orchestration changes in this story (Story 3.3).
++  - No diagnosis artifact fallback persistence changes in this story (Story 3.4).
++- Preserve deterministic hot/cold separation: cold-path must not block hot-path execution semantics.
++
++### Technical Requirements
++
++- FR36 is the primary functional requirement for this story.
++- NFR-I4 applies directly: graceful shutdown must commit offsets and avoid avoidable reprocessing.
++- NFR-R6/NFR-R7 behavior boundary:
++  - Critical startup failures (e.g., consumer bootstrap misconfiguration) should fail loudly.
++  - Runtime degradable conditions should update health and continue/retry according to mode loop logic.
++- Keep integration mode safety posture and denylist/shared policy patterns unchanged.
++
++### Architecture Compliance
++
++- Follow D6 exactly:
++  - Use `confluent-kafka` consumer.
++  - Sequential processing.
++  - Thin adapter protocol for testability.
++  - Consumer group `aiops-cold-path-diagnosis` on topic `aiops-case-header`.
++- Respect runtime boundaries from `project-structure-boundaries.md`:
++  - Entry dispatch in `__main__.py`.
++  - Kafka adapter in `integrations/`.
++  - Health signaling through `health/registry.py` and existing `/health` server path.
++- Reuse existing exception taxonomy in `errors/exceptions.py`; do not introduce parallel error frameworks.
++
++### Library / Framework Requirements
++
++- Locked dependencies in this repo:
++  - `confluent-kafka==2.13.0`
++  - `pydantic==2.12.5`
++  - `pydantic-settings~=2.13.1`
++  - `pytest==9.0.2`
++  - `testcontainers==4.14.1`
++- Keep Kafka client implementation on `confluent-kafka`; do not introduce `kafka-python` or additional Kafka client libraries.
++- Keep runtime implementation synchronous for consumer poll loop (consistent with current architecture and D6).
++
++### File Structure Requirements
++
++Primary implementation files:
++- `src/aiops_triage_pipeline/__main__.py`
++- `src/aiops_triage_pipeline/integrations/kafka_consumer.py` (new)
++- `src/aiops_triage_pipeline/config/settings.py`
++
++Primary test files:
++- `tests/unit/test_main.py`
++- `tests/unit/integrations/test_kafka_consumer.py` (new)
++- `tests/integration/cold_path/test_consumer_lifecycle.py` (new)
++- `tests/integration/conftest.py` (only if shared fixture support is required)
++
++Documentation/config files:
++- `docs/runtime-modes.md`
++- `docs/local-development.md`
++- `README.md`
++- `config/.env.local`
++- `config/.env.dev`
++- `config/.env.docker`
++- `config/.env.uat.template`
++- `config/.env.prod.template`
++
++### Testing Requirements
++
++- Unit tests must cover:
++  - consumer adapter configuration and protocol behavior
++  - poll return handling (`None`, message with error, valid message)
++  - message decode/contract validation handling for `CaseHeaderEventV1`
++  - commit and close paths, including failure mapping
++- Runtime unit tests must cover:
++  - `--mode cold-path` dispatch path in `main()`
++  - `_run_cold_path()` startup and loop wiring
++  - non-stub logging behavior and graceful shutdown path
++- Integration tests must cover:
++  - cold-path consumer can subscribe and consume from `aiops-case-header`
++  - sequential processing behavior (ordered one-by-one handling)
++  - graceful close path with commit semantics under testcontainer Kafka
++- Regression gates for this sprint remain:
++  - `uv run ruff check`
++  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
++  - zero skipped tests is required.
++
++### Latest Tech Information
++
++External verification date: 2026-03-22.
++
++- Confluent Python consumer guidance (official docs) continues to center on `subscribe()` + `poll()` loops, and explicitly recommends calling `consumer.close()` to trigger immediate rebalance and clean shutdown.
++- Confluent docs identify `group.id` as mandatory for consumer configuration and describe `poll()` return/error-handling requirements for loop correctness.
++- PyPI shows `confluent-kafka` latest available release as `2.13.2` (released 2026-03-02), while this codebase intentionally pins `2.13.0`; this story should implement against the pinned version and avoid dependency upgrade scope.
++
++### Project Context Reference
++
++Applied `archive/project-context.md` guidance:
++- Keep contract-first schema validation at I/O boundaries.
++- Preserve hot/cold separation and deterministic hot-path safety invariants.
++- Reuse shared logging, health registry, and exception taxonomy patterns.
++- Maintain integration safety defaults and avoid introducing parallel cross-cutting frameworks.
++
++### References
++
++- [Source: `artifact/planning-artifacts/epics.md` — Epic 3, Story 3.1, FR36]
++- [Source: `artifact/planning-artifacts/prd/functional-requirements.md` — FR36, NFR-I4]
++- [Source: `artifact/planning-artifacts/prd/event-driven-pipeline-specific-requirements.md` — cold-path runtime requirements]
++- [Source: `artifact/planning-artifacts/architecture/core-architectural-decisions.md` — D6 cold-path consumer architecture]
++- [Source: `artifact/planning-artifacts/architecture/project-structure-boundaries.md`]
++- [Source: `artifact/planning-artifacts/architecture/implementation-patterns-consistency-rules.md`]
++- [Source: `archive/project-context.md`]
++- [Source: `src/aiops_triage_pipeline/__main__.py`]
++- [Source: `src/aiops_triage_pipeline/config/settings.py`]
++- [Source: `src/aiops_triage_pipeline/integrations/kafka.py`]
++- [Source: `src/aiops_triage_pipeline/health/registry.py`]
++- [Source: `src/aiops_triage_pipeline/health/server.py`]
++- [Source: `tests/unit/test_main.py`]
++- [Source: `tests/unit/integrations/test_kafka.py`]
++- [Source: `https://docs.confluent.io/kafka-clients/python/current/overview.html`]
++- [Source: `https://docs.confluent.io/platform/current/clients/confluent-kafka-python/html/index.html`]
++- [Source: `https://pypi.org/project/confluent-kafka/`]
++
++## Dev Agent Record
++
++### Agent Model Used
++
++{{agent_model_name_version}}
++
++### Debug Log References
++
++- Workflow executed: `bmad-bmm-create-story` (YOLO/full-auto)
++- Target story: `3-1-implement-cold-path-kafka-consumer-runtime-mode`
++- Source-of-truth status file: `artifact/implementation-artifacts/sprint-status.yaml`
++
++### Completion Notes List
++
++- Story artifact created with implementation-ready scope, tasks, architecture guardrails, and test strategy.
++- Story status set to `ready-for-dev`; no implementation/code-delivery workflow executed in this step.
++
++### File List
++
++- `artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md`
++- `artifact/implementation-artifacts/sprint-status.yaml`
++
++## Story Completion Status
++
++- Story status: `ready-for-dev`
++- Completion note: Ultimate context engine analysis completed - comprehensive developer guide created.
+diff --git a/artifact/implementation-artifacts/sprint-status.yaml b/artifact/implementation-artifacts/sprint-status.yaml
+index c4f62a720af57622ef535d63a361ff5b0670548d..1eac40428402a16b545e29d722fb26fd7f5b3619
+--- a/artifact/implementation-artifacts/sprint-status.yaml
++++ b/artifact/implementation-artifacts/sprint-status.yaml
+@@ -56,7 +56,7 @@
+   2-5-run-casefile-lifecycle-retention-purge: done
+   epic-2-retrospective: done
+   epic-3: in-progress
+-  3-1-implement-cold-path-kafka-consumer-runtime-mode: backlog
++  3-1-implement-cold-path-kafka-consumer-runtime-mode: ready-for-dev
+   3-2-reconstruct-case-context-and-build-deterministic-evidence-summary: backlog
+   3-3-invoke-llm-for-all-cases-with-enriched-prompt-and-schema-validation: backlog
+   3-4-persist-diagnosis-artifact-with-fallback-guarantees: backlog
+
+tokens used
+217,995

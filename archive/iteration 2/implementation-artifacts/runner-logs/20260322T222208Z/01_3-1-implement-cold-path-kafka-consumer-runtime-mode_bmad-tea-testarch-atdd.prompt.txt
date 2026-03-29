@@ -1,0 +1,22 @@
+You are executing exactly one BMAD workflow step for story `3-1-implement-cold-path-kafka-consumer-runtime-mode`.
+Use the exact skill name `bmad-tea-testarch-atdd`.
+Run in full auto / yolo style within the current workspace.
+Stop immediately and report failure if you hit any usage limit, rate limit, quota issue, or blocked prerequisite.
+Do not start any later workflow step yourself.
+Sprint source of truth: `/home/sas/workspace/aiops/artifact/implementation-artifacts/sprint-status.yaml`.
+Expected story artifact: `/home/sas/workspace/aiops/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md`.
+
+
+Generate or refresh ATDD coverage for this story. Keep the work scoped to this story only.
+
+The orchestrator will run final gates directly after the BMAD steps:
+- `uv run ruff check`
+- `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
+Do not mark the story done unless your work is actually complete; the orchestrator will verify and repair status tracking after final success.
+
+Final response format:
+Success: yes|no
+Story: 3-1-implement-cold-path-kafka-consumer-runtime-mode
+Step: bmad-tea-testarch-atdd
+Files changed: comma-separated list or 'none'
+Notes: one concise paragraph

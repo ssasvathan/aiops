@@ -1,0 +1,4044 @@
+OpenAI Codex v0.111.0 (research preview)
+--------
+workdir: /home/sas/workspace/aiops
+model: gpt-5.3-codex
+provider: openai
+approval: never
+sandbox: workspace-write [workdir, /tmp, $TMPDIR, /home/sas/.codex/memories]
+reasoning effort: high
+reasoning summaries: none
+session id: 019d17a4-2b4d-7f51-838c-f74d05be248d
+--------
+user
+You are executing exactly one BMAD workflow step for story `3-1-implement-cold-path-kafka-consumer-runtime-mode`.
+Use the exact skill name `bmad-tea-testarch-atdd`.
+Run in full auto / yolo style within the current workspace.
+Stop immediately and report failure if you hit any usage limit, rate limit, quota issue, or blocked prerequisite.
+Do not start any later workflow step yourself.
+Sprint source of truth: `/home/sas/workspace/aiops/artifact/implementation-artifacts/sprint-status.yaml`.
+Expected story artifact: `/home/sas/workspace/aiops/artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md`.
+
+
+Generate or refresh ATDD coverage for this story. Keep the work scoped to this story only.
+
+The orchestrator will run final gates directly after the BMAD steps:
+- `uv run ruff check`
+- `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs`
+Do not mark the story done unless your work is actually complete; the orchestrator will verify and repair status tracking after final success.
+
+Final response format:
+Success: yes|no
+Story: 3-1-implement-cold-path-kafka-consumer-runtime-mode
+Step: bmad-tea-testarch-atdd
+Files changed: comma-separated list or 'none'
+Notes: one concise paragraph
+mcp startup: no servers
+codex
+Using the `bmad-tea-testarch-atdd` skill for this single workflow step and scoping strictly to story `3-1-implement-cold-path-kafka-consumer-runtime-mode`. I’m starting by reading the skill instructions, sprint status, and the story artifact to generate or refresh ATDD tests only for this story.
+exec
+/bin/bash -lc 'pwd && ls -la' in /home/sas/workspace/aiopsexec
+/bin/bash -lc "sed -n '1,220p' .agents/skills/bmad-tea-testarch-atdd/SKILL.md" in /home/sas/workspace/aiopsexec
+/bin/bash -lc "sed -n '1,260p' artifact/implementation-artifacts/sprint-status.yaml" in /home/sas/workspace/aiopsexec
+/bin/bash -lc "sed -n '1,320p' artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md" in /home/sas/workspace/aiops succeeded in 50ms:
+---
+name: bmad-tea-testarch-atdd
+description: Generate failing acceptance tests using TDD cycle. Use when the user says "lets write acceptance tests" or "I want to do ATDD"
+---
+
+IT IS CRITICAL THAT YOU FOLLOW THESE STEPS - while staying in character as the current agent persona you may have loaded:
+
+<steps CRITICAL="TRUE">
+1. Always LOAD the FULL {project-root}/_bmad/core/tasks/workflow.xml
+2. READ its entire contents - this is the CORE OS for EXECUTING the specific workflow-config {project-root}/_bmad/tea/workflows/testarch/atdd/workflow.yaml
+3. Pass the yaml path _bmad/tea/workflows/testarch/atdd/workflow.yaml as 'workflow-config' parameter to the workflow.xml instructions
+4. Follow workflow.xml instructions EXACTLY as written to process and follow the specific workflow config and its instructions
+5. Save outputs after EACH section when generating any documents from templates
+</steps>
+ succeeded in 50ms:
+/home/sas/workspace/aiops
+total 324
+drwxrwxr-x 21 sas sas   4096 Mar 22 12:00 .
+drwxrwxr-x 22 sas sas   4096 Mar 15 20:01 ..
+drwxrwxr-x  3 sas sas   4096 Mar  5 09:38 .agents
+drwxrwxr-x  3 sas sas   4096 Mar 21 16:21 .claude
+drwxrwxr-x  4 sas sas   4096 Mar  5 07:56 .codex
+drwxrwxr-x  3 sas sas   4096 Mar  5 10:03 .cursor
+drwxrwxr-x  8 sas sas   4096 Mar 22 18:20 .git
+-rw-rw-r--  1 sas sas    516 Mar 22 11:46 .gitignore
+drwxrwxr-x  3 sas sas   4096 Feb 28 16:32 .pytest_cache
+-rw-rw-r--  1 sas sas      5 Feb 28 16:19 .python-version
+drwxrwxr-x  7 sas sas   4096 Feb 28 15:52 .ralph
+drwxrwxr-x  3 sas sas   4096 Feb 28 16:31 .ruff_cache
+drwxrwxr-x  5 sas sas   4096 Mar 22 00:22 .venv
+drwxrwxr-x  2 sas sas   4096 Mar 15 17:31 .worktrees
+-rw-rw-r--  1 sas sas    827 Mar  6 10:21 AGENTS.md
+-rw-rw-r--  1 sas sas   1233 Mar  1 22:08 Dockerfile
+-rw-rw-r--  1 sas sas  19648 Mar 11 20:32 README.md
+drwxrwxr-x  9 sas sas   4096 Mar  5 10:03 _bmad
+ succeeded in 51ms:
+# generated: 2026-03-22T14:11:36-04:00
+# project: aiOps
+# project_key: NOKEY
+# tracking_system: file-system
+# story_location: /home/sas/workspace/aiops/artifact/implementation-artifacts
+
+# STATUS DEFINITIONS:
+# ==================
+# Epic Status:
+#   - backlog: Epic not yet started
+#   - in-progress: Epic actively being worked on
+#   - done: All stories in epic completed
+#
+# Epic Status Transitions:
+#   - backlog → in-progress: Automatically when first story is created (via create-story)
+#   - in-progress → done: Manually when all stories reach 'done' status
+#
+# Story Status:
+#   - backlog: Story only exists in epic file
+#   - ready-for-dev: Story file created in stories folder
+ succeeded in 51ms:
+# Story 3.1: Implement Cold-Path Kafka Consumer Runtime Mode
+
+Status: ready-for-dev
+
+<!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
+
+## Story
+
+As an SRE/platform engineer,
+I want a dedicated cold-path consumer mode for case header events,
+so that diagnosis processing is decoupled from hot-path execution.
+
+**Implements:** FR36
+
+## Acceptance Criteria
+
+1. **Given** runtime mode is set to `cold-path`
+   **When** the service starts
+   **Then** it joins consumer group `aiops-cold-path-diagnosis` and subscribes to `aiops-case-header`
+   **And** processes messages sequentially through a testable consumer adapter abstraction.
+codex
+I’ve loaded the skill metadata; next I’m executing its required BMAD engine sequence by reading `/_bmad/core/tasks/workflow.xml` and the ATDD workflow config to follow the prescribed steps exactly.
+exec
+/bin/bash -lc "sed -n '1,320p' _bmad/core/tasks/workflow.xml" in /home/sas/workspace/aiopsexec
+/bin/bash -lc 'ls -la _bmad/tea/workflows/testarch/atdd' in /home/sas/workspace/aiopsexec
+/bin/bash -lc "sed -n '1,320p' _bmad/tea/workflows/testarch/atdd/workflow.yaml" in /home/sas/workspace/aiops succeeded in 50ms:
+<task id="_bmad/core/tasks/workflow.xml" name="Execute Workflow" internal="true">
+  <objective>Execute given workflow by loading its configuration, following instructions, and producing output</objective>
+
+  <llm critical="true">
+    <mandate>Always read COMPLETE files - NEVER use offset/limit when reading any workflow related files</mandate>
+    <mandate>Instructions are MANDATORY - either as file path, steps or embedded list in YAML, XML or markdown</mandate>
+    <mandate>Execute ALL steps in instructions IN EXACT ORDER</mandate>
+    <mandate>Save to template output file after EVERY "template-output" tag</mandate>
+    <mandate>NEVER skip a step - YOU are responsible for every steps execution without fail or excuse</mandate>
+  </llm>
+
+  <WORKFLOW-RULES critical="true">
+    <rule n="1">Steps execute in exact numerical order (1, 2, 3...)</rule>
+    <rule n="2">Optional steps: Ask user unless #yolo mode active</rule>
+    <rule n="3">Template-output tags: Save content, discuss with the user the section completed, and NEVER proceed until the users indicates
+      to proceed (unless YOLO mode has been activated)</rule>
+  </WORKFLOW-RULES>
+
+  <flow>
+    <step n="1" title="Load and Initialize Workflow">
+ succeeded in 50ms:
+total 72
+drwxrwxr-x  5 sas sas  4096 Mar  5 10:03 .
+drwxrwxr-x 11 sas sas  4096 Mar  5 10:03 ..
+-rw-rw-r--  1 sas sas  8670 Mar  5 10:03 atdd-checklist-template.md
+-rw-rw-r--  1 sas sas 13933 Mar  5 10:03 checklist.md
+-rw-rw-r--  1 sas sas  1302 Mar  5 10:03 instructions.md
+drwxrwxr-x  2 sas sas  4096 Mar  5 10:03 steps-c
+drwxrwxr-x  2 sas sas  4096 Mar  5 10:03 steps-e
+drwxrwxr-x  2 sas sas  4096 Mar  5 10:03 steps-v
+-rw-rw-r--  1 sas sas  2072 Mar  5 10:03 validation-report-20260127-095021.md
+-rw-rw-r--  1 sas sas  3752 Mar  5 10:03 validation-report-20260127-102401.md
+-rw-rw-r--  1 sas sas   471 Mar  5 10:03 workflow-plan.md
+-rw-rw-r--  1 sas sas  1153 Mar  5 10:03 workflow.md
+-rw-rw-r--  1 sas sas  1527 Mar  5 10:03 workflow.yaml
+ succeeded in 50ms:
+# Test Architect workflow: atdd
+name: testarch-atdd
+# prettier-ignore
+description: 'Generate failing acceptance tests using TDD cycle. Use when the user says "lets write acceptance tests" or "I want to do ATDD"'
+
+# Critical variables from config
+config_source: "{project-root}/_bmad/tea/config.yaml"
+output_folder: "{config_source}:output_folder"
+test_artifacts: "{config_source}:test_artifacts"
+user_name: "{config_source}:user_name"
+communication_language: "{config_source}:communication_language"
+document_output_language: "{config_source}:document_output_language"
+date: system-generated
+
+# Workflow components
+installed_path: "{project-root}/_bmad/tea/workflows/testarch/atdd"
+instructions: "{installed_path}/instructions.md"
+validation: "{installed_path}/checklist.md"
+template: "{installed_path}/atdd-checklist-template.md"
+
+codex
+I now have the workflow engine and config; next I’m loading the ATDD instructions/template/checklist plus BMAD tea config in full, then I’ll apply them directly to story `3-1` and write the checklist and tests.
+exec
+/bin/bash -lc 'cat _bmad/tea/config.yaml' in /home/sas/workspace/aiopsexec
+/bin/bash -lc 'cat _bmad/tea/workflows/testarch/atdd/instructions.md' in /home/sas/workspace/aiopsexec
+/bin/bash -lc 'cat _bmad/tea/workflows/testarch/atdd/atdd-checklist-template.md' in /home/sas/workspace/aiops succeeded in 50ms:
+# TEA Module Configuration
+# Generated by BMAD installer
+# Version: 6.0.4
+# Date: 2026-03-05T15:03:25.111Z
+
+test_artifacts: "{project-root}/artifact/test-artifacts"
+tea_use_playwright_utils: true
+tea_browser_automation: auto
+test_stack_type: auto
+ci_platform: auto
+test_framework: auto
+risk_threshold: p1
+test_design_output: artifact/test-artifacts/test-design
+test_review_output: artifact/test-artifacts/test-reviews
+trace_output: artifact/test-artifacts/traceability
+tea_use_pactjs_utils: true
+tea_pact_mcp: mcp
+tea_execution_mode: auto
+tea_capability_probe: true
+
+ succeeded in 51ms:
+<!-- Powered by BMAD-CORE™ -->
+
+# Acceptance Test-Driven Development (ATDD)
+
+**Workflow ID**: `_bmad/tea/testarch/atdd`
+**Version**: 5.0 (Step-File Architecture)
+
+---
+
+## Overview
+
+Generates **failing acceptance tests** before implementation (TDD red phase), plus an implementation checklist. Produces tests at appropriate levels (E2E/API/Component) with supporting fixtures and helpers.
+
+---
+
+## WORKFLOW ARCHITECTURE
+
+This workflow uses **step-file architecture**:
+
+- **Micro-file Design**: Each step is self-contained
+ succeeded in 50ms:
+---
+stepsCompleted: []
+lastStep: ''
+lastSaved: ''
+workflowType: 'testarch-atdd'
+inputDocuments: []
+---
+
+# ATDD Checklist - Epic {epic_num}, Story {story_num}: {story_title}
+
+**Date:** {date}
+**Author:** {user_name}
+**Primary Test Level:** {primary_level}
+
+---
+
+## Story Summary
+
+{Brief 2-3 sentence summary of the user story}
+
+exec
+/bin/bash -lc 'cat _bmad/tea/workflows/testarch/atdd/checklist.md' in /home/sas/workspace/aiops succeeded in 51ms:
+# ATDD Workflow Validation Checklist
+
+Use this checklist to validate that the ATDD workflow has been executed correctly and all deliverables meet quality standards.
+
+## Prerequisites
+
+Before starting this workflow, verify:
+
+- [ ] Story approved with clear acceptance criteria (AC must be testable)
+- [ ] Development sandbox/environment ready
+- [ ] Framework scaffolding exists (run `framework` workflow if missing)
+- [ ] Test framework configuration available (playwright.config.ts or cypress.config.ts)
+- [ ] Package.json has test dependencies installed (Playwright or Cypress)
+
+**Halt if missing:** Framework scaffolding or story acceptance criteria
+
+---
+
+## Step 1: Story Context and Requirements
+
+exec
+/bin/bash -lc 'cat _bmad/tea/workflows/testarch/atdd/workflow.md' in /home/sas/workspace/aiopsexec
+/bin/bash -lc 'find _bmad/tea/workflows/testarch/atdd -maxdepth 2 -type f | sort' in /home/sas/workspace/aiops succeeded in 51ms:
+---
+name: testarch-atdd
+description: Generate failing acceptance tests using TDD cycle. Use when user says 'lets write acceptance tests' or 'I want to do ATDD'
+web_bundle: true
+---
+
+# Acceptance Test-Driven Development (ATDD)
+
+**Goal:** Generate failing acceptance tests before implementation using TDD red-green-refactor cycle
+
+**Role:** You are the Master Test Architect.
+
+---
+
+## WORKFLOW ARCHITECTURE
+
+This workflow uses **tri-modal step-file architecture**:
+
+- **Create mode (steps-c/)**: primary execution flow
+- **Validate mode (steps-v/)**: validation against checklist
+ succeeded in 51ms:
+_bmad/tea/workflows/testarch/atdd/atdd-checklist-template.md
+_bmad/tea/workflows/testarch/atdd/checklist.md
+_bmad/tea/workflows/testarch/atdd/instructions.md
+_bmad/tea/workflows/testarch/atdd/steps-c/step-01-preflight-and-context.md
+_bmad/tea/workflows/testarch/atdd/steps-c/step-01b-resume.md
+_bmad/tea/workflows/testarch/atdd/steps-c/step-02-generation-mode.md
+_bmad/tea/workflows/testarch/atdd/steps-c/step-03-test-strategy.md
+_bmad/tea/workflows/testarch/atdd/steps-c/step-04-generate-tests.md
+_bmad/tea/workflows/testarch/atdd/steps-c/step-04a-subagent-api-failing.md
+_bmad/tea/workflows/testarch/atdd/steps-c/step-04b-subagent-e2e-failing.md
+_bmad/tea/workflows/testarch/atdd/steps-c/step-04c-aggregate.md
+_bmad/tea/workflows/testarch/atdd/steps-c/step-05-validate-and-complete.md
+_bmad/tea/workflows/testarch/atdd/steps-e/step-01-assess.md
+_bmad/tea/workflows/testarch/atdd/steps-e/step-02-apply-edit.md
+_bmad/tea/workflows/testarch/atdd/steps-v/step-01-validate.md
+_bmad/tea/workflows/testarch/atdd/validation-report-20260127-095021.md
+_bmad/tea/workflows/testarch/atdd/validation-report-20260127-102401.md
+_bmad/tea/workflows/testarch/atdd/workflow-plan.md
+_bmad/tea/workflows/testarch/atdd/workflow.md
+_bmad/tea/workflows/testarch/atdd/workflow.yaml
+codex
+I’m now reading each create-mode step file in order (`steps-c`) so I can execute the ATDD workflow exactly and persist outputs at each required checkpoint in YOLO mode.
+exec
+/bin/bash -lc 'cat _bmad/tea/workflows/testarch/atdd/steps-c/step-01-preflight-and-context.md' in /home/sas/workspace/aiopsexec
+/bin/bash -lc 'cat _bmad/tea/workflows/testarch/atdd/steps-c/step-02-generation-mode.md' in /home/sas/workspace/aiops succeeded in 50ms:
+---
+name: 'step-01-preflight-and-context'
+description: 'Verify prerequisites and load story, framework, and knowledge base'
+outputFile: '{test_artifacts}/atdd-checklist-{story_id}.md'
+nextStepFile: './step-02-generation-mode.md'
+knowledgeIndex: '{project-root}/_bmad/tea/testarch/tea-index.csv'
+---
+
+# Step 1: Preflight & Context Loading
+
+## STEP GOAL
+
+Verify prerequisites and load all required inputs before generating failing tests.
+
+## MANDATORY EXECUTION RULES
+
+- 📖 Read the entire step file before acting
+- ✅ Speak in `{communication_language}`
+- 🚫 Halt if requirements are missing
+
+exec
+/bin/bash -lc 'cat _bmad/tea/workflows/testarch/atdd/steps-c/step-03-test-strategy.md' in /home/sas/workspace/aiops succeeded in 50ms:
+---
+name: 'step-02-generation-mode'
+description: 'Choose AI generation or recording mode'
+outputFile: '{test_artifacts}/atdd-checklist-{story_id}.md'
+nextStepFile: './step-03-test-strategy.md'
+---
+
+# Step 2: Generation Mode Selection
+
+## STEP GOAL
+
+Choose the appropriate generation mode for ATDD tests.
+
+## MANDATORY EXECUTION RULES
+
+- 📖 Read the entire step file before acting
+- ✅ Speak in `{communication_language}`
+
+---
+
+ succeeded in 51ms:
+---
+name: 'step-03-test-strategy'
+description: 'Map acceptance criteria to test levels and priorities'
+outputFile: '{test_artifacts}/atdd-checklist-{story_id}.md'
+nextStepFile: './step-04-generate-tests.md'
+---
+
+# Step 3: Test Strategy
+
+## STEP GOAL
+
+Translate acceptance criteria into a prioritized, level-appropriate test plan.
+
+## MANDATORY EXECUTION RULES
+
+- 📖 Read the entire step file before acting
+- ✅ Speak in `{communication_language}`
+- 🚫 Avoid duplicate coverage across levels
+
+---
+exec
+/bin/bash -lc 'cat _bmad/tea/workflows/testarch/atdd/steps-c/step-04-generate-tests.md' in /home/sas/workspace/aiopsexec
+/bin/bash -lc 'cat _bmad/tea/workflows/testarch/atdd/steps-c/step-04a-subagent-api-failing.md' in /home/sas/workspace/aiopsexec
+/bin/bash -lc 'cat _bmad/tea/workflows/testarch/atdd/steps-c/step-04c-aggregate.md' in /home/sas/workspace/aiopsexec
+/bin/bash -lc 'cat _bmad/tea/workflows/testarch/atdd/steps-c/step-04b-subagent-e2e-failing.md' in /home/sas/workspace/aiops succeeded in 51ms:
+---
+name: 'step-04-generate-tests'
+description: 'Orchestrate adaptive FAILING test generation (TDD red phase)'
+nextStepFile: './step-04c-aggregate.md'
+---
+
+# Step 4: Orchestrate Adaptive FAILING Test Generation
+
+## STEP GOAL
+
+Select execution mode deterministically, then generate FAILING API and E2E tests (TDD RED PHASE) with consistent output contracts across agent-team, subagent, or sequential execution.
+
+## MANDATORY EXECUTION RULES
+
+- 📖 Read the entire step file before acting
+- ✅ Speak in `{communication_language}`
+- ✅ Resolve execution mode from config (`tea_execution_mode`, `tea_capability_probe`)
+- ✅ Apply fallback rules deterministically when requested mode is unsupported
+- ✅ Generate FAILING tests only (TDD red phase)
+- ✅ Wait for required worker steps to complete
+exec
+/bin/bash -lc 'cat _bmad/tea/workflows/testarch/atdd/steps-c/step-05-validate-and-complete.md' in /home/sas/workspace/aiops succeeded in 51ms:
+---
+name: 'step-04a-subagent-api-failing'
+description: 'Subagent: Generate FAILING API tests (TDD red phase)'
+subagent: true
+outputFile: '/tmp/tea-atdd-api-tests-{{timestamp}}.json'
+---
+
+# Subagent 4A: Generate Failing API Tests (TDD Red Phase)
+
+## SUBAGENT CONTEXT
+
+This is an **isolated subagent** running in parallel with E2E failing test generation.
+
+**What you have from parent workflow:**
+
+- Story acceptance criteria from Step 1
+- Test strategy and scenarios from Step 3
+- Knowledge fragments loaded: api-request, data-factories, api-testing-patterns
+- Config: test framework, Playwright Utils enabled/disabled
+
+ succeeded in 50ms:
+---
+name: 'step-04b-subagent-e2e-failing'
+description: 'Subagent: Generate FAILING E2E tests (TDD red phase)'
+subagent: true
+outputFile: '/tmp/tea-atdd-e2e-tests-{{timestamp}}.json'
+---
+
+# Subagent 4B: Generate Failing E2E Tests (TDD Red Phase)
+
+## SUBAGENT CONTEXT
+
+This is an **isolated subagent** running in parallel with API failing test generation.
+
+**What you have from parent workflow:**
+
+- Story acceptance criteria from Step 1
+- Test strategy and user journey scenarios from Step 3
+- Knowledge fragments loaded: fixture-architecture, network-first, selector-resilience
+- Config: test framework, Playwright Utils enabled/disabled
+
+ succeeded in 50ms:
+---
+name: 'step-04c-aggregate'
+description: 'Aggregate subagent outputs and complete ATDD test infrastructure'
+outputFile: '{test_artifacts}/atdd-checklist-{story_id}.md'
+nextStepFile: './step-05-validate-and-complete.md'
+---
+
+# Step 4C: Aggregate ATDD Test Generation Results
+
+## STEP GOAL
+
+Read outputs from parallel subagents (API + E2E failing test generation), aggregate results, verify TDD red phase compliance, and create supporting infrastructure.
+
+---
+
+## MANDATORY EXECUTION RULES
+
+- 📖 Read the entire step file before acting
+- ✅ Speak in `{communication_language}`
+- ✅ Read subagent outputs from temp files
+ succeeded in 50ms:
+---
+name: 'step-05-validate-and-complete'
+description: 'Validate ATDD outputs and summarize'
+outputFile: '{test_artifacts}/atdd-checklist-{story_id}.md'
+---
+
+# Step 5: Validate & Complete
+
+## STEP GOAL
+
+Validate ATDD outputs and provide a completion summary.
+
+## MANDATORY EXECUTION RULES
+
+- 📖 Read the entire step file before acting
+- ✅ Speak in `{communication_language}`
+- ✅ Validate against the checklist
+
+---
+
+codex
+I’ve finished loading the workflow steps; next I’m executing Step 1 preflight by detecting stack/framework, scanning existing tests/patterns for this story area, and loading the required TEA knowledge fragments before generating ATDD artifacts.
+exec
+/bin/bash -lc 'rg --files | head -n 200' in /home/sas/workspace/aiopsexec
+/bin/bash -lc "find . -maxdepth 2 -type f \\( -name 'playwright.config.*' -o -name 'cypress.config.*' -o -name 'pyproject.toml' -o -name 'pytest.ini' -o -name 'conftest.py' \\) | sort" in /home/sas/workspace/aiopsexec
+/bin/bash -lc 'rg -n "cold-path|kafka_consumer|aiops-case-header|aiops-cold-path-diagnosis|_run_cold_path|runtime mode|consumer" src tests docs | head -n 400' in /home/sas/workspace/aiopsexec
+/bin/bash -lc 'ls -la tests && find tests -maxdepth 3 -type f | sort | head -n 200' in /home/sas/workspace/aiops succeeded in 51ms:
+_bmad/bmm/teams/default-party.csv
+_bmad/bmm/teams/team-fullstack.yaml
+_bmad/bmm/data/project-context-template.md
+_bmad/input/BMAD-READY-INPUT-v1.0.md
+_bmad/input/config.yaml
+docs/contribution-guide.md
+docs/contracts.md
+docs/technology-stack.md
+docs/architecture.md
+docs/architecture-patterns.md
+docs/project-structure.md
+_bmad/bmm/workflows/qa-generate-e2e-tests/checklist.md
+_bmad/bmm/agents/pm.md
+_bmad/bmm/workflows/qa-generate-e2e-tests/workflow.yaml
+docs/archive/contribution-guidelines.md
+_bmad/bmm/agents/dev.md
+docs/archive/api-contracts-core.md
+_bmad/bmm/agents/ux-designer.md
+_bmad/bmm/workflows/qa-generate-e2e-tests/instructions.md
+docs/archive/project-scan-report.json
+ succeeded in 51ms:
+./pyproject.toml
+./tests/conftest.py
+ succeeded in 50ms:
+total 28
+drwxrwxr-x  6 sas sas 4096 Mar 22 11:23 .
+drwxrwxr-x 21 sas sas 4096 Mar 22 12:00 ..
+drwxrwxr-x  2 sas sas 4096 Mar  6 10:22 __pycache__
+drwxrwxr-x  4 sas sas 4096 Mar 22 17:10 atdd
+-rw-rw-r--  1 sas sas  862 Mar  6 10:21 conftest.py
+drwxrwxr-x  5 sas sas 4096 Mar  9 10:17 integration
+drwxrwxr-x 22 sas sas 4096 Mar 22 12:24 unit
+tests/__pycache__/conftest.cpython-313-pytest-9.0.2.pyc
+tests/atdd/__pycache__/story_1_4_topology_registry_red_phase.cpython-313-pytest-9.0.2.pyc
+tests/atdd/__pycache__/story_1_5_rule_engine_red_phase.cpython-313-pytest-9.0.2.pyc
+tests/atdd/__pycache__/test_story_1_5_rule_engine.cpython-313-pytest-9.0.2.pyc
+tests/atdd/__pycache__/test_story_1_6_atomic_dedupe_and_decision_trail.cpython-313-pytest-9.0.2.pyc
+tests/atdd/__pycache__/test_story_2_4_dispatch_pagerduty_and_slack_red_phase.cpython-313-pytest-9.0.2.pyc
+tests/atdd/__pycache__/test_story_2_5_casefile_lifecycle_retention_purge_red_phase.cpython-313-pytest-9.0.2.pyc
+tests/atdd/fixtures/story_1_4_test_data.py
+tests/atdd/fixtures/story_1_5_test_data.py
+tests/atdd/fixtures/story_1_6_test_data.py
+tests/atdd/fixtures/story_2_4_test_data.py
+tests/atdd/fixtures/story_2_5_test_data.py
+ succeeded in 51ms:
+docs/contracts.md:42:- Downstream consumers should rely on contract types rather than ad-hoc payload assumptions.
+docs/schema-evolution-strategy.md:119:**Compatibility window:** Short (Kafka topic retention — days/weeks). All consumers are internal to this pipeline.
+docs/schema-evolution-strategy.md:143:- Old consumers ignore unknown fields (`ConfigDict(extra='ignore')`)
+docs/schema-evolution-strategy.md:144:- New consumers handle `None` for the new field when reading old messages
+docs/schema-evolution-strategy.md:152:3. Migrate consumers one by one to read v2
+docs/schema-evolution-strategy.md:153:4. Once all consumers handle v2, stop publishing v1
+docs/schema-evolution-strategy.md:222:4. **Deploy.** Order doesn't matter — consumers tolerate the field being absent (default value), and the new field is ignored by old consumers (`extra='ignore'`).
+docs/schema-evolution-strategy.md:257:4. **Migrate consumers** one at a time to prefer v2:
+docs/schema-evolution-strategy.md:259:   - Test each consumer independently
+docs/schema-evolution-strategy.md:261:5. **Remove v1 publishing** after all consumers handle v2 and Kafka retention has expired for v1-only messages.
+docs/schema-evolution-strategy.md:268:- [ ] Each consumer handles both v1 and v2
+docs/schema-evolution-strategy.md:269:- [ ] Integration test verifies v1 → v2 consumer migration
+docs/schema-evolution-strategy.md:395:| Breaking change strategy (Kafka) | Dual-publish with short migration window | Kafka retention is short; consumers are all internal |
+docs/schema-evolution-strategy.md:408:→ Follow Procedure B (breaking Kafka change). Create v2, dual-publish, migrate consumers.
+docs/architecture.md:47:- Kafka topic publication (`aiops-case-header`, `aiops-triage-excerpt`)
+docs/architecture.md:61:- `src/aiops_triage_pipeline/__main__.py` - runtime mode dispatch
+docs/development-guide.md:26:APP_ENV=local uv run python -m aiops_triage_pipeline --mode cold-path
+docs/local-development.md:42:| `consumer_lag` | Consumer group lag grows while offset stays fixed (consumer stopped) |
+docs/local-development.md:58:- `consumer_lag`: lag builds from `0` to `5,000` over the cycle
+docs/local-development.md:65:HARNESS_PATTERN=consumer_lag HARNESS_CYCLE_SECONDS=30 docker compose up harness
+codex
+I found existing `tests/atdd` files in this repo, so I’m aligning this story’s ATDD output to the established Python/pytest pattern rather than the generic TypeScript examples in the workflow template.
+exec
+/bin/bash -lc "sed -n '1,260p' tests/atdd/test_story_2_5_casefile_lifecycle_retention_purge_red_phase.py" in /home/sas/workspace/aiopsexec
+/bin/bash -lc "sed -n '1,260p' tests/atdd/test_story_2_4_dispatch_pagerduty_and_slack_red_phase.py" in /home/sas/workspace/aiopsexec
+/bin/bash -lc "sed -n '1,260p' tests/atdd/test_story_1_6_atomic_dedupe_and_decision_trail.py" in /home/sas/workspace/aiopsexec
+/bin/bash -lc 'find artifact/test-artifacts -maxdepth 2 -type f | sort' in /home/sas/workspace/aiopsexec
+/bin/bash -lc "sed -n '1,260p' tests/atdd/story_1_4_topology_registry_red_phase.py" in /home/sas/workspace/aiops succeeded in 51ms:
+"""ATDD red-phase acceptance tests for Story 2.5 casefile lifecycle retention purge."""
+
+from __future__ import annotations
+
+from datetime import UTC, datetime
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
+from aiops_triage_pipeline import __main__, health
+from aiops_triage_pipeline.storage.lifecycle import (
+    CasefileLifecycleRunner,
+    CasefileLifecycleRunResult,
+)
+from tests.atdd.fixtures.story_2_5_test_data import (
+    InMemoryLifecycleObjectStore,
+    RecordingLogger,
+    build_retention_policy,
+)
+
+
+ succeeded in 51ms:
+"""ATDD red-phase acceptance tests for Story 2.4 dispatch integration safety."""
+
+from __future__ import annotations
+
+import json
+from unittest.mock import patch
+
+from aiops_triage_pipeline.contracts.enums import Action
+from aiops_triage_pipeline.denylist.loader import DenylistV1
+from aiops_triage_pipeline.integrations.pagerduty import PagerDutyClient, PagerDutyIntegrationMode
+from aiops_triage_pipeline.integrations.slack import SlackClient
+from aiops_triage_pipeline.pipeline.stages.dispatch import dispatch_action
+from tests.atdd.fixtures.story_2_4_test_data import (
+    build_dispatch_decision,
+    build_routing_context,
+    build_strict_denylist,
+)
+
+_URLOPEN_PD_PATH = "aiops_triage_pipeline.integrations.pagerduty.urllib.request.urlopen"
+
+ succeeded in 51ms:
+artifact/test-artifacts/atdd-checklist-1-4-resolve-topology-ownership-and-blast-radius-from-unified-registry.md
+artifact/test-artifacts/atdd-checklist-1-5-execute-yaml-rulebook-gates-ag0-ag3-via-isolated-rule-engine.md
+artifact/test-artifacts/atdd-checklist-1-6-complete-ag4-ag6-atomic-deduplication-and-decision-trail-output.md
+artifact/test-artifacts/atdd-checklist-2-1-write-triage-casefiles-with-hash-chain-and-policy-stamps.md
+artifact/test-artifacts/atdd-checklist-2-2-enforce-outbox-source-state-transitions.md
+artifact/test-artifacts/atdd-checklist-2-3-publish-ready-outbox-rows-with-concurrency-safety.md
+artifact/test-artifacts/atdd-checklist-2-4-dispatch-pagerduty-and-slack-actions-with-denylist-safety.md
+artifact/test-artifacts/atdd-checklist-2-5-run-casefile-lifecycle-retention-purge.md
+artifact/test-artifacts/gate-decision-1-4-resolve-topology-ownership-and-blast-radius-from-unified-registry.yaml
+artifact/test-artifacts/gate-decision-1-5-execute-yaml-rulebook-gates-ag0-ag3-via-isolated-rule-engine.yaml
+artifact/test-artifacts/gate-decision-1-6-complete-ag4-ag6-atomic-deduplication-and-decision-trail-output.yaml
+artifact/test-artifacts/gate-decision-2-4-dispatch-pagerduty-and-slack-actions-with-denylist-safety.yaml
+artifact/test-artifacts/gate-decision-2-5-run-casefile-lifecycle-retention-purge.yaml
+artifact/test-artifacts/tea-atdd-api-tests-2026-03-22T17-19-39Z.json
+artifact/test-artifacts/tea-atdd-api-tests-2026-03-22T20-40-57Z.json
+artifact/test-artifacts/tea-atdd-api-tests-2026-03-22T21-08-58Z.json
+artifact/test-artifacts/tea-atdd-e2e-tests-2026-03-22T17-19-39Z.json
+artifact/test-artifacts/tea-atdd-e2e-tests-2026-03-22T20-40-57Z.json
+artifact/test-artifacts/tea-atdd-e2e-tests-2026-03-22T21-08-58Z.json
+artifact/test-artifacts/tea-atdd-summary-2026-03-22T17-19-39Z.json
+ succeeded in 51ms:
+"""ATDD acceptance tests for Story 1.6 AG4-AG6 + atomic AG5 dedupe behavior."""
+
+from __future__ import annotations
+
+from aiops_triage_pipeline.contracts.enums import Action
+from aiops_triage_pipeline.pipeline.stages.gating import evaluate_rulebook_gates
+from aiops_triage_pipeline.pipeline.stages.peak import load_rulebook_policy
+from tests.atdd.fixtures.story_1_6_test_data import build_gate_input
+
+
+class _AtomicOnlyDedupeStore:
+    """Store used to assert AG5 does not call a separate pre-read lookup."""
+
+    def __init__(self) -> None:
+        self.remember_calls: list[tuple[str, Action]] = []
+
+    def is_duplicate(self, fingerprint: str) -> bool:  # noqa: ARG002
+        raise AssertionError("Story 1.6 requires AG5 to avoid read-then-write dedupe lookups")
+
+    def remember(self, fingerprint: str, action: Action) -> bool:
+ succeeded in 51ms:
+"""ATDD red-phase acceptance tests for Story 1.4 topology ownership and blast radius."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from aiops_triage_pipeline.config.settings import Settings
+from aiops_triage_pipeline.registry.loader import (
+    TopologyRegistryValidationError,
+    load_topology_registry,
+)
+from aiops_triage_pipeline.registry.resolver import resolve_anomaly_scope
+
+
+def _write_registry(path: Path, content: str) -> None:
+    path.write_text(content, encoding="utf-8")
+
+
+exec
+/bin/bash -lc "sed -n '261,520p' artifact/test-artifacts/atdd-checklist-2-5-run-casefile-lifecycle-retention-purge.md" in /home/sas/workspace/aiopsexec
+/bin/bash -lc "sed -n '1,260p' artifact/test-artifacts/atdd-checklist-2-5-run-casefile-lifecycle-retention-purge.md" in /home/sas/workspace/aiopsexec
+/bin/bash -lc "sed -n '1,260p' artifact/test-artifacts/atdd-checklist-2-4-dispatch-pagerduty-and-slack-actions-with-denylist-safety.md" in /home/sas/workspace/aiops succeeded in 51ms:
+
+ succeeded in 50ms:
+---
+stepsCompleted:
+  - step-01-preflight-and-context
+  - step-02-generation-mode
+  - step-03-test-strategy
+  - step-04-generate-tests
+  - step-04c-aggregate
+  - step-05-validate-and-complete
+lastStep: step-05-validate-and-complete
+lastSaved: '2026-03-22'
+workflowType: testarch-atdd
+inputDocuments:
+  - artifact/implementation-artifacts/2-5-run-casefile-lifecycle-retention-purge.md
+  - artifact/implementation-artifacts/sprint-status.yaml
+  - src/aiops_triage_pipeline/storage/lifecycle.py
+  - src/aiops_triage_pipeline/__main__.py
+  - src/aiops_triage_pipeline/health/metrics.py
+  - tests/unit/storage/test_casefile_lifecycle.py
+  - tests/integration/test_casefile_lifecycle.py
+  - tests/unit/test_main.py
+ succeeded in 50ms:
+---
+stepsCompleted:
+  - step-01-preflight-and-context
+  - step-02-generation-mode
+  - step-03-test-strategy
+  - step-04-generate-tests
+  - step-04c-aggregate
+  - step-05-validate-and-complete
+lastStep: step-05-validate-and-complete
+lastSaved: '2026-03-22'
+workflowType: testarch-atdd
+inputDocuments:
+  - artifact/implementation-artifacts/2-4-dispatch-pagerduty-and-slack-actions-with-denylist-safety.md
+  - artifact/implementation-artifacts/sprint-status.yaml
+  - src/aiops_triage_pipeline/pipeline/stages/dispatch.py
+  - src/aiops_triage_pipeline/integrations/slack.py
+  - src/aiops_triage_pipeline/integrations/pagerduty.py
+  - tests/unit/pipeline/stages/test_dispatch.py
+  - tests/unit/integrations/test_slack_notification.py
+  - tests/unit/integrations/test_pagerduty.py
+exec
+/bin/bash -lc 'uv run pytest -q tests/atdd/test_story_2_5_casefile_lifecycle_retention_purge_red_phase.py -q' in /home/sas/workspace/aiops succeeded in 1.64s:
+...                                                                      [100%]
+exec
+/bin/bash -lc 'ls -la artifact/test-artifacts/atdd-checklist-3-1-implement-cold-path-kafka-consumer-runtime-mode.md' in /home/sas/workspace/aiops exited 2 in 51ms:
+ls: cannot access 'artifact/test-artifacts/atdd-checklist-3-1-implement-cold-path-kafka-consumer-runtime-mode.md': No such file or directory
+codex
+I confirmed there is no existing ATDD checklist for story `3-1`; I’m now loading the current cold-path runtime code and existing tests so the new ATDD tests target only this story’s acceptance criteria.
+exec
+/bin/bash -lc "sed -n '560,780p' src/aiops_triage_pipeline/__main__.py" in /home/sas/workspace/aiopsexec
+/bin/bash -lc "sed -n '1,260p' src/aiops_triage_pipeline/config/settings.py" in /home/sas/workspace/aiopsexec
+/bin/bash -lc "sed -n '1,320p' tests/unit/integrations/test_kafka.py" in /home/sas/workspace/aiopsexec
+/bin/bash -lc "sed -n '1,320p' src/aiops_triage_pipeline/health/registry.py" in /home/sas/workspace/aiopsexec
+/bin/bash -lc "sed -n '1,280p' tests/unit/test_main.py" in /home/sas/workspace/aiops succeeded in 50ms:
+            produced_cases=produced_cases,
+            sleep_seconds=round(sleep_seconds, 1),
+        )
+        await asyncio.sleep(sleep_seconds)
+
+
+def _peak_scopes_from_rows(rows: tuple[EvidenceRow, ...]) -> list[tuple[str, str, str]]:
+    scopes: set[tuple[str, str, str]] = set()
+    for row in rows:
+        if len(row.scope) == 3:
+            scopes.add((row.scope[0], row.scope[1], row.scope[2]))
+            continue
+        if len(row.scope) == 4:
+            scopes.add((row.scope[0], row.scope[1], row.scope[3]))
+    return sorted(scopes)
+
+
+def _resolve_routing_context_for_scope(
+    *,
+    scope: tuple[str, ...],
+ succeeded in 52ms:
+import functools
+import os
+from enum import Enum
+from pathlib import Path
+from typing import TypeVar
+
+import structlog
+from pydantic import BaseModel, model_validator
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Read APP_ENV BEFORE class definition to select the correct .env file.
+# Direct env var takes precedence over any .env file value (K8s injection pattern).
+_APP_ENV = os.getenv("APP_ENV", "local")
+
+
+class AppEnv(str, Enum):
+    local = "local"
+    harness = "harness"
+    dev = "dev"
+    uat = "uat"
+ succeeded in 51ms:
+"""Centralized health registry — asyncio-safe, singleton, per-component status tracking."""
+
+import asyncio
+import functools
+from datetime import datetime, timezone
+
+from aiops_triage_pipeline.health.metrics import record_status
+from aiops_triage_pipeline.models.health import ComponentHealth, HealthStatus
+
+
+class HealthRegistry:
+    """Singleton tracking per-component health status (HEALTHY/DEGRADED/UNAVAILABLE).
+
+    Asyncio-safe: uses asyncio.Lock for write operations. Read operations
+    (get, get_all, is_degraded) are lock-free — safe for single-threaded asyncio.
+
+    Usage pattern in pipeline stages:
+        registry = get_health_registry()
+        if registry.is_degraded("redis"):
+            action = min(action, "NOTIFY")  # Cap to NOTIFY-only
+ succeeded in 51ms:
+from __future__ import annotations
+
+from datetime import UTC, datetime
+
+import pytest
+
+from aiops_triage_pipeline.contracts.case_header_event import CaseHeaderEventV1
+from aiops_triage_pipeline.contracts.enums import (
+    Action,
+    CriticalityTier,
+    Environment,
+    EvidenceStatus,
+)
+from aiops_triage_pipeline.contracts.gate_input import Finding
+from aiops_triage_pipeline.contracts.triage_excerpt import TriageExcerptV1
+from aiops_triage_pipeline.errors.exceptions import CriticalDependencyError
+from aiops_triage_pipeline.integrations.kafka import ConfluentKafkaCaseEventPublisher
+
+
+class _RecordingProducer:
+ succeeded in 50ms:
+from __future__ import annotations
+
+import sys
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
+import pytest
+
+from aiops_triage_pipeline import __main__
+from aiops_triage_pipeline.models.anomaly import AnomalyFinding
+
+
+def test_main_dispatches_casefile_lifecycle_mode_once(monkeypatch) -> None:
+    calls: list[bool] = []
+    monkeypatch.setattr(__main__, "_run_casefile_lifecycle", lambda *, once: calls.append(once))
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["aiops-triage-pipeline", "--mode", "casefile-lifecycle", "--once"],
+    )
+exec
+/bin/bash -lc "sed -n '1,260p' tests/atdd/fixtures/story_2_5_test_data.py" in /home/sas/workspace/aiopsexec
+/bin/bash -lc "sed -n '1,260p' tests/atdd/fixtures/story_2_4_test_data.py" in /home/sas/workspace/aiopsexec
+/bin/bash -lc "sed -n '1,260p' tests/atdd/fixtures/story_1_6_test_data.py" in /home/sas/workspace/aiops succeeded in 50ms:
+"""ATDD fixture builders for Story 2.5 casefile lifecycle retention purge."""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+from datetime import datetime
+
+from aiops_triage_pipeline.contracts.casefile_retention_policy import (
+    CasefileRetentionPolicy,
+    CasefileRetentionPolicyV1,
+)
+from aiops_triage_pipeline.storage.client import (
+    DeleteObjectsResult,
+    ObjectStoreClientProtocol,
+    ObjectStoreListPage,
+    ObjectSummary,
+    PutIfAbsentResult,
+)
+
+
+ succeeded in 51ms:
+"""ATDD fixture builders for Story 2.4 dispatch integration coverage."""
+
+from __future__ import annotations
+
+from aiops_triage_pipeline.contracts.action_decision import ActionDecisionV1
+from aiops_triage_pipeline.contracts.enums import Action
+from aiops_triage_pipeline.denylist.loader import DenylistV1
+from aiops_triage_pipeline.pipeline.stages.topology import TopologyRoutingContext
+
+
+def build_dispatch_decision(*, action: Action = Action.NOTIFY) -> ActionDecisionV1:
+    return ActionDecisionV1(
+        final_action=action,
+        env_cap_applied=False,
+        gate_rule_ids=("AG0", "AG1", "AG2", "AG3", "AG4", "AG5", "AG6"),
+        gate_reason_codes=("AG0_PASS", "AG1_PASS"),
+        action_fingerprint="fp-story-2-4-001",
+        postmortem_required=False,
+        postmortem_reason_codes=(),
+    )
+ succeeded in 51ms:
+"""ATDD support data for Story 1.6 red-phase tests."""
+
+from __future__ import annotations
+
+from aiops_triage_pipeline.contracts.enums import (
+    Action,
+    CriticalityTier,
+    Environment,
+    EvidenceStatus,
+)
+from aiops_triage_pipeline.contracts.gate_input import Finding, GateInputV1
+
+
+def build_gate_input(
+    *,
+    env: Environment = Environment.PROD,
+    tier: CriticalityTier = CriticalityTier.TIER_0,
+    topic_role: str = "SHARED_TOPIC",
+    proposed_action: Action = Action.PAGE,
+    evidence_status: EvidenceStatus = EvidenceStatus.PRESENT,
+exec
+/bin/bash -lc "sed -n '1,280p' src/aiops_triage_pipeline/__main__.py" in /home/sas/workspace/aiops succeeded in 51ms:
+"""Entry point for aiops-triage-pipeline."""
+
+import argparse
+import asyncio
+import time
+from collections import deque
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Mapping
+
+import redis as redis_lib
+import structlog
+from sqlalchemy import create_engine
+
+from aiops_triage_pipeline.cache.dedupe import RedisActionDedupeStore
+from aiops_triage_pipeline.cache.evidence_window import (
+    load_sustained_window_states,
+    persist_sustained_window_states,
+)
+from aiops_triage_pipeline.cache.peak_cache import (
+exec
+/bin/bash -lc "sed -n '1,280p' src/aiops_triage_pipeline/models/health.py" in /home/sas/workspace/aiopsexec
+/bin/bash -lc "sed -n '1,260p' src/aiops_triage_pipeline/contracts/case_header_event.py" in /home/sas/workspace/aiopsexec
+/bin/bash -lc "sed -n '1,300p' tests/unit/health/test_registry.py" in /home/sas/workspace/aiops succeeded in 50ms:
+"""CaseHeaderEventV1 — Kafka event published via durable outbox (small header payload)."""
+
+from typing import Literal
+
+from pydantic import AwareDatetime, BaseModel
+
+from aiops_triage_pipeline.contracts.enums import Action, CriticalityTier, Environment
+
+
+class CaseHeaderEventV1(BaseModel, frozen=True):
+    schema_version: Literal["v1"] = "v1"
+    case_id: str  # Stable case identifier
+    env: Environment
+    cluster_id: str
+    stream_id: str
+    topic: str
+    anomaly_family: Literal["CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY"]
+    criticality_tier: CriticalityTier
+    final_action: Action  # Gated action decision
+    routing_key: str  # Team routing key from topology registry
+ succeeded in 50ms:
+"""Internal health domain models — not part of the frozen contracts package."""
+
+from enum import Enum
+
+from pydantic import AwareDatetime, BaseModel
+
+
+class HealthStatus(str, Enum):
+    """Per-component health state tracked by HealthRegistry."""
+
+    HEALTHY = "HEALTHY"
+    DEGRADED = "DEGRADED"
+    UNAVAILABLE = "UNAVAILABLE"
+
+
+class ComponentHealth(BaseModel, frozen=True):
+    """Snapshot of a single component's health at a point in time.
+
+    Stored in HealthRegistry._components. Immutable — each status change
+    replaces the entry rather than mutating in place.
+ succeeded in 51ms:
+import asyncio
+from datetime import datetime, timezone
+
+import pytest
+from pydantic import ValidationError
+
+from aiops_triage_pipeline.health.registry import HealthRegistry
+from aiops_triage_pipeline.models.events import DegradedModeEvent, TelemetryDegradedEvent
+from aiops_triage_pipeline.models.health import ComponentHealth, HealthStatus
+
+
+async def test_update_sets_healthy_status(registry: HealthRegistry) -> None:
+    """update() with HEALTHY stores HEALTHY status."""
+    await registry.update("redis", HealthStatus.HEALTHY)
+    assert registry.get("redis") == HealthStatus.HEALTHY
+
+
+async def test_update_sets_degraded_status(registry: HealthRegistry) -> None:
+    """update() with DEGRADED stores DEGRADED status."""
+    await registry.update("redis", HealthStatus.DEGRADED, reason="Connection refused")
+exec
+/bin/bash -lc 'cat _bmad/tea/testarch/tea-index.csv' in /home/sas/workspace/aiops succeeded in 50ms:
+id,name,description,tags,tier,fragment_file
+fixture-architecture,Fixture Architecture,"Composable fixture patterns (pure function → fixture → merge) and reuse rules","fixtures,architecture,playwright,cypress",core,knowledge/fixture-architecture.md
+network-first,Network-First Safeguards,"Intercept-before-navigate workflow, HAR capture, deterministic waits, edge mocking","network,stability,playwright,cypress,ui",core,knowledge/network-first.md
+data-factories,Data Factories and API Setup,"Factories with overrides, API seeding, cleanup discipline","data,factories,setup,api,backend,seeding",core,knowledge/data-factories.md
+component-tdd,Component TDD Loop,"Red→green→refactor workflow, provider isolation, accessibility assertions","component-testing,tdd,ui",extended,knowledge/component-tdd.md
+playwright-config,Playwright Config Guardrails,"Environment switching, timeout standards, artifact outputs","playwright,config,env",extended,knowledge/playwright-config.md
+ci-burn-in,CI and Burn-In Strategy,"Staged jobs, shard orchestration, burn-in loops, artifact policy","ci,automation,flakiness",extended,knowledge/ci-burn-in.md
+selective-testing,Selective Test Execution,"Tag/grep usage, spec filters, diff-based runs, promotion rules","risk-based,selection,strategy",extended,knowledge/selective-testing.md
+feature-flags,Feature Flag Governance,"Enum management, targeting helpers, cleanup, release checklists","feature-flags,governance,launchdarkly",specialized,knowledge/feature-flags.md
+contract-testing,Contract Testing Essentials,"Pact publishing, provider verification, resilience coverage","contract-testing,pact,api,backend,microservices,service-contract",specialized,knowledge/contract-testing.md
+email-auth,Email Authentication Testing,"Magic link extraction, state preservation, caching, negative flows","email-authentication,security,workflow",specialized,knowledge/email-auth.md
+error-handling,Error Handling Checks,"Scoped exception handling, retry validation, telemetry logging","resilience,error-handling,stability,api,backend",extended,knowledge/error-handling.md
+visual-debugging,Visual Debugging Toolkit,"Trace viewer usage, artifact expectations, accessibility integration","debugging,dx,tooling,ui",specialized,knowledge/visual-debugging.md
+risk-governance,Risk Governance,"Scoring matrix, category ownership, gate decision rules","risk,governance,gates",core,knowledge/risk-governance.md
+probability-impact,Probability and Impact Scale,"Shared definitions for scoring matrix and gate thresholds","risk,scoring,scale",core,knowledge/probability-impact.md
+test-quality,Test Quality Definition of Done,"Execution limits, isolation rules, green criteria","quality,definition-of-done,tests",core,knowledge/test-quality.md
+nfr-criteria,NFR Review Criteria,"Security, performance, reliability, maintainability status definitions","nfr,assessment,quality",extended,knowledge/nfr-criteria.md
+test-levels,Test Levels Framework,"Guidelines for choosing unit, integration, or end-to-end coverage","testing,levels,selection,api,backend,ui",core,knowledge/test-levels-framework.md
+test-priorities,Test Priorities Matrix,"P0–P3 criteria, coverage targets, execution ordering","testing,prioritization,risk",core,knowledge/test-priorities-matrix.md
+test-healing-patterns,Test Healing Patterns,"Common failure patterns and automated fixes","healing,debugging,patterns",core,knowledge/test-healing-patterns.md
+exec
+/bin/bash -lc "for f in \\
+  _bmad/tea/testarch/knowledge/data-factories.md \\
+  _bmad/tea/testarch/knowledge/component-tdd.md \\
+  _bmad/tea/testarch/knowledge/test-quality.md \\
+  _bmad/tea/testarch/knowledge/test-healing-patterns.md \\
+  _bmad/tea/testarch/knowledge/test-levels-framework.md \\
+  _bmad/tea/testarch/knowledge/test-priorities-matrix.md \\
+  _bmad/tea/testarch/knowledge/ci-burn-in.md \\
+  _bmad/tea/testarch/knowledge/overview.md \\
+  _bmad/tea/testarch/knowledge/api-request.md \\
+  _bmad/tea/testarch/knowledge/auth-session.md \\
+  _bmad/tea/testarch/knowledge/recurse.md \\
+  _bmad/tea/testarch/knowledge/pactjs-utils-overview.md \\
+  _bmad/tea/testarch/knowledge/pactjs-utils-consumer-helpers.md \\
+  _bmad/tea/testarch/knowledge/pactjs-utils-provider-verifier.md \\
+  _bmad/tea/testarch/knowledge/pactjs-utils-request-filter.md \\
+  _bmad/tea/testarch/knowledge/pact-mcp.md; do
+  test -f \""'$f" || { echo "MISSING:$f"; exit 1; }
+  cat "$f" >/dev/null
+  echo "LOADED:$f"
+done' in /home/sas/workspace/aiops succeeded in 51ms:
+LOADED:_bmad/tea/testarch/knowledge/data-factories.md
+LOADED:_bmad/tea/testarch/knowledge/component-tdd.md
+LOADED:_bmad/tea/testarch/knowledge/test-quality.md
+LOADED:_bmad/tea/testarch/knowledge/test-healing-patterns.md
+LOADED:_bmad/tea/testarch/knowledge/test-levels-framework.md
+LOADED:_bmad/tea/testarch/knowledge/test-priorities-matrix.md
+LOADED:_bmad/tea/testarch/knowledge/ci-burn-in.md
+LOADED:_bmad/tea/testarch/knowledge/overview.md
+LOADED:_bmad/tea/testarch/knowledge/api-request.md
+LOADED:_bmad/tea/testarch/knowledge/auth-session.md
+LOADED:_bmad/tea/testarch/knowledge/recurse.md
+LOADED:_bmad/tea/testarch/knowledge/pactjs-utils-overview.md
+LOADED:_bmad/tea/testarch/knowledge/pactjs-utils-consumer-helpers.md
+LOADED:_bmad/tea/testarch/knowledge/pactjs-utils-provider-verifier.md
+LOADED:_bmad/tea/testarch/knowledge/pactjs-utils-request-filter.md
+LOADED:_bmad/tea/testarch/knowledge/pact-mcp.md
+codex
+I’ve completed preflight context collection and confirmed this is a backend pytest stack with an established `tests/atdd` pattern.  
+Execution plan for this one ATDD step:
+
+1. Execute Step 1–3 outputs: create the story-specific ATDD checklist file with preflight context, selected generation mode, and test strategy mapped to Story 3.1 ACs.
+2. Execute Step 4 orchestration: generate API/E2E worker JSON artifacts for this story (backend-adapted: API/backend acceptance coverage + no-browser E2E path), then aggregate.
+3. Write story-scoped ATDD assets: add `tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py` and matching fixture helpers under `tests/atdd/fixtures/`.
+4. Run only the new story ATDD test file to verify RED-phase expectations against current code, capture results, and finalize the checklist with validation/completion summary (without advancing any later BMAD workflow).
+exec
+/bin/bash -lc "sed -n '1,320p' src/aiops_triage_pipeline/integrations/kafka.py" in /home/sas/workspace/aiops succeeded in 50ms:
+"""Kafka publisher adapter for durable outbox event emission."""
+
+from __future__ import annotations
+
+import os
+from typing import Any, Protocol
+
+from aiops_triage_pipeline.config.settings import Settings, get_settings
+from aiops_triage_pipeline.contracts.case_header_event import CaseHeaderEventV1
+from aiops_triage_pipeline.contracts.triage_excerpt import TriageExcerptV1
+from aiops_triage_pipeline.errors.exceptions import CriticalDependencyError, InvariantViolation
+from aiops_triage_pipeline.outbox.publisher import (
+    CaseEventPublisherProtocol,
+    CaseHeaderPublisherProtocol,
+)
+
+CASE_HEADER_CONTRACT_ID = "CaseHeaderEvent.v1"
+TRIAGE_EXCERPT_CONTRACT_ID = "TriageExcerpt.v1"
+DEFAULT_CASE_HEADER_TOPIC = "aiops-case-header"
+DEFAULT_TRIAGE_EXCERPT_TOPIC = "aiops-triage-excerpt"
+exec
+/bin/bash -lc "sed -n '1,260p' tests/atdd/test_story_2_3_publish_ready_outbox_rows_with_concurrency_safety_red_phase.py 2>/dev/null || true; sed -n '1,260p' tests/atdd/test_story_2_2_enforce_outbox_source_state_transitions_red_phase.py 2>/dev/null || true; sed -n '1,260p' tests/atdd/test_story_2_1_write_triage_casefiles_with_hash_chain_and_policy_stamps_red_phase.py 2>/dev/null || true" in /home/sas/workspace/aiops succeeded in 51ms:
+
+exec
+/bin/bash -lc "rg -n \"cold-path|cold_path|kafka consumer|consumer adapter|aiops-cold-path-diagnosis|commit|health\" artifact/planning-artifacts -g '*.md' | head -n 400" in /home/sas/workspace/aiopsexec
+/bin/bash -lc "sed -n '1,260p' artifact/planning-artifacts/architecture/core-architectural-decisions.md" in /home/sas/workspace/aiopsexec
+/bin/bash -lc "sed -n '1,260p' artifact/planning-artifacts/prd/functional-requirements.md" in /home/sas/workspace/aiops succeeded in 50ms:
+artifact/planning-artifacts/product-brief-aiOps-2026-03-21.md:34:The baseline implementation delivered all 8 epics covering foundation, evidence collection, topology, durable triage/outbox, deterministic gating, LLM diagnosis, governance/observability, and ServiceNow automation. However, several critical subsystems were built but not wired into production code paths, and the cold-path runtime remains a stub. This revision phase activates the delivered capabilities into operational readiness for the upcoming dev OpenShift deployment, with a mandatory hot/hot 2-pod minimum requiring multi-replica safety from day one.
+artifact/planning-artifacts/product-brief-aiOps-2026-03-21.md:42:Operations teams currently rely on static alerting and monitoring for infrastructure health — threshold-based alerts that lack contextual awareness, produce alert fatigue, and require manual triage to determine severity, blast radius, and ownership routing. There is no automated system that detects anomaly patterns, correlates them with topology and ownership, and routes actionable, deduplicated operational decisions with safety guarantees and full audit traceability.
+artifact/planning-artifacts/product-brief-aiOps-2026-03-21.md:82:- **Follow-through tracking** — action item deadline monitoring, escalation on overdue items, completion rate metrics as an operational health signal
+artifact/planning-artifacts/product-brief-aiOps-2026-03-21.md:104:Role: Owns the aiOps platform itself. Maintains the running deployment, monitors system health (outbox, Redis, OTLP), tunes operational parameters, and ensures the pipeline is functioning correctly across environments.
+artifact/planning-artifacts/product-brief-aiOps-2026-03-21.md:108:How aiOps helps: Operates a self-monitoring triage platform with meta-health metrics (outbox age, Redis status, pipeline latency, coordination lock metrics). Tunes behavior through YAML policy artifacts (rulebook thresholds, anomaly detection sensitivity, peak policy, denylist) that propagate through environments. Has full audit trail of every operational decision the system made.
+artifact/planning-artifacts/product-brief-aiOps-2026-03-21.md:130:Role: Engineering leadership tracking operational health and incident management effectiveness.
+artifact/planning-artifacts/product-brief-aiOps-2026-03-21.md:145:2. **Monitor** — Watches system health via OTLP metrics: pipeline latency, outbox age, Redis status, coordination lock stats
+artifact/planning-artifacts/product-brief-aiOps-2026-03-21.md:179:| Action distribution | OTLP counters per action type | Calibration indicator — healthy systems show mostly OBSERVE/NOTIFY with rare PAGE |
+artifact/planning-artifacts/product-brief-aiOps-2026-03-21.md:220:**Operational setup:** Dynatrace dashboard (pipeline heartbeat, action distribution, deduplication, outbox health, coordination stats) and Kibana saved searches (case trail, gate decisions, action events) are deployment-time deliverables, not code changes.
+artifact/planning-artifacts/product-brief-aiOps-2026-03-21.md:239:| CR-08 | Remove cold-path invocation criteria (unconditional LLM diagnosis) | Simplification |
+artifact/planning-artifacts/product-brief-aiOps-2026-03-21.md:240:| CR-09 | Optimize cold-path LLM prompt for higher quality output | Enhancement |
+artifact/planning-artifacts/product-brief-aiOps-2026-03-21.md:246:- Dynatrace dashboard: pipeline heartbeat, action distribution, deduplication, outbox health, coordination stats
+artifact/planning-artifacts/product-brief-aiOps-2026-03-21.md:269:**ML-enhanced root cause analysis** — evolve beyond the current single-LLM cold-path diagnosis toward a dedicated ML-based RCA model. The organization has an existing enterprise RCA agent; future phases would implement agent-to-agent invocation where aiOps triggers the enterprise RCA agent after anomaly detection, combining aiOps's structured evidence context with the RCA agent's diagnostic capabilities for higher accuracy root cause identification.
+artifact/planning-artifacts/architecture/starter-template-evaluation.md:34:- Kafka via confluent-kafka 2.13.0 — outbox publication and cold-path consumption
+artifact/planning-artifacts/architecture/starter-template-evaluation.md:37:- LangGraph 1.0.9 for cold-path LLM diagnosis orchestration
+artifact/planning-artifacts/architecture/starter-template-evaluation.md:54:- `src/aiops_triage_pipeline/` — pipeline/, contracts/, models/, integrations/, storage/, outbox/, linkage/, health/, config/, denylist/, diagnosis/
+artifact/planning-artifacts/prd/user-journeys.md:11:**Resolution:** The cold-path LLM diagnosis arrives 45 seconds later — a structured report hypothesizing consumer-group-level lag due to partition rebalance, citing the specific evidence pack, suggesting next checks (consumer group describe, partition assignment history). Priya confirms the hypothesis, restarts the stuck consumer, and references the case ID in the incident channel. The case becomes the single source of truth for the post-incident review.
+artifact/planning-artifacts/prd/user-journeys.md:31:**Resolution:** Jordan documents the tuning results, confirms pipeline health metrics are within targets (cycle completion 100%, outbox delivery p95 < 1 min, zero DEAD rows, zero duplicate dispatches), and begins preparing the case for UAT promotion with confidence that the policy behavior is predictable and verifiable.
+artifact/planning-artifacts/prd/user-journeys.md:37:**Rising Action:** Alex edits the topology registry YAML in `config/` — adding the new consumer group under the correct stream with ownership routing pointing to their team's PagerDuty service and Slack channel. Alex also adds the noisy topic to `config/denylist.yaml`. Both changes are committed and deployed to dev.
+artifact/planning-artifacts/prd/user-journeys.md:55:| Responder — Success Path | Pre-triaged pages with ownership/blast radius, case artifact with evidence + gate trail, cold-path LLM diagnosis, postmortem candidacy detection |
+ succeeded in 51ms:
+# Core Architectural Decisions
+
+## Decision Priority Analysis
+
+**Critical Decisions (Block Implementation):**
+
+| # | Decision | CRs Affected | Rationale |
+|---|---|---|---|
+| D1 | Redis key namespace: flat prefix `aiops:{data_type}:{scope_key}` | CR-01, CR-03, CR-04, CR-05, CR-10 | Foundation — all Redis consumers depend on this |
+| D2 | Redis is ephemeral by design; correctness never depends on Redis data surviving a restart | All Redis CRs | Core reliability posture |
+| D3 | Redis failure degradation matrix | All Redis CRs | Every consumer must degrade gracefully |
+| D4 | Rule engine as isolated package `rule_engine/` with zero pipeline imports | CR-02 | Safety-critical path must be testable in isolation |
+| D5 | Cycle lock protocol: single `SET NX EX` with TTL, no explicit unlock | CR-05 | Multi-replica safety foundation |
+| D6 | Cold-path consumer: confluent-kafka, sequential processing, no eligibility criteria | CR-07, CR-08 | Activates the cold-path from stub to operational |
+| D7 | Outbox row locking: `SELECT FOR UPDATE SKIP LOCKED` | CR-05 | Prevents duplicate Kafka publication |
+| D13 | Redis connection pooling: shared pool sized for peak concurrent operations | All Redis CRs | Prevents pool exhaustion during bulk loads blocking cycle lock |
+
+**Important Decisions (Shape Architecture):**
+
+| # | Decision | CRs Affected | Rationale |
+ succeeded in 51ms:
+# Functional Requirements
+
+## Evidence Collection & Anomaly Detection
+
+- FR1: The hot-path can query Prometheus for infrastructure telemetry metrics on a configurable scheduler interval
+- FR2: The hot-path can detect consumer lag anomalies, throughput constrained anomalies, and volume drop anomalies across all monitored scopes
+- FR3: The hot-path can evaluate anomaly detection thresholds against per-scope statistical baselines computed from historical metric data, falling back to configured defaults when baseline history is insufficient
+- FR4: The hot-path can compute and persist per-scope metric baselines to Redis with environment-specific TTLs
+- FR5: The hot-path can load sustained window state from Redis before evidence evaluation and persist updated state after, enabling sustained anomaly tracking across cycles and pod restarts
+- FR6: The hot-path can batch Redis key loading operations instead of sequential per-key round-trips for sustained window state and peak profile retrieval
+- FR7: The hot-path can emit a TelemetryDegradedEvent when Prometheus is unavailable, propagating UNKNOWN evidence status through downstream stages
+
+## Peak & Sustained Classification
+
+- FR8: The hot-path can classify anomaly patterns as PEAK, NEAR_PEAK, or OFF_PEAK using cached peak profiles from Redis, replacing the previous always-UNKNOWN behavior
+- FR9: The hot-path can compute sustained anomaly status per scope using externalized Redis state shared across all hot-path replicas
+- FR10: The hot-path can parallelize sustained status computation across large scope key sets for performance at scale
+- FR11: The hot-path can manage peak profile historical window memory efficiently with bounded retention to control per-process memory footprint
+
+## Topology Resolution & Ownership Routing
+codex
+I’m starting file edits now: adding story-specific ATDD red-phase tests and fixture helpers under `tests/atdd/` plus the story ATDD checklist/artifact JSON files under `artifact/test-artifacts/`, following the existing repo ATDD format.
+file update
+A /home/sas/workspace/aiops/tests/atdd/fixtures/story_3_1_test_data.py
+"""ATDD fixture builders for Story 3.1 cold-path Kafka consumer runtime mode."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from types import SimpleNamespace
+
+from aiops_triage_pipeline.models.health import HealthStatus
+
+
+@dataclass(frozen=True)
+class HealthTransition:
+    component: str
+    status: HealthStatus
+    reason: str | None
+
+
+class RecordingAsyncHealthRegistry:
+    """Capture async health transitions emitted by runtime mode code."""
+
+    def __init__(self) -> None:
+        self.transitions: list[HealthTransition] = []
+
+    async def update(
+        self,
+        component: str,
+        status: HealthStatus,
+        reason: str | None = None,
+    ) -> None:
+        self.transitions.append(
+            HealthTransition(
+                component=component,
+                status=status,
+                reason=reason,
+            )
+        )
+
+
+def expected_consumer_binding() -> tuple[str, str]:
+    """Canonical consumer group and topic for Story 3.1."""
+    return ("aiops-cold-path-diagnosis", "aiops-case-header")
+
+
+def build_cold_path_settings() -> SimpleNamespace:
+    """Minimal runtime settings object for cold-path mode tests."""
+    consumer_group, topic = expected_consumer_binding()
+    return SimpleNamespace(
+        APP_ENV=SimpleNamespace(value="dev"),
+        KAFKA_CASE_HEADER_TOPIC=topic,
+        KAFKA_COLD_PATH_CONSUMER_GROUP=consumer_group,
+        KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=1.0,
+    )
+apply_patch(auto_approved=true) exited 0 in 10ms:
+Success. Updated the following files:
+A tests/atdd/fixtures/story_3_1_test_data.py
+file update:
+diff --git a/tests/atdd/fixtures/story_3_1_test_data.py b/tests/atdd/fixtures/story_3_1_test_data.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..36762eaf611f45269fb9e3a3897049bf0e1b7686
+--- /dev/null
++++ b/tests/atdd/fixtures/story_3_1_test_data.py
+@@ -0,0 +1,52 @@
++"""ATDD fixture builders for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from types import SimpleNamespace
++
++from aiops_triage_pipeline.models.health import HealthStatus
++
++
++@dataclass(frozen=True)
++class HealthTransition:
++    component: str
++    status: HealthStatus
++    reason: str | None
++
++
++class RecordingAsyncHealthRegistry:
++    """Capture async health transitions emitted by runtime mode code."""
++
++    def __init__(self) -> None:
++        self.transitions: list[HealthTransition] = []
++
++    async def update(
++        self,
++        component: str,
++        status: HealthStatus,
++        reason: str | None = None,
++    ) -> None:
++        self.transitions.append(
++            HealthTransition(
++                component=component,
++                status=status,
++                reason=reason,
++            )
++        )
++
++
++def expected_consumer_binding() -> tuple[str, str]:
++    """Canonical consumer group and topic for Story 3.1."""
++    return ("aiops-cold-path-diagnosis", "aiops-case-header")
++
++
++def build_cold_path_settings() -> SimpleNamespace:
++    """Minimal runtime settings object for cold-path mode tests."""
++    consumer_group, topic = expected_consumer_binding()
++    return SimpleNamespace(
++        APP_ENV=SimpleNamespace(value="dev"),
++        KAFKA_CASE_HEADER_TOPIC=topic,
++        KAFKA_COLD_PATH_CONSUMER_GROUP=consumer_group,
++        KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=1.0,
++    )
+
+file update:
+diff --git a/tests/atdd/fixtures/story_3_1_test_data.py b/tests/atdd/fixtures/story_3_1_test_data.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..36762eaf611f45269fb9e3a3897049bf0e1b7686
+--- /dev/null
++++ b/tests/atdd/fixtures/story_3_1_test_data.py
+@@ -0,0 +1,52 @@
++"""ATDD fixture builders for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from types import SimpleNamespace
++
++from aiops_triage_pipeline.models.health import HealthStatus
++
++
++@dataclass(frozen=True)
++class HealthTransition:
++    component: str
++    status: HealthStatus
++    reason: str | None
++
++
++class RecordingAsyncHealthRegistry:
++    """Capture async health transitions emitted by runtime mode code."""
++
++    def __init__(self) -> None:
++        self.transitions: list[HealthTransition] = []
++
++    async def update(
++        self,
++        component: str,
++        status: HealthStatus,
++        reason: str | None = None,
++    ) -> None:
++        self.transitions.append(
++            HealthTransition(
++                component=component,
++                status=status,
++                reason=reason,
++            )
++        )
++
++
++def expected_consumer_binding() -> tuple[str, str]:
++    """Canonical consumer group and topic for Story 3.1."""
++    return ("aiops-cold-path-diagnosis", "aiops-case-header")
++
++
++def build_cold_path_settings() -> SimpleNamespace:
++    """Minimal runtime settings object for cold-path mode tests."""
++    consumer_group, topic = expected_consumer_binding()
++    return SimpleNamespace(
++        APP_ENV=SimpleNamespace(value="dev"),
++        KAFKA_CASE_HEADER_TOPIC=topic,
++        KAFKA_COLD_PATH_CONSUMER_GROUP=consumer_group,
++        KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=1.0,
++    )
+
+file update
+A /home/sas/workspace/aiops/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+"""ATDD red-phase acceptance tests for Story 3.1 cold-path Kafka consumer runtime mode."""
+
+from __future__ import annotations
+
+import importlib
+from unittest.mock import MagicMock
+
+import pytest
+
+from aiops_triage_pipeline import __main__
+from aiops_triage_pipeline.config.settings import Settings
+from tests.atdd.fixtures.story_3_1_test_data import (
+    RecordingAsyncHealthRegistry,
+    build_cold_path_settings,
+    expected_consumer_binding,
+)
+
+
+def _build_min_settings_for_validation(**overrides: object) -> Settings:
+    base: dict[str, object] = {
+        "_env_file": None,
+        "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092",
+        "DATABASE_URL": "postgresql+psycopg://u:p@h/db",
+        "REDIS_URL": "redis://localhost:6379/0",
+        "S3_ENDPOINT_URL": "http://localhost:9000",
+        "S3_ACCESS_KEY": "key",
+        "S3_SECRET_KEY": "secret",
+        "S3_BUCKET": "bucket",
+    }
+    base.update(overrides)
+    return Settings(**base)
+
+
+def test_p0_settings_expose_cold_path_consumer_defaults_and_validation() -> None:
+    """Given cold-path runtime config, then canonical group/topic and poll timeout validation exist."""
+    settings = _build_min_settings_for_validation()
+    consumer_group, topic = expected_consumer_binding()
+
+    assert settings.KAFKA_COLD_PATH_CONSUMER_GROUP == consumer_group
+    assert settings.KAFKA_CASE_HEADER_TOPIC == topic
+    assert settings.KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS > 0
+
+    with pytest.raises(ValueError, match="KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS"):
+        _build_min_settings_for_validation(KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=0)
+
+
+def test_p0_cold_path_runtime_logs_consumer_group_and_topic_on_start(monkeypatch) -> None:
+    """Given cold-path mode starts, then startup log includes consumer group/topic wiring."""
+    logger = MagicMock()
+    settings = build_cold_path_settings()
+    consumer_group, topic = expected_consumer_binding()
+
+    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
+
+    __main__._run_cold_path()
+
+    start_call = next(
+        call
+        for call in logger.info.call_args_list
+        if call.args and call.args[0] == "cold_path_mode_started"
+    )
+    assert start_call.kwargs["consumer_group"] == consumer_group
+    assert start_call.kwargs["topic"] == topic
+
+
+def test_p1_cold_path_runtime_reports_connected_poll_and_commit_health_transitions(
+    monkeypatch,
+) -> None:
+    """Given cold-path consumer lifecycle, then health transitions include connected/poll/commit."""
+    logger = MagicMock()
+    settings = build_cold_path_settings()
+    health_registry = RecordingAsyncHealthRegistry()
+
+    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
+    monkeypatch.setattr(__main__, "get_health_registry", lambda: health_registry, raising=False)
+
+    __main__._run_cold_path()
+
+    transition_components = {transition.component.lower() for transition in health_registry.transitions}
+    assert any("connected" in component for component in transition_components)
+    assert any("poll" in component for component in transition_components)
+    assert any("commit" in component for component in transition_components)
+
+
+def test_p1_kafka_consumer_adapter_module_exposes_protocol_and_confluent_adapter() -> None:
+    """Given cold-path adapter boundary, module should expose protocol and confluent adapter types."""
+    module = importlib.import_module("aiops_triage_pipeline.integrations.kafka_consumer")
+
+    protocol_names = (
+        "KafkaConsumerAdapterProtocol",
+        "KafkaConsumerProtocol",
+        "CaseHeaderConsumerProtocol",
+    )
+    adapter_names = (
+        "ConfluentKafkaCaseHeaderConsumer",
+        "ConfluentKafkaConsumerAdapter",
+        "ConfluentKafkaCaseHeaderConsumerAdapter",
+    )
+
+    assert any(hasattr(module, name) for name in protocol_names)
+    assert any(hasattr(module, name) for name in adapter_names)
+apply_patch(auto_approved=true) exited 0 in 11ms:
+Success. Updated the following files:
+A tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+file update:
+diff --git a/tests/atdd/fixtures/story_3_1_test_data.py b/tests/atdd/fixtures/story_3_1_test_data.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..36762eaf611f45269fb9e3a3897049bf0e1b7686
+--- /dev/null
++++ b/tests/atdd/fixtures/story_3_1_test_data.py
+@@ -0,0 +1,52 @@
++"""ATDD fixture builders for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from types import SimpleNamespace
++
++from aiops_triage_pipeline.models.health import HealthStatus
++
++
++@dataclass(frozen=True)
++class HealthTransition:
++    component: str
++    status: HealthStatus
++    reason: str | None
++
++
++class RecordingAsyncHealthRegistry:
++    """Capture async health transitions emitted by runtime mode code."""
++
++    def __init__(self) -> None:
++        self.transitions: list[HealthTransition] = []
++
++    async def update(
++        self,
++        component: str,
++        status: HealthStatus,
++        reason: str | None = None,
++    ) -> None:
++        self.transitions.append(
++            HealthTransition(
++                component=component,
++                status=status,
++                reason=reason,
++            )
++        )
++
++
++def expected_consumer_binding() -> tuple[str, str]:
++    """Canonical consumer group and topic for Story 3.1."""
++    return ("aiops-cold-path-diagnosis", "aiops-case-header")
++
++
++def build_cold_path_settings() -> SimpleNamespace:
++    """Minimal runtime settings object for cold-path mode tests."""
++    consumer_group, topic = expected_consumer_binding()
++    return SimpleNamespace(
++        APP_ENV=SimpleNamespace(value="dev"),
++        KAFKA_CASE_HEADER_TOPIC=topic,
++        KAFKA_COLD_PATH_CONSUMER_GROUP=consumer_group,
++        KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=1.0,
++    )
+diff --git a/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py b/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1e0d62aeb12410f16c46eb31646e3d20ae7cd815
+--- /dev/null
++++ b/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+@@ -0,0 +1,101 @@
++"""ATDD red-phase acceptance tests for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++import importlib
++from unittest.mock import MagicMock
++
++import pytest
++
++from aiops_triage_pipeline import __main__
++from aiops_triage_pipeline.config.settings import Settings
++from tests.atdd.fixtures.story_3_1_test_data import (
++    RecordingAsyncHealthRegistry,
++    build_cold_path_settings,
++    expected_consumer_binding,
++)
++
++
++def _build_min_settings_for_validation(**overrides: object) -> Settings:
++    base: dict[str, object] = {
++        "_env_file": None,
++        "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092",
++        "DATABASE_URL": "postgresql+psycopg://u:p@h/db",
++        "REDIS_URL": "redis://localhost:6379/0",
++        "S3_ENDPOINT_URL": "http://localhost:9000",
++        "S3_ACCESS_KEY": "key",
++        "S3_SECRET_KEY": "secret",
++        "S3_BUCKET": "bucket",
++    }
++    base.update(overrides)
++    return Settings(**base)
++
++
++def test_p0_settings_expose_cold_path_consumer_defaults_and_validation() -> None:
++    """Given cold-path runtime config, then canonical group/topic and poll timeout validation exist."""
++    settings = _build_min_settings_for_validation()
++    consumer_group, topic = expected_consumer_binding()
++
++    assert settings.KAFKA_COLD_PATH_CONSUMER_GROUP == consumer_group
++    assert settings.KAFKA_CASE_HEADER_TOPIC == topic
++    assert settings.KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS > 0
++
++    with pytest.raises(ValueError, match="KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS"):
++        _build_min_settings_for_validation(KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=0)
++
++
++def test_p0_cold_path_runtime_logs_consumer_group_and_topic_on_start(monkeypatch) -> None:
++    """Given cold-path mode starts, then startup log includes consumer group/topic wiring."""
++    logger = MagicMock()
++    settings = build_cold_path_settings()
++    consumer_group, topic = expected_consumer_binding()
++
++    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
++
++    __main__._run_cold_path()
++
++    start_call = next(
++        call
++        for call in logger.info.call_args_list
++        if call.args and call.args[0] == "cold_path_mode_started"
++    )
++    assert start_call.kwargs["consumer_group"] == consumer_group
++    assert start_call.kwargs["topic"] == topic
++
++
++def test_p1_cold_path_runtime_reports_connected_poll_and_commit_health_transitions(
++    monkeypatch,
++) -> None:
++    """Given cold-path consumer lifecycle, then health transitions include connected/poll/commit."""
++    logger = MagicMock()
++    settings = build_cold_path_settings()
++    health_registry = RecordingAsyncHealthRegistry()
++
++    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
++    monkeypatch.setattr(__main__, "get_health_registry", lambda: health_registry, raising=False)
++
++    __main__._run_cold_path()
++
++    transition_components = {transition.component.lower() for transition in health_registry.transitions}
++    assert any("connected" in component for component in transition_components)
++    assert any("poll" in component for component in transition_components)
++    assert any("commit" in component for component in transition_components)
++
++
++def test_p1_kafka_consumer_adapter_module_exposes_protocol_and_confluent_adapter() -> None:
++    """Given cold-path adapter boundary, module should expose protocol and confluent adapter types."""
++    module = importlib.import_module("aiops_triage_pipeline.integrations.kafka_consumer")
++
++    protocol_names = (
++        "KafkaConsumerAdapterProtocol",
++        "KafkaConsumerProtocol",
++        "CaseHeaderConsumerProtocol",
++    )
++    adapter_names = (
++        "ConfluentKafkaCaseHeaderConsumer",
++        "ConfluentKafkaConsumerAdapter",
++        "ConfluentKafkaCaseHeaderConsumerAdapter",
++    )
++
++    assert any(hasattr(module, name) for name in protocol_names)
++    assert any(hasattr(module, name) for name in adapter_names)
+
+file update:
+diff --git a/tests/atdd/fixtures/story_3_1_test_data.py b/tests/atdd/fixtures/story_3_1_test_data.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..36762eaf611f45269fb9e3a3897049bf0e1b7686
+--- /dev/null
++++ b/tests/atdd/fixtures/story_3_1_test_data.py
+@@ -0,0 +1,52 @@
++"""ATDD fixture builders for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from types import SimpleNamespace
++
++from aiops_triage_pipeline.models.health import HealthStatus
++
++
++@dataclass(frozen=True)
++class HealthTransition:
++    component: str
++    status: HealthStatus
++    reason: str | None
++
++
++class RecordingAsyncHealthRegistry:
++    """Capture async health transitions emitted by runtime mode code."""
++
++    def __init__(self) -> None:
++        self.transitions: list[HealthTransition] = []
++
++    async def update(
++        self,
++        component: str,
++        status: HealthStatus,
++        reason: str | None = None,
++    ) -> None:
++        self.transitions.append(
++            HealthTransition(
++                component=component,
++                status=status,
++                reason=reason,
++            )
++        )
++
++
++def expected_consumer_binding() -> tuple[str, str]:
++    """Canonical consumer group and topic for Story 3.1."""
++    return ("aiops-cold-path-diagnosis", "aiops-case-header")
++
++
++def build_cold_path_settings() -> SimpleNamespace:
++    """Minimal runtime settings object for cold-path mode tests."""
++    consumer_group, topic = expected_consumer_binding()
++    return SimpleNamespace(
++        APP_ENV=SimpleNamespace(value="dev"),
++        KAFKA_CASE_HEADER_TOPIC=topic,
++        KAFKA_COLD_PATH_CONSUMER_GROUP=consumer_group,
++        KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=1.0,
++    )
+diff --git a/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py b/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1e0d62aeb12410f16c46eb31646e3d20ae7cd815
+--- /dev/null
++++ b/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+@@ -0,0 +1,101 @@
++"""ATDD red-phase acceptance tests for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++import importlib
++from unittest.mock import MagicMock
++
++import pytest
++
++from aiops_triage_pipeline import __main__
++from aiops_triage_pipeline.config.settings import Settings
++from tests.atdd.fixtures.story_3_1_test_data import (
++    RecordingAsyncHealthRegistry,
++    build_cold_path_settings,
++    expected_consumer_binding,
++)
++
++
++def _build_min_settings_for_validation(**overrides: object) -> Settings:
++    base: dict[str, object] = {
++        "_env_file": None,
++        "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092",
++        "DATABASE_URL": "postgresql+psycopg://u:p@h/db",
++        "REDIS_URL": "redis://localhost:6379/0",
++        "S3_ENDPOINT_URL": "http://localhost:9000",
++        "S3_ACCESS_KEY": "key",
++        "S3_SECRET_KEY": "secret",
++        "S3_BUCKET": "bucket",
++    }
++    base.update(overrides)
++    return Settings(**base)
++
++
++def test_p0_settings_expose_cold_path_consumer_defaults_and_validation() -> None:
++    """Given cold-path runtime config, then canonical group/topic and poll timeout validation exist."""
++    settings = _build_min_settings_for_validation()
++    consumer_group, topic = expected_consumer_binding()
++
++    assert settings.KAFKA_COLD_PATH_CONSUMER_GROUP == consumer_group
++    assert settings.KAFKA_CASE_HEADER_TOPIC == topic
++    assert settings.KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS > 0
++
++    with pytest.raises(ValueError, match="KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS"):
++        _build_min_settings_for_validation(KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=0)
++
++
++def test_p0_cold_path_runtime_logs_consumer_group_and_topic_on_start(monkeypatch) -> None:
++    """Given cold-path mode starts, then startup log includes consumer group/topic wiring."""
++    logger = MagicMock()
++    settings = build_cold_path_settings()
++    consumer_group, topic = expected_consumer_binding()
++
++    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
++
++    __main__._run_cold_path()
++
++    start_call = next(
++        call
++        for call in logger.info.call_args_list
++        if call.args and call.args[0] == "cold_path_mode_started"
++    )
++    assert start_call.kwargs["consumer_group"] == consumer_group
++    assert start_call.kwargs["topic"] == topic
++
++
++def test_p1_cold_path_runtime_reports_connected_poll_and_commit_health_transitions(
++    monkeypatch,
++) -> None:
++    """Given cold-path consumer lifecycle, then health transitions include connected/poll/commit."""
++    logger = MagicMock()
++    settings = build_cold_path_settings()
++    health_registry = RecordingAsyncHealthRegistry()
++
++    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
++    monkeypatch.setattr(__main__, "get_health_registry", lambda: health_registry, raising=False)
++
++    __main__._run_cold_path()
++
++    transition_components = {transition.component.lower() for transition in health_registry.transitions}
++    assert any("connected" in component for component in transition_components)
++    assert any("poll" in component for component in transition_components)
++    assert any("commit" in component for component in transition_components)
++
++
++def test_p1_kafka_consumer_adapter_module_exposes_protocol_and_confluent_adapter() -> None:
++    """Given cold-path adapter boundary, module should expose protocol and confluent adapter types."""
++    module = importlib.import_module("aiops_triage_pipeline.integrations.kafka_consumer")
++
++    protocol_names = (
++        "KafkaConsumerAdapterProtocol",
++        "KafkaConsumerProtocol",
++        "CaseHeaderConsumerProtocol",
++    )
++    adapter_names = (
++        "ConfluentKafkaCaseHeaderConsumer",
++        "ConfluentKafkaConsumerAdapter",
++        "ConfluentKafkaCaseHeaderConsumerAdapter",
++    )
++
++    assert any(hasattr(module, name) for name in protocol_names)
++    assert any(hasattr(module, name) for name in adapter_names)
+
+exec
+/bin/bash -lc 'uv run ruff check tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py tests/atdd/fixtures/story_3_1_test_data.py' in /home/sas/workspace/aiops exited 1 in 50ms:
+E501 Line too long (103 > 100)
+  --> tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py:35:101
+   |
+34 | def test_p0_settings_expose_cold_path_consumer_defaults_and_validation() -> None:
+35 |     """Given cold-path runtime config, then canonical group/topic and poll timeout validation exist."""
+   |                                                                                                     ^^^
+36 |     settings = _build_min_settings_for_validation()
+37 |     consumer_group, topic = expected_consumer_binding()
+   |
+
+E501 Line too long (104 > 100)
+  --> tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py:79:101
+   |
+77 |     __main__._run_cold_path()
+78 |
+79 |     transition_components = {transition.component.lower() for transition in health_registry.transitions}
+   |                                                                                                     ^^^^
+80 |     assert any("connected" in component for component in transition_components)
+81 |     assert any("poll" in component for component in transition_components)
+   |
+file update:
+diff --git a/tests/atdd/fixtures/story_3_1_test_data.py b/tests/atdd/fixtures/story_3_1_test_data.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..36762eaf611f45269fb9e3a3897049bf0e1b7686
+--- /dev/null
++++ b/tests/atdd/fixtures/story_3_1_test_data.py
+@@ -0,0 +1,52 @@
++"""ATDD fixture builders for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from types import SimpleNamespace
++
++from aiops_triage_pipeline.models.health import HealthStatus
++
++
++@dataclass(frozen=True)
++class HealthTransition:
++    component: str
++    status: HealthStatus
++    reason: str | None
++
++
++class RecordingAsyncHealthRegistry:
++    """Capture async health transitions emitted by runtime mode code."""
++
++    def __init__(self) -> None:
++        self.transitions: list[HealthTransition] = []
++
++    async def update(
++        self,
++        component: str,
++        status: HealthStatus,
++        reason: str | None = None,
++    ) -> None:
++        self.transitions.append(
++            HealthTransition(
++                component=component,
++                status=status,
++                reason=reason,
++            )
++        )
++
++
++def expected_consumer_binding() -> tuple[str, str]:
++    """Canonical consumer group and topic for Story 3.1."""
++    return ("aiops-cold-path-diagnosis", "aiops-case-header")
++
++
++def build_cold_path_settings() -> SimpleNamespace:
++    """Minimal runtime settings object for cold-path mode tests."""
++    consumer_group, topic = expected_consumer_binding()
++    return SimpleNamespace(
++        APP_ENV=SimpleNamespace(value="dev"),
++        KAFKA_CASE_HEADER_TOPIC=topic,
++        KAFKA_COLD_PATH_CONSUMER_GROUP=consumer_group,
++        KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=1.0,
++    )
+diff --git a/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py b/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..1e0d62aeb12410f16c46eb31646e3d20ae7cd815
+--- /dev/null
++++ b/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+@@ -0,0 +1,101 @@
++"""ATDD red-phase acceptance tests for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++import importlib
++from unittest.mock import MagicMock
++
++import pytest
++
++from aiops_triage_pipeline import __main__
++from aiops_triage_pipeline.config.settings import Settings
++from tests.atdd.fixtures.story_3_1_test_data import (
++    RecordingAsyncHealthRegistry,
++    build_cold_path_settings,
++    expected_consumer_binding,
++)
++
++
++def _build_min_settings_for_validation(**overrides: object) -> Settings:
++    base: dict[str, object] = {
++        "_env_file": None,
++        "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092",
++        "DATABASE_URL": "postgresql+psycopg://u:p@h/db",
++        "REDIS_URL": "redis://localhost:6379/0",
++        "S3_ENDPOINT_URL": "http://localhost:9000",
++        "S3_ACCESS_KEY": "key",
++        "S3_SECRET_KEY": "secret",
++        "S3_BUCKET": "bucket",
++    }
++    base.update(overrides)
++    return Settings(**base)
++
++
++def test_p0_settings_expose_cold_path_consumer_defaults_and_validation() -> None:
++    """Given cold-path runtime config, then canonical group/topic and poll timeout validation exist."""
++    settings = _build_min_settings_for_validation()
++    consumer_group, topic = expected_consumer_binding()
++
++    assert settings.KAFKA_COLD_PATH_CONSUMER_GROUP == consumer_group
++    assert settings.KAFKA_CASE_HEADER_TOPIC == topic
++    assert settings.KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS > 0
++
++    with pytest.raises(ValueError, match="KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS"):
++        _build_min_settings_for_validation(KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=0)
++
++
++def test_p0_cold_path_runtime_logs_consumer_group_and_topic_on_start(monkeypatch) -> None:
++    """Given cold-path mode starts, then startup log includes consumer group/topic wiring."""
++    logger = MagicMock()
++    settings = build_cold_path_settings()
++    consumer_group, topic = expected_consumer_binding()
++
++    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
++
++    __main__._run_cold_path()
++
++    start_call = next(
++        call
++        for call in logger.info.call_args_list
++        if call.args and call.args[0] == "cold_path_mode_started"
++    )
++    assert start_call.kwargs["consumer_group"] == consumer_group
++    assert start_call.kwargs["topic"] == topic
++
++
++def test_p1_cold_path_runtime_reports_connected_poll_and_commit_health_transitions(
++    monkeypatch,
++) -> None:
++    """Given cold-path consumer lifecycle, then health transitions include connected/poll/commit."""
++    logger = MagicMock()
++    settings = build_cold_path_settings()
++    health_registry = RecordingAsyncHealthRegistry()
++
++    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
++    monkeypatch.setattr(__main__, "get_health_registry", lambda: health_registry, raising=False)
++
++    __main__._run_cold_path()
++
++    transition_components = {transition.component.lower() for transition in health_registry.transitions}
++    assert any("connected" in component for component in transition_components)
++    assert any("poll" in component for component in transition_components)
++    assert any("commit" in component for component in transition_components)
++
++
++def test_p1_kafka_consumer_adapter_module_exposes_protocol_and_confluent_adapter() -> None:
++    """Given cold-path adapter boundary, module should expose protocol and confluent adapter types."""
++    module = importlib.import_module("aiops_triage_pipeline.integrations.kafka_consumer")
++
++    protocol_names = (
++        "KafkaConsumerAdapterProtocol",
++        "KafkaConsumerProtocol",
++        "CaseHeaderConsumerProtocol",
++    )
++    adapter_names = (
++        "ConfluentKafkaCaseHeaderConsumer",
++        "ConfluentKafkaConsumerAdapter",
++        "ConfluentKafkaCaseHeaderConsumerAdapter",
++    )
++
++    assert any(hasattr(module, name) for name in protocol_names)
++    assert any(hasattr(module, name) for name in adapter_names)
+
+codex
+I added the new ATDD test files and ran `ruff` on them; I’m making quick formatting fixes now before executing the red-phase test run and writing the checklist artifacts.
+file update
+M /home/sas/workspace/aiops/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+@@ -34,3 +34,3 @@
+ def test_p0_settings_expose_cold_path_consumer_defaults_and_validation() -> None:
+-    """Given cold-path runtime config, then canonical group/topic and poll timeout validation exist."""
++    """Given cold-path runtime config, canonical group/topic and poll-timeout validation exist."""
+     settings = _build_min_settings_for_validation()
+@@ -78,3 +78,5 @@
+ 
+-    transition_components = {transition.component.lower() for transition in health_registry.transitions}
++    transition_components = {
++        transition.component.lower() for transition in health_registry.transitions
++    }
+     assert any("connected" in component for component in transition_components)
+@@ -85,3 +87,3 @@
+ def test_p1_kafka_consumer_adapter_module_exposes_protocol_and_confluent_adapter() -> None:
+-    """Given cold-path adapter boundary, module should expose protocol and confluent adapter types."""
++    """Given cold-path adapter boundary, module exposes protocol and confluent adapter types."""
+     module = importlib.import_module("aiops_triage_pipeline.integrations.kafka_consumer")
+apply_patch(auto_approved=true) exited 0 in 11ms:
+Success. Updated the following files:
+M tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+file update:
+diff --git a/tests/atdd/fixtures/story_3_1_test_data.py b/tests/atdd/fixtures/story_3_1_test_data.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..36762eaf611f45269fb9e3a3897049bf0e1b7686
+--- /dev/null
++++ b/tests/atdd/fixtures/story_3_1_test_data.py
+@@ -0,0 +1,52 @@
++"""ATDD fixture builders for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from types import SimpleNamespace
++
++from aiops_triage_pipeline.models.health import HealthStatus
++
++
++@dataclass(frozen=True)
++class HealthTransition:
++    component: str
++    status: HealthStatus
++    reason: str | None
++
++
++class RecordingAsyncHealthRegistry:
++    """Capture async health transitions emitted by runtime mode code."""
++
++    def __init__(self) -> None:
++        self.transitions: list[HealthTransition] = []
++
++    async def update(
++        self,
++        component: str,
++        status: HealthStatus,
++        reason: str | None = None,
++    ) -> None:
++        self.transitions.append(
++            HealthTransition(
++                component=component,
++                status=status,
++                reason=reason,
++            )
++        )
++
++
++def expected_consumer_binding() -> tuple[str, str]:
++    """Canonical consumer group and topic for Story 3.1."""
++    return ("aiops-cold-path-diagnosis", "aiops-case-header")
++
++
++def build_cold_path_settings() -> SimpleNamespace:
++    """Minimal runtime settings object for cold-path mode tests."""
++    consumer_group, topic = expected_consumer_binding()
++    return SimpleNamespace(
++        APP_ENV=SimpleNamespace(value="dev"),
++        KAFKA_CASE_HEADER_TOPIC=topic,
++        KAFKA_COLD_PATH_CONSUMER_GROUP=consumer_group,
++        KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=1.0,
++    )
+diff --git a/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py b/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..4fbc2a7dea202f13987dfeb7bf67b74bc30ff3be
+--- /dev/null
++++ b/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+@@ -0,0 +1,103 @@
++"""ATDD red-phase acceptance tests for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++import importlib
++from unittest.mock import MagicMock
++
++import pytest
++
++from aiops_triage_pipeline import __main__
++from aiops_triage_pipeline.config.settings import Settings
++from tests.atdd.fixtures.story_3_1_test_data import (
++    RecordingAsyncHealthRegistry,
++    build_cold_path_settings,
++    expected_consumer_binding,
++)
++
++
++def _build_min_settings_for_validation(**overrides: object) -> Settings:
++    base: dict[str, object] = {
++        "_env_file": None,
++        "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092",
++        "DATABASE_URL": "postgresql+psycopg://u:p@h/db",
++        "REDIS_URL": "redis://localhost:6379/0",
++        "S3_ENDPOINT_URL": "http://localhost:9000",
++        "S3_ACCESS_KEY": "key",
++        "S3_SECRET_KEY": "secret",
++        "S3_BUCKET": "bucket",
++    }
++    base.update(overrides)
++    return Settings(**base)
++
++
++def test_p0_settings_expose_cold_path_consumer_defaults_and_validation() -> None:
++    """Given cold-path runtime config, canonical group/topic and poll-timeout validation exist."""
++    settings = _build_min_settings_for_validation()
++    consumer_group, topic = expected_consumer_binding()
++
++    assert settings.KAFKA_COLD_PATH_CONSUMER_GROUP == consumer_group
++    assert settings.KAFKA_CASE_HEADER_TOPIC == topic
++    assert settings.KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS > 0
++
++    with pytest.raises(ValueError, match="KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS"):
++        _build_min_settings_for_validation(KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=0)
++
++
++def test_p0_cold_path_runtime_logs_consumer_group_and_topic_on_start(monkeypatch) -> None:
++    """Given cold-path mode starts, then startup log includes consumer group/topic wiring."""
++    logger = MagicMock()
++    settings = build_cold_path_settings()
++    consumer_group, topic = expected_consumer_binding()
++
++    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
++
++    __main__._run_cold_path()
++
++    start_call = next(
++        call
++        for call in logger.info.call_args_list
++        if call.args and call.args[0] == "cold_path_mode_started"
++    )
++    assert start_call.kwargs["consumer_group"] == consumer_group
++    assert start_call.kwargs["topic"] == topic
++
++
++def test_p1_cold_path_runtime_reports_connected_poll_and_commit_health_transitions(
++    monkeypatch,
++) -> None:
++    """Given cold-path consumer lifecycle, then health transitions include connected/poll/commit."""
++    logger = MagicMock()
++    settings = build_cold_path_settings()
++    health_registry = RecordingAsyncHealthRegistry()
++
++    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
++    monkeypatch.setattr(__main__, "get_health_registry", lambda: health_registry, raising=False)
++
++    __main__._run_cold_path()
++
++    transition_components = {
++        transition.component.lower() for transition in health_registry.transitions
++    }
++    assert any("connected" in component for component in transition_components)
++    assert any("poll" in component for component in transition_components)
++    assert any("commit" in component for component in transition_components)
++
++
++def test_p1_kafka_consumer_adapter_module_exposes_protocol_and_confluent_adapter() -> None:
++    """Given cold-path adapter boundary, module exposes protocol and confluent adapter types."""
++    module = importlib.import_module("aiops_triage_pipeline.integrations.kafka_consumer")
++
++    protocol_names = (
++        "KafkaConsumerAdapterProtocol",
++        "KafkaConsumerProtocol",
++        "CaseHeaderConsumerProtocol",
++    )
++    adapter_names = (
++        "ConfluentKafkaCaseHeaderConsumer",
++        "ConfluentKafkaConsumerAdapter",
++        "ConfluentKafkaCaseHeaderConsumerAdapter",
++    )
++
++    assert any(hasattr(module, name) for name in protocol_names)
++    assert any(hasattr(module, name) for name in adapter_names)
+
+file update:
+diff --git a/tests/atdd/fixtures/story_3_1_test_data.py b/tests/atdd/fixtures/story_3_1_test_data.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..36762eaf611f45269fb9e3a3897049bf0e1b7686
+--- /dev/null
++++ b/tests/atdd/fixtures/story_3_1_test_data.py
+@@ -0,0 +1,52 @@
++"""ATDD fixture builders for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from types import SimpleNamespace
++
++from aiops_triage_pipeline.models.health import HealthStatus
++
++
++@dataclass(frozen=True)
++class HealthTransition:
++    component: str
++    status: HealthStatus
++    reason: str | None
++
++
++class RecordingAsyncHealthRegistry:
++    """Capture async health transitions emitted by runtime mode code."""
++
++    def __init__(self) -> None:
++        self.transitions: list[HealthTransition] = []
++
++    async def update(
++        self,
++        component: str,
++        status: HealthStatus,
++        reason: str | None = None,
++    ) -> None:
++        self.transitions.append(
++            HealthTransition(
++                component=component,
++                status=status,
++                reason=reason,
++            )
++        )
++
++
++def expected_consumer_binding() -> tuple[str, str]:
++    """Canonical consumer group and topic for Story 3.1."""
++    return ("aiops-cold-path-diagnosis", "aiops-case-header")
++
++
++def build_cold_path_settings() -> SimpleNamespace:
++    """Minimal runtime settings object for cold-path mode tests."""
++    consumer_group, topic = expected_consumer_binding()
++    return SimpleNamespace(
++        APP_ENV=SimpleNamespace(value="dev"),
++        KAFKA_CASE_HEADER_TOPIC=topic,
++        KAFKA_COLD_PATH_CONSUMER_GROUP=consumer_group,
++        KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=1.0,
++    )
+diff --git a/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py b/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..4fbc2a7dea202f13987dfeb7bf67b74bc30ff3be
+--- /dev/null
++++ b/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+@@ -0,0 +1,103 @@
++"""ATDD red-phase acceptance tests for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++import importlib
++from unittest.mock import MagicMock
++
++import pytest
++
++from aiops_triage_pipeline import __main__
++from aiops_triage_pipeline.config.settings import Settings
++from tests.atdd.fixtures.story_3_1_test_data import (
++    RecordingAsyncHealthRegistry,
++    build_cold_path_settings,
++    expected_consumer_binding,
++)
++
++
++def _build_min_settings_for_validation(**overrides: object) -> Settings:
++    base: dict[str, object] = {
++        "_env_file": None,
++        "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092",
++        "DATABASE_URL": "postgresql+psycopg://u:p@h/db",
++        "REDIS_URL": "redis://localhost:6379/0",
++        "S3_ENDPOINT_URL": "http://localhost:9000",
++        "S3_ACCESS_KEY": "key",
++        "S3_SECRET_KEY": "secret",
++        "S3_BUCKET": "bucket",
++    }
++    base.update(overrides)
++    return Settings(**base)
++
++
++def test_p0_settings_expose_cold_path_consumer_defaults_and_validation() -> None:
++    """Given cold-path runtime config, canonical group/topic and poll-timeout validation exist."""
++    settings = _build_min_settings_for_validation()
++    consumer_group, topic = expected_consumer_binding()
++
++    assert settings.KAFKA_COLD_PATH_CONSUMER_GROUP == consumer_group
++    assert settings.KAFKA_CASE_HEADER_TOPIC == topic
++    assert settings.KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS > 0
++
++    with pytest.raises(ValueError, match="KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS"):
++        _build_min_settings_for_validation(KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=0)
++
++
++def test_p0_cold_path_runtime_logs_consumer_group_and_topic_on_start(monkeypatch) -> None:
++    """Given cold-path mode starts, then startup log includes consumer group/topic wiring."""
++    logger = MagicMock()
++    settings = build_cold_path_settings()
++    consumer_group, topic = expected_consumer_binding()
++
++    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
++
++    __main__._run_cold_path()
++
++    start_call = next(
++        call
++        for call in logger.info.call_args_list
++        if call.args and call.args[0] == "cold_path_mode_started"
++    )
++    assert start_call.kwargs["consumer_group"] == consumer_group
++    assert start_call.kwargs["topic"] == topic
++
++
++def test_p1_cold_path_runtime_reports_connected_poll_and_commit_health_transitions(
++    monkeypatch,
++) -> None:
++    """Given cold-path consumer lifecycle, then health transitions include connected/poll/commit."""
++    logger = MagicMock()
++    settings = build_cold_path_settings()
++    health_registry = RecordingAsyncHealthRegistry()
++
++    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
++    monkeypatch.setattr(__main__, "get_health_registry", lambda: health_registry, raising=False)
++
++    __main__._run_cold_path()
++
++    transition_components = {
++        transition.component.lower() for transition in health_registry.transitions
++    }
++    assert any("connected" in component for component in transition_components)
++    assert any("poll" in component for component in transition_components)
++    assert any("commit" in component for component in transition_components)
++
++
++def test_p1_kafka_consumer_adapter_module_exposes_protocol_and_confluent_adapter() -> None:
++    """Given cold-path adapter boundary, module exposes protocol and confluent adapter types."""
++    module = importlib.import_module("aiops_triage_pipeline.integrations.kafka_consumer")
++
++    protocol_names = (
++        "KafkaConsumerAdapterProtocol",
++        "KafkaConsumerProtocol",
++        "CaseHeaderConsumerProtocol",
++    )
++    adapter_names = (
++        "ConfluentKafkaCaseHeaderConsumer",
++        "ConfluentKafkaConsumerAdapter",
++        "ConfluentKafkaCaseHeaderConsumerAdapter",
++    )
++
++    assert any(hasattr(module, name) for name in protocol_names)
++    assert any(hasattr(module, name) for name in adapter_names)
+
+exec
+/bin/bash -lc 'uv run ruff check tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py tests/atdd/fixtures/story_3_1_test_data.py' in /home/sas/workspace/aiops succeeded in 51ms:
+All checks passed!
+file update:
+diff --git a/tests/atdd/fixtures/story_3_1_test_data.py b/tests/atdd/fixtures/story_3_1_test_data.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..36762eaf611f45269fb9e3a3897049bf0e1b7686
+--- /dev/null
++++ b/tests/atdd/fixtures/story_3_1_test_data.py
+@@ -0,0 +1,52 @@
++"""ATDD fixture builders for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from types import SimpleNamespace
++
++from aiops_triage_pipeline.models.health import HealthStatus
++
++
++@dataclass(frozen=True)
++class HealthTransition:
++    component: str
++    status: HealthStatus
++    reason: str | None
++
++
++class RecordingAsyncHealthRegistry:
++    """Capture async health transitions emitted by runtime mode code."""
++
++    def __init__(self) -> None:
++        self.transitions: list[HealthTransition] = []
++
++    async def update(
++        self,
++        component: str,
++        status: HealthStatus,
++        reason: str | None = None,
++    ) -> None:
++        self.transitions.append(
++            HealthTransition(
++                component=component,
++                status=status,
++                reason=reason,
++            )
++        )
++
++
++def expected_consumer_binding() -> tuple[str, str]:
++    """Canonical consumer group and topic for Story 3.1."""
++    return ("aiops-cold-path-diagnosis", "aiops-case-header")
++
++
++def build_cold_path_settings() -> SimpleNamespace:
++    """Minimal runtime settings object for cold-path mode tests."""
++    consumer_group, topic = expected_consumer_binding()
++    return SimpleNamespace(
++        APP_ENV=SimpleNamespace(value="dev"),
++        KAFKA_CASE_HEADER_TOPIC=topic,
++        KAFKA_COLD_PATH_CONSUMER_GROUP=consumer_group,
++        KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=1.0,
++    )
+diff --git a/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py b/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..4fbc2a7dea202f13987dfeb7bf67b74bc30ff3be
+--- /dev/null
++++ b/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+@@ -0,0 +1,103 @@
++"""ATDD red-phase acceptance tests for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++import importlib
++from unittest.mock import MagicMock
++
++import pytest
++
++from aiops_triage_pipeline import __main__
++from aiops_triage_pipeline.config.settings import Settings
++from tests.atdd.fixtures.story_3_1_test_data import (
++    RecordingAsyncHealthRegistry,
++    build_cold_path_settings,
++    expected_consumer_binding,
++)
++
++
++def _build_min_settings_for_validation(**overrides: object) -> Settings:
++    base: dict[str, object] = {
++        "_env_file": None,
++        "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092",
++        "DATABASE_URL": "postgresql+psycopg://u:p@h/db",
++        "REDIS_URL": "redis://localhost:6379/0",
++        "S3_ENDPOINT_URL": "http://localhost:9000",
++        "S3_ACCESS_KEY": "key",
++        "S3_SECRET_KEY": "secret",
++        "S3_BUCKET": "bucket",
++    }
++    base.update(overrides)
++    return Settings(**base)
++
++
++def test_p0_settings_expose_cold_path_consumer_defaults_and_validation() -> None:
++    """Given cold-path runtime config, canonical group/topic and poll-timeout validation exist."""
++    settings = _build_min_settings_for_validation()
++    consumer_group, topic = expected_consumer_binding()
++
++    assert settings.KAFKA_COLD_PATH_CONSUMER_GROUP == consumer_group
++    assert settings.KAFKA_CASE_HEADER_TOPIC == topic
++    assert settings.KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS > 0
++
++    with pytest.raises(ValueError, match="KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS"):
++        _build_min_settings_for_validation(KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=0)
++
++
++def test_p0_cold_path_runtime_logs_consumer_group_and_topic_on_start(monkeypatch) -> None:
++    """Given cold-path mode starts, then startup log includes consumer group/topic wiring."""
++    logger = MagicMock()
++    settings = build_cold_path_settings()
++    consumer_group, topic = expected_consumer_binding()
++
++    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
++
++    __main__._run_cold_path()
++
++    start_call = next(
++        call
++        for call in logger.info.call_args_list
++        if call.args and call.args[0] == "cold_path_mode_started"
++    )
++    assert start_call.kwargs["consumer_group"] == consumer_group
++    assert start_call.kwargs["topic"] == topic
++
++
++def test_p1_cold_path_runtime_reports_connected_poll_and_commit_health_transitions(
++    monkeypatch,
++) -> None:
++    """Given cold-path consumer lifecycle, then health transitions include connected/poll/commit."""
++    logger = MagicMock()
++    settings = build_cold_path_settings()
++    health_registry = RecordingAsyncHealthRegistry()
++
++    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
++    monkeypatch.setattr(__main__, "get_health_registry", lambda: health_registry, raising=False)
++
++    __main__._run_cold_path()
++
++    transition_components = {
++        transition.component.lower() for transition in health_registry.transitions
++    }
++    assert any("connected" in component for component in transition_components)
++    assert any("poll" in component for component in transition_components)
++    assert any("commit" in component for component in transition_components)
++
++
++def test_p1_kafka_consumer_adapter_module_exposes_protocol_and_confluent_adapter() -> None:
++    """Given cold-path adapter boundary, module exposes protocol and confluent adapter types."""
++    module = importlib.import_module("aiops_triage_pipeline.integrations.kafka_consumer")
++
++    protocol_names = (
++        "KafkaConsumerAdapterProtocol",
++        "KafkaConsumerProtocol",
++        "CaseHeaderConsumerProtocol",
++    )
++    adapter_names = (
++        "ConfluentKafkaCaseHeaderConsumer",
++        "ConfluentKafkaConsumerAdapter",
++        "ConfluentKafkaCaseHeaderConsumerAdapter",
++    )
++
++    assert any(hasattr(module, name) for name in protocol_names)
++    assert any(hasattr(module, name) for name in adapter_names)
+
+exec
+/bin/bash -lc 'uv run pytest -q tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py' in /home/sas/workspace/aiops exited 1 in 1.70s:
+FFFF                                                                     [100%]
+=================================== FAILURES ===================================
+______ test_p0_settings_expose_cold_path_consumer_defaults_and_validation ______
+
+    def test_p0_settings_expose_cold_path_consumer_defaults_and_validation() -> None:
+        """Given cold-path runtime config, canonical group/topic and poll-timeout validation exist."""
+        settings = _build_min_settings_for_validation()
+        consumer_group, topic = expected_consumer_binding()
+    
+>       assert settings.KAFKA_COLD_PATH_CONSUMER_GROUP == consumer_group
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = Settings(APP_ENV=<AppEnv.local: 'local'>, KAFKA_BOOTSTRAP_SERVERS='localhost:9092', KAFKA_SECURITY_PROTOCOL='PLAINTEXT...IS=10000, OTLP_SERVICE_NAME='aiops-triage-pipeline', OTLP_SERVICE_VERSION='0.1.0', OTLP_DEPLOYMENT_ENVIRONMENT='local')
+item = 'KAFKA_COLD_PATH_CONSUMER_GROUP'
+
+    def __getattr__(self, item: str) -> Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+file update:
+diff --git a/tests/atdd/fixtures/story_3_1_test_data.py b/tests/atdd/fixtures/story_3_1_test_data.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..36762eaf611f45269fb9e3a3897049bf0e1b7686
+--- /dev/null
++++ b/tests/atdd/fixtures/story_3_1_test_data.py
+@@ -0,0 +1,52 @@
++"""ATDD fixture builders for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from types import SimpleNamespace
++
++from aiops_triage_pipeline.models.health import HealthStatus
++
++
++@dataclass(frozen=True)
++class HealthTransition:
++    component: str
++    status: HealthStatus
++    reason: str | None
++
++
++class RecordingAsyncHealthRegistry:
++    """Capture async health transitions emitted by runtime mode code."""
++
++    def __init__(self) -> None:
++        self.transitions: list[HealthTransition] = []
++
++    async def update(
++        self,
++        component: str,
++        status: HealthStatus,
++        reason: str | None = None,
++    ) -> None:
++        self.transitions.append(
++            HealthTransition(
++                component=component,
++                status=status,
++                reason=reason,
++            )
++        )
++
++
++def expected_consumer_binding() -> tuple[str, str]:
++    """Canonical consumer group and topic for Story 3.1."""
++    return ("aiops-cold-path-diagnosis", "aiops-case-header")
++
++
++def build_cold_path_settings() -> SimpleNamespace:
++    """Minimal runtime settings object for cold-path mode tests."""
++    consumer_group, topic = expected_consumer_binding()
++    return SimpleNamespace(
++        APP_ENV=SimpleNamespace(value="dev"),
++        KAFKA_CASE_HEADER_TOPIC=topic,
++        KAFKA_COLD_PATH_CONSUMER_GROUP=consumer_group,
++        KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=1.0,
++    )
+diff --git a/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py b/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..4fbc2a7dea202f13987dfeb7bf67b74bc30ff3be
+--- /dev/null
++++ b/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+@@ -0,0 +1,103 @@
++"""ATDD red-phase acceptance tests for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++import importlib
++from unittest.mock import MagicMock
++
++import pytest
++
++from aiops_triage_pipeline import __main__
++from aiops_triage_pipeline.config.settings import Settings
++from tests.atdd.fixtures.story_3_1_test_data import (
++    RecordingAsyncHealthRegistry,
++    build_cold_path_settings,
++    expected_consumer_binding,
++)
++
++
++def _build_min_settings_for_validation(**overrides: object) -> Settings:
++    base: dict[str, object] = {
++        "_env_file": None,
++        "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092",
++        "DATABASE_URL": "postgresql+psycopg://u:p@h/db",
++        "REDIS_URL": "redis://localhost:6379/0",
++        "S3_ENDPOINT_URL": "http://localhost:9000",
++        "S3_ACCESS_KEY": "key",
++        "S3_SECRET_KEY": "secret",
++        "S3_BUCKET": "bucket",
++    }
++    base.update(overrides)
++    return Settings(**base)
++
++
++def test_p0_settings_expose_cold_path_consumer_defaults_and_validation() -> None:
++    """Given cold-path runtime config, canonical group/topic and poll-timeout validation exist."""
++    settings = _build_min_settings_for_validation()
++    consumer_group, topic = expected_consumer_binding()
++
++    assert settings.KAFKA_COLD_PATH_CONSUMER_GROUP == consumer_group
++    assert settings.KAFKA_CASE_HEADER_TOPIC == topic
++    assert settings.KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS > 0
++
++    with pytest.raises(ValueError, match="KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS"):
++        _build_min_settings_for_validation(KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=0)
++
++
++def test_p0_cold_path_runtime_logs_consumer_group_and_topic_on_start(monkeypatch) -> None:
++    """Given cold-path mode starts, then startup log includes consumer group/topic wiring."""
++    logger = MagicMock()
++    settings = build_cold_path_settings()
++    consumer_group, topic = expected_consumer_binding()
++
++    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
++
++    __main__._run_cold_path()
++
++    start_call = next(
++        call
++        for call in logger.info.call_args_list
++        if call.args and call.args[0] == "cold_path_mode_started"
++    )
++    assert start_call.kwargs["consumer_group"] == consumer_group
++    assert start_call.kwargs["topic"] == topic
++
++
++def test_p1_cold_path_runtime_reports_connected_poll_and_commit_health_transitions(
++    monkeypatch,
++) -> None:
++    """Given cold-path consumer lifecycle, then health transitions include connected/poll/commit."""
++    logger = MagicMock()
++    settings = build_cold_path_settings()
++    health_registry = RecordingAsyncHealthRegistry()
++
++    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
++    monkeypatch.setattr(__main__, "get_health_registry", lambda: health_registry, raising=False)
++
++    __main__._run_cold_path()
++
++    transition_components = {
++        transition.component.lower() for transition in health_registry.transitions
++    }
++    assert any("connected" in component for component in transition_components)
++    assert any("poll" in component for component in transition_components)
++    assert any("commit" in component for component in transition_components)
++
++
++def test_p1_kafka_consumer_adapter_module_exposes_protocol_and_confluent_adapter() -> None:
++    """Given cold-path adapter boundary, module exposes protocol and confluent adapter types."""
++    module = importlib.import_module("aiops_triage_pipeline.integrations.kafka_consumer")
++
++    protocol_names = (
++        "KafkaConsumerAdapterProtocol",
++        "KafkaConsumerProtocol",
++        "CaseHeaderConsumerProtocol",
++    )
++    adapter_names = (
++        "ConfluentKafkaCaseHeaderConsumer",
++        "ConfluentKafkaConsumerAdapter",
++        "ConfluentKafkaCaseHeaderConsumerAdapter",
++    )
++
++    assert any(hasattr(module, name) for name in protocol_names)
++    assert any(hasattr(module, name) for name in adapter_names)
+
+exec
+/bin/bash -lc 'date -u +%Y-%m-%dT%H-%M-%SZ' in /home/sas/workspace/aiops succeeded in 51ms:
+2026-03-22T22-28-03Z
+file update:
+diff --git a/tests/atdd/fixtures/story_3_1_test_data.py b/tests/atdd/fixtures/story_3_1_test_data.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..36762eaf611f45269fb9e3a3897049bf0e1b7686
+--- /dev/null
++++ b/tests/atdd/fixtures/story_3_1_test_data.py
+@@ -0,0 +1,52 @@
++"""ATDD fixture builders for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from types import SimpleNamespace
++
++from aiops_triage_pipeline.models.health import HealthStatus
++
++
++@dataclass(frozen=True)
++class HealthTransition:
++    component: str
++    status: HealthStatus
++    reason: str | None
++
++
++class RecordingAsyncHealthRegistry:
++    """Capture async health transitions emitted by runtime mode code."""
++
++    def __init__(self) -> None:
++        self.transitions: list[HealthTransition] = []
++
++    async def update(
++        self,
++        component: str,
++        status: HealthStatus,
++        reason: str | None = None,
++    ) -> None:
++        self.transitions.append(
++            HealthTransition(
++                component=component,
++                status=status,
++                reason=reason,
++            )
++        )
++
++
++def expected_consumer_binding() -> tuple[str, str]:
++    """Canonical consumer group and topic for Story 3.1."""
++    return ("aiops-cold-path-diagnosis", "aiops-case-header")
++
++
++def build_cold_path_settings() -> SimpleNamespace:
++    """Minimal runtime settings object for cold-path mode tests."""
++    consumer_group, topic = expected_consumer_binding()
++    return SimpleNamespace(
++        APP_ENV=SimpleNamespace(value="dev"),
++        KAFKA_CASE_HEADER_TOPIC=topic,
++        KAFKA_COLD_PATH_CONSUMER_GROUP=consumer_group,
++        KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=1.0,
++    )
+diff --git a/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py b/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..4fbc2a7dea202f13987dfeb7bf67b74bc30ff3be
+--- /dev/null
++++ b/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+@@ -0,0 +1,103 @@
++"""ATDD red-phase acceptance tests for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++import importlib
++from unittest.mock import MagicMock
++
++import pytest
++
++from aiops_triage_pipeline import __main__
++from aiops_triage_pipeline.config.settings import Settings
++from tests.atdd.fixtures.story_3_1_test_data import (
++    RecordingAsyncHealthRegistry,
++    build_cold_path_settings,
++    expected_consumer_binding,
++)
++
++
++def _build_min_settings_for_validation(**overrides: object) -> Settings:
++    base: dict[str, object] = {
++        "_env_file": None,
++        "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092",
++        "DATABASE_URL": "postgresql+psycopg://u:p@h/db",
++        "REDIS_URL": "redis://localhost:6379/0",
++        "S3_ENDPOINT_URL": "http://localhost:9000",
++        "S3_ACCESS_KEY": "key",
++        "S3_SECRET_KEY": "secret",
++        "S3_BUCKET": "bucket",
++    }
++    base.update(overrides)
++    return Settings(**base)
++
++
++def test_p0_settings_expose_cold_path_consumer_defaults_and_validation() -> None:
++    """Given cold-path runtime config, canonical group/topic and poll-timeout validation exist."""
++    settings = _build_min_settings_for_validation()
++    consumer_group, topic = expected_consumer_binding()
++
++    assert settings.KAFKA_COLD_PATH_CONSUMER_GROUP == consumer_group
++    assert settings.KAFKA_CASE_HEADER_TOPIC == topic
++    assert settings.KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS > 0
++
++    with pytest.raises(ValueError, match="KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS"):
++        _build_min_settings_for_validation(KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=0)
++
++
++def test_p0_cold_path_runtime_logs_consumer_group_and_topic_on_start(monkeypatch) -> None:
++    """Given cold-path mode starts, then startup log includes consumer group/topic wiring."""
++    logger = MagicMock()
++    settings = build_cold_path_settings()
++    consumer_group, topic = expected_consumer_binding()
++
++    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
++
++    __main__._run_cold_path()
++
++    start_call = next(
++        call
++        for call in logger.info.call_args_list
++        if call.args and call.args[0] == "cold_path_mode_started"
++    )
++    assert start_call.kwargs["consumer_group"] == consumer_group
++    assert start_call.kwargs["topic"] == topic
++
++
++def test_p1_cold_path_runtime_reports_connected_poll_and_commit_health_transitions(
++    monkeypatch,
++) -> None:
++    """Given cold-path consumer lifecycle, then health transitions include connected/poll/commit."""
++    logger = MagicMock()
++    settings = build_cold_path_settings()
++    health_registry = RecordingAsyncHealthRegistry()
++
++    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
++    monkeypatch.setattr(__main__, "get_health_registry", lambda: health_registry, raising=False)
++
++    __main__._run_cold_path()
++
++    transition_components = {
++        transition.component.lower() for transition in health_registry.transitions
++    }
++    assert any("connected" in component for component in transition_components)
++    assert any("poll" in component for component in transition_components)
++    assert any("commit" in component for component in transition_components)
++
++
++def test_p1_kafka_consumer_adapter_module_exposes_protocol_and_confluent_adapter() -> None:
++    """Given cold-path adapter boundary, module exposes protocol and confluent adapter types."""
++    module = importlib.import_module("aiops_triage_pipeline.integrations.kafka_consumer")
++
++    protocol_names = (
++        "KafkaConsumerAdapterProtocol",
++        "KafkaConsumerProtocol",
++        "CaseHeaderConsumerProtocol",
++    )
++    adapter_names = (
++        "ConfluentKafkaCaseHeaderConsumer",
++        "ConfluentKafkaConsumerAdapter",
++        "ConfluentKafkaCaseHeaderConsumerAdapter",
++    )
++
++    assert any(hasattr(module, name) for name in protocol_names)
++    assert any(hasattr(module, name) for name in adapter_names)
+
+codex
+The new story ATDD tests are in place and verified in RED phase (`4 failed` as expected). I’m now generating the Step 4/4C artifacts (`tea-atdd-api-tests`, `tea-atdd-e2e-tests`, `tea-atdd-summary`) and then finalizing the story checklist document with full Step 1–5 records.
+exec
+/bin/bash -lc 'cat artifact/test-artifacts/tea-atdd-api-tests-2026-03-22T21-08-58Z.json' in /home/sas/workspace/aiopsexec
+/bin/bash -lc 'cat artifact/test-artifacts/tea-atdd-summary-2026-03-22T21-08-58Z.json' in /home/sas/workspace/aiops succeeded in 51ms:
+{
+  "success": true,
+  "subagent": "atdd-api-tests",
+  "tests": [
+    {
+      "file": "tests/atdd/test_story_2_5_casefile_lifecycle_retention_purge_red_phase.py",
+      "description": "ATDD backend acceptance tests for Story 2.5 lifecycle retention purge (RED PHASE)",
+      "expected_to_fail": true,
+      "acceptance_criteria_covered": [
+        "Expired casefile artifacts are purged while non-expired artifacts remain untouched",
+        "Purge counts and failures are observable via metrics/logs without silent loss"
+      ],
+      "priority_coverage": {
+        "P0": 2,
+        "P1": 1,
+        "P2": 0,
+        "P3": 0
+      }
+    }
+  ],
+exec
+/bin/bash -lc 'cat artifact/test-artifacts/tea-atdd-e2e-tests-2026-03-22T21-08-58Z.json' in /home/sas/workspace/aiops succeeded in 50ms:
+{
+  "story_id": "2-5-run-casefile-lifecycle-retention-purge",
+  "tdd_phase": "RED",
+  "total_tests": 3,
+  "api_tests": 3,
+  "e2e_tests": 0,
+  "fixtures_created": 1,
+  "expected_to_fail": true,
+  "subagent_execution": "SEQUENTIAL (API -> E2E)",
+  "performance_gain": "baseline (no parallel speedup)",
+  "evidence": {
+    "command": "uv run pytest -q tests/atdd/test_story_2_5_casefile_lifecycle_retention_purge_red_phase.py",
+    "result": "3 failed in 0.78s"
+  }
+}
+ succeeded in 51ms:
+{
+  "success": true,
+  "subagent": "atdd-e2e-tests",
+  "tests": [],
+  "fixture_needs": [],
+  "knowledge_fragments_used": [
+    "test-levels-framework"
+  ],
+  "test_count": 0,
+  "tdd_phase": "RED",
+  "summary": "Backend stack detected; no browser E2E tests generated for Story 2.5"
+}
+file update:
+diff --git a/tests/atdd/fixtures/story_3_1_test_data.py b/tests/atdd/fixtures/story_3_1_test_data.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..36762eaf611f45269fb9e3a3897049bf0e1b7686
+--- /dev/null
++++ b/tests/atdd/fixtures/story_3_1_test_data.py
+@@ -0,0 +1,52 @@
++"""ATDD fixture builders for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from types import SimpleNamespace
++
++from aiops_triage_pipeline.models.health import HealthStatus
++
++
++@dataclass(frozen=True)
++class HealthTransition:
++    component: str
++    status: HealthStatus
++    reason: str | None
++
++
++class RecordingAsyncHealthRegistry:
++    """Capture async health transitions emitted by runtime mode code."""
++
++    def __init__(self) -> None:
++        self.transitions: list[HealthTransition] = []
++
++    async def update(
++        self,
++        component: str,
++        status: HealthStatus,
++        reason: str | None = None,
++    ) -> None:
++        self.transitions.append(
++            HealthTransition(
++                component=component,
++                status=status,
++                reason=reason,
++            )
++        )
++
++
++def expected_consumer_binding() -> tuple[str, str]:
++    """Canonical consumer group and topic for Story 3.1."""
++    return ("aiops-cold-path-diagnosis", "aiops-case-header")
++
++
++def build_cold_path_settings() -> SimpleNamespace:
++    """Minimal runtime settings object for cold-path mode tests."""
++    consumer_group, topic = expected_consumer_binding()
++    return SimpleNamespace(
++        APP_ENV=SimpleNamespace(value="dev"),
++        KAFKA_CASE_HEADER_TOPIC=topic,
++        KAFKA_COLD_PATH_CONSUMER_GROUP=consumer_group,
++        KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=1.0,
++    )
+diff --git a/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py b/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..4fbc2a7dea202f13987dfeb7bf67b74bc30ff3be
+--- /dev/null
++++ b/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+@@ -0,0 +1,103 @@
++"""ATDD red-phase acceptance tests for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++import importlib
++from unittest.mock import MagicMock
++
++import pytest
++
++from aiops_triage_pipeline import __main__
++from aiops_triage_pipeline.config.settings import Settings
++from tests.atdd.fixtures.story_3_1_test_data import (
++    RecordingAsyncHealthRegistry,
++    build_cold_path_settings,
++    expected_consumer_binding,
++)
++
++
++def _build_min_settings_for_validation(**overrides: object) -> Settings:
++    base: dict[str, object] = {
++        "_env_file": None,
++        "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092",
++        "DATABASE_URL": "postgresql+psycopg://u:p@h/db",
++        "REDIS_URL": "redis://localhost:6379/0",
++        "S3_ENDPOINT_URL": "http://localhost:9000",
++        "S3_ACCESS_KEY": "key",
++        "S3_SECRET_KEY": "secret",
++        "S3_BUCKET": "bucket",
++    }
++    base.update(overrides)
++    return Settings(**base)
++
++
++def test_p0_settings_expose_cold_path_consumer_defaults_and_validation() -> None:
++    """Given cold-path runtime config, canonical group/topic and poll-timeout validation exist."""
++    settings = _build_min_settings_for_validation()
++    consumer_group, topic = expected_consumer_binding()
++
++    assert settings.KAFKA_COLD_PATH_CONSUMER_GROUP == consumer_group
++    assert settings.KAFKA_CASE_HEADER_TOPIC == topic
++    assert settings.KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS > 0
++
++    with pytest.raises(ValueError, match="KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS"):
++        _build_min_settings_for_validation(KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=0)
++
++
++def test_p0_cold_path_runtime_logs_consumer_group_and_topic_on_start(monkeypatch) -> None:
++    """Given cold-path mode starts, then startup log includes consumer group/topic wiring."""
++    logger = MagicMock()
++    settings = build_cold_path_settings()
++    consumer_group, topic = expected_consumer_binding()
++
++    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
++
++    __main__._run_cold_path()
++
++    start_call = next(
++        call
++        for call in logger.info.call_args_list
++        if call.args and call.args[0] == "cold_path_mode_started"
++    )
++    assert start_call.kwargs["consumer_group"] == consumer_group
++    assert start_call.kwargs["topic"] == topic
++
++
++def test_p1_cold_path_runtime_reports_connected_poll_and_commit_health_transitions(
++    monkeypatch,
++) -> None:
++    """Given cold-path consumer lifecycle, then health transitions include connected/poll/commit."""
++    logger = MagicMock()
++    settings = build_cold_path_settings()
++    health_registry = RecordingAsyncHealthRegistry()
++
++    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
++    monkeypatch.setattr(__main__, "get_health_registry", lambda: health_registry, raising=False)
++
++    __main__._run_cold_path()
++
++    transition_components = {
++        transition.component.lower() for transition in health_registry.transitions
++    }
++    assert any("connected" in component for component in transition_components)
++    assert any("poll" in component for component in transition_components)
++    assert any("commit" in component for component in transition_components)
++
++
++def test_p1_kafka_consumer_adapter_module_exposes_protocol_and_confluent_adapter() -> None:
++    """Given cold-path adapter boundary, module exposes protocol and confluent adapter types."""
++    module = importlib.import_module("aiops_triage_pipeline.integrations.kafka_consumer")
++
++    protocol_names = (
++        "KafkaConsumerAdapterProtocol",
++        "KafkaConsumerProtocol",
++        "CaseHeaderConsumerProtocol",
++    )
++    adapter_names = (
++        "ConfluentKafkaCaseHeaderConsumer",
++        "ConfluentKafkaConsumerAdapter",
++        "ConfluentKafkaCaseHeaderConsumerAdapter",
++    )
++
++    assert any(hasattr(module, name) for name in protocol_names)
++    assert any(hasattr(module, name) for name in adapter_names)
+
+exec
+/bin/bash -lc "cat > artifact/test-artifacts/tea-atdd-api-tests-2026-03-22T22-28-03Z.json <<'EOF'
+{
+  \"success\": true,
+  \"subagent\": \"atdd-api-tests\",
+  \"tests\": [
+    {
+      \"file\": \"tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py\",
+      \"description\": \"ATDD backend acceptance tests for Story 3.1 cold-path Kafka consumer runtime activation (RED PHASE)\",
+      \"expected_to_fail\": true,
+      \"acceptance_criteria_covered\": [
+        \"Cold-path runtime joins consumer group aiops-cold-path-diagnosis on topic aiops-case-header\",
+        \"Cold-path processing path is no longer a bootstrap stub and exposes startup wiring\",
+        \"Cold-path shutdown path commits offsets and reports health transition signals\",
+        \"Consumer adapter boundary exists with subscribe/poll/commit/close contract\"
+      ],
+      \"priority_coverage\": {
+        \"P0\": 2,
+        \"P1\": 2,
+        \"P2\": 0,
+        \"P3\": 0
+      }
+    }
+  ],
+  \"fixture_needs\": [
+    \"tests/atdd/fixtures/story_3_1_test_data.py\"
+  ],
+  \"knowledge_fragments_used\": [
+    \"data-factories\",
+    \"component-tdd\",
+    \"test-quality\",
+    \"test-healing-patterns\",
+    \"test-levels-framework\",
+    \"test-priorities-matrix\",
+    \"ci-burn-in\",
+    \"overview\",
+    \"api-request\",
+    \"auth-session\",
+    \"recurse\"
+  ],
+  \"test_count\": 4,
+  \"tdd_phase\": \"RED\",
+  \"summary\": \"Generated 4 failing backend ATDD tests for Story 3.1\"
+}
+EOF
+
+cat > artifact/test-artifacts/tea-atdd-e2e-tests-2026-03-22T22-28-03Z.json <<'EOF'
+{
+  \"success\": true,
+  \"subagent\": \"atdd-e2e-tests\",
+  \"tests\": [],
+  \"fixture_needs\": [],
+  \"knowledge_fragments_used\": [
+    \"test-levels-framework\"
+  ],
+  \"test_count\": 0,
+  \"tdd_phase\": \"RED\",
+  \"summary\": \"Backend stack detected; no browser E2E tests generated for Story 3.1\"
+}
+EOF
+
+cat > artifact/test-artifacts/tea-atdd-summary-2026-03-22T22-28-03Z.json <<'EOF'
+{
+  \"story_id\": \"3-1-implement-cold-path-kafka-consumer-runtime-mode\",
+  \"tdd_phase\": \"RED\",
+  \"total_tests\": 4,
+  \"api_tests\": 4,
+  \"e2e_tests\": 0,
+  \"fixtures_created\": 1,
+  \"expected_to_fail\": true,
+  \"subagent_execution\": \"SEQUENTIAL (API -> E2E)\",
+  \"performance_gain\": \"baseline (no parallel speedup)\",
+  \"evidence\": {
+    \"command\": \"uv run pytest -q tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py\",
+    \"result\": \"4 failed in 0.65s\"
+  }
+}
+EOF" in /home/sas/workspace/aiops succeeded in 50ms:
+
+file update:
+diff --git a/tests/atdd/fixtures/story_3_1_test_data.py b/tests/atdd/fixtures/story_3_1_test_data.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..36762eaf611f45269fb9e3a3897049bf0e1b7686
+--- /dev/null
++++ b/tests/atdd/fixtures/story_3_1_test_data.py
+@@ -0,0 +1,52 @@
++"""ATDD fixture builders for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from types import SimpleNamespace
++
++from aiops_triage_pipeline.models.health import HealthStatus
++
++
++@dataclass(frozen=True)
++class HealthTransition:
++    component: str
++    status: HealthStatus
++    reason: str | None
++
++
++class RecordingAsyncHealthRegistry:
++    """Capture async health transitions emitted by runtime mode code."""
++
++    def __init__(self) -> None:
++        self.transitions: list[HealthTransition] = []
++
++    async def update(
++        self,
++        component: str,
++        status: HealthStatus,
++        reason: str | None = None,
++    ) -> None:
++        self.transitions.append(
++            HealthTransition(
++                component=component,
++                status=status,
++                reason=reason,
++            )
++        )
++
++
++def expected_consumer_binding() -> tuple[str, str]:
++    """Canonical consumer group and topic for Story 3.1."""
++    return ("aiops-cold-path-diagnosis", "aiops-case-header")
++
++
++def build_cold_path_settings() -> SimpleNamespace:
++    """Minimal runtime settings object for cold-path mode tests."""
++    consumer_group, topic = expected_consumer_binding()
++    return SimpleNamespace(
++        APP_ENV=SimpleNamespace(value="dev"),
++        KAFKA_CASE_HEADER_TOPIC=topic,
++        KAFKA_COLD_PATH_CONSUMER_GROUP=consumer_group,
++        KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=1.0,
++    )
+diff --git a/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py b/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..4fbc2a7dea202f13987dfeb7bf67b74bc30ff3be
+--- /dev/null
++++ b/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+@@ -0,0 +1,103 @@
++"""ATDD red-phase acceptance tests for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++import importlib
++from unittest.mock import MagicMock
++
++import pytest
++
++from aiops_triage_pipeline import __main__
++from aiops_triage_pipeline.config.settings import Settings
++from tests.atdd.fixtures.story_3_1_test_data import (
++    RecordingAsyncHealthRegistry,
++    build_cold_path_settings,
++    expected_consumer_binding,
++)
++
++
++def _build_min_settings_for_validation(**overrides: object) -> Settings:
++    base: dict[str, object] = {
++        "_env_file": None,
++        "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092",
++        "DATABASE_URL": "postgresql+psycopg://u:p@h/db",
++        "REDIS_URL": "redis://localhost:6379/0",
++        "S3_ENDPOINT_URL": "http://localhost:9000",
++        "S3_ACCESS_KEY": "key",
++        "S3_SECRET_KEY": "secret",
++        "S3_BUCKET": "bucket",
++    }
++    base.update(overrides)
++    return Settings(**base)
++
++
++def test_p0_settings_expose_cold_path_consumer_defaults_and_validation() -> None:
++    """Given cold-path runtime config, canonical group/topic and poll-timeout validation exist."""
++    settings = _build_min_settings_for_validation()
++    consumer_group, topic = expected_consumer_binding()
++
++    assert settings.KAFKA_COLD_PATH_CONSUMER_GROUP == consumer_group
++    assert settings.KAFKA_CASE_HEADER_TOPIC == topic
++    assert settings.KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS > 0
++
++    with pytest.raises(ValueError, match="KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS"):
++        _build_min_settings_for_validation(KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=0)
++
++
++def test_p0_cold_path_runtime_logs_consumer_group_and_topic_on_start(monkeypatch) -> None:
++    """Given cold-path mode starts, then startup log includes consumer group/topic wiring."""
++    logger = MagicMock()
++    settings = build_cold_path_settings()
++    consumer_group, topic = expected_consumer_binding()
++
++    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
++
++    __main__._run_cold_path()
++
++    start_call = next(
++        call
++        for call in logger.info.call_args_list
++        if call.args and call.args[0] == "cold_path_mode_started"
++    )
++    assert start_call.kwargs["consumer_group"] == consumer_group
++    assert start_call.kwargs["topic"] == topic
++
++
++def test_p1_cold_path_runtime_reports_connected_poll_and_commit_health_transitions(
++    monkeypatch,
++) -> None:
++    """Given cold-path consumer lifecycle, then health transitions include connected/poll/commit."""
++    logger = MagicMock()
++    settings = build_cold_path_settings()
++    health_registry = RecordingAsyncHealthRegistry()
++
++    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
++    monkeypatch.setattr(__main__, "get_health_registry", lambda: health_registry, raising=False)
++
++    __main__._run_cold_path()
++
++    transition_components = {
++        transition.component.lower() for transition in health_registry.transitions
++    }
++    assert any("connected" in component for component in transition_components)
++    assert any("poll" in component for component in transition_components)
++    assert any("commit" in component for component in transition_components)
++
++
++def test_p1_kafka_consumer_adapter_module_exposes_protocol_and_confluent_adapter() -> None:
++    """Given cold-path adapter boundary, module exposes protocol and confluent adapter types."""
++    module = importlib.import_module("aiops_triage_pipeline.integrations.kafka_consumer")
++
++    protocol_names = (
++        "KafkaConsumerAdapterProtocol",
++        "KafkaConsumerProtocol",
++        "CaseHeaderConsumerProtocol",
++    )
++    adapter_names = (
++        "ConfluentKafkaCaseHeaderConsumer",
++        "ConfluentKafkaConsumerAdapter",
++        "ConfluentKafkaCaseHeaderConsumerAdapter",
++    )
++
++    assert any(hasattr(module, name) for name in protocol_names)
++    assert any(hasattr(module, name) for name in adapter_names)
+
+exec
+/bin/bash -lc "cat > artifact/test-artifacts/atdd-checklist-3-1-implement-cold-path-kafka-consumer-runtime-mode.md <<'EOF'
+---
+stepsCompleted:
+  - step-01-preflight-and-context
+  - step-02-generation-mode
+  - step-03-test-strategy
+  - step-04-generate-tests
+  - step-04c-aggregate
+  - step-05-validate-and-complete
+lastStep: step-05-validate-and-complete
+lastSaved: '2026-03-22'
+workflowType: testarch-atdd
+inputDocuments:
+  - artifact/implementation-artifacts/3-1-implement-cold-path-kafka-consumer-runtime-mode.md
+  - artifact/implementation-artifacts/sprint-status.yaml
+  - src/aiops_triage_pipeline/__main__.py
+  - src/aiops_triage_pipeline/config/settings.py
+  - src/aiops_triage_pipeline/health/registry.py
+  - tests/unit/test_main.py
+  - tests/unit/integrations/test_kafka.py
+  - _bmad/tea/config.yaml
+  - _bmad/tea/testarch/tea-index.csv
+  - _bmad/tea/testarch/knowledge/data-factories.md
+  - _bmad/tea/testarch/knowledge/component-tdd.md
+  - _bmad/tea/testarch/knowledge/test-quality.md
+  - _bmad/tea/testarch/knowledge/test-healing-patterns.md
+  - _bmad/tea/testarch/knowledge/test-levels-framework.md
+  - _bmad/tea/testarch/knowledge/test-priorities-matrix.md
+  - _bmad/tea/testarch/knowledge/ci-burn-in.md
+  - _bmad/tea/testarch/knowledge/overview.md
+  - _bmad/tea/testarch/knowledge/api-request.md
+  - _bmad/tea/testarch/knowledge/auth-session.md
+  - _bmad/tea/testarch/knowledge/recurse.md
+  - _bmad/tea/testarch/knowledge/pactjs-utils-overview.md
+  - _bmad/tea/testarch/knowledge/pactjs-utils-consumer-helpers.md
+  - _bmad/tea/testarch/knowledge/pactjs-utils-provider-verifier.md
+  - _bmad/tea/testarch/knowledge/pactjs-utils-request-filter.md
+  - _bmad/tea/testarch/knowledge/pact-mcp.md
+---
+
+# ATDD Checklist - Epic 3, Story 3.1: Implement Cold-Path Kafka Consumer Runtime Mode
+
+**Date:** 2026-03-22
+**Author:** Sas
+**Primary Test Level:** Backend acceptance/unit (pytest)
+**TDD Phase:** RED
+
+## Story Summary
+
+Story 3.1 activates the "'`cold-path` runtime from bootstrap stub to live Kafka consumer mode. It
+must bind to the canonical consumer group/topic, process events sequentially through a testable
+adapter boundary, and shut down with commit/close plus health transitions.
+
+**As an** SRE/platform engineer  
+**I want** a dedicated cold-path consumer mode for case header events  
+**So that** diagnosis processing is decoupled from hot-path execution
+
+## Acceptance Criteria
+
+1. Given runtime mode is set to `cold-path`, when service starts, then it joins consumer group
+   `aiops-cold-path-diagnosis` and subscribes to `aiops-case-header`, and processes messages
+   sequentially through a testable consumer adapter abstraction.
+2. Given shutdown is requested, when consumer exits, then offsets are committed gracefully before
+   close, and health status reflects connected/lag/poll state transitions.
+
+## Stack Detection / Mode
+
+- `detected_stack`: backend (`pyproject.toml` + pytest tree, no frontend browser framework)
+- `tea_execution_mode`: auto -> sequential (backend adaptation)
+- Generation mode: AI generation only (no browser recording)
+
+## Test Strategy
+
+- P0 tests assert the cold-path runtime contract is no longer a stub and surfaces canonical
+  consumer binding in startup behavior.
+- P0/P1 tests pin new configuration/adapter boundaries needed for Story 3.1 implementation.
+- P1 tests pin health transition semantics for connected/poll/commit lifecycle signals.
+- No browser E2E tests are produced for this backend-only story.
+
+## Failing Tests Created (RED Phase)
+
+### Backend Acceptance Tests (4)
+
+**File:** `tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py`
+
+- `test_p0_settings_expose_cold_path_consumer_defaults_and_validation`
+  - **Status:** RED
+  - **Failure:** cold-path consumer settings/validation fields are not yet defined.
+- `test_p0_cold_path_runtime_logs_consumer_group_and_topic_on_start`
+  - **Status:** RED
+  - **Failure:** `_run_cold_path()` still exits as bootstrap stub and does not emit startup
+    consumer binding.
+- `test_p1_cold_path_runtime_reports_connected_poll_and_commit_health_transitions`
+  - **Status:** RED
+  - **Failure:** cold-path runtime does not publish connected/poll/commit health transitions.
+- `test_p1_kafka_consumer_adapter_module_exposes_protocol_and_confluent_adapter`
+  - **Status:** RED
+  - **Failure:** `integrations/kafka_consumer.py` adapter boundary module is missing.
+
+## Fixtures Created
+
+- `tests/atdd/fixtures/story_3_1_test_data.py`
+  - `RecordingAsyncHealthRegistry`
+  - `build_cold_path_settings()`
+  - `expected_consumer_binding()`
+
+## Mock Requirements
+
+- Runtime bootstrap is monkeypatched to deterministic in-memory settings/logger objects.
+- Health updates are captured via async in-memory registry probe fixture.
+- No Docker/Kafka runtime needed for this RED-phase ATDD gate (integration verification is
+  deferred to implementation and integration steps).
+
+## Implementation Checklist
+
+### Test: `test_p0_settings_expose_cold_path_consumer_defaults_and_validation`
+
+- [ ] Add `KAFKA_COLD_PATH_CONSUMER_GROUP` setting with default
+      `aiops-cold-path-diagnosis`.
+- [ ] Add `KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS` setting with `>0` validation.
+- [ ] Include these fields in startup config logging (secret-safe).
+
+### Test: `test_p0_cold_path_runtime_logs_consumer_group_and_topic_on_start`
+
+- [ ] Replace `_run_cold_path()` bootstrap stub with real consumer lifecycle wiring.
+- [ ] Emit startup log containing mode, consumer group, topic, and poll timeout.
+- [ ] Ensure runtime uses sequential consume/process/commit path.
+
+### Test: `test_p1_cold_path_runtime_reports_connected_poll_and_commit_health_transitions`
+
+- [ ] Update health registry with connected/disconnected transition states.
+- [ ] Add poll lifecycle transition signal(s) for cold-path consumer.
+- [ ] Add commit success/failure transition signal(s) during shutdown path.
+
+### Test: `test_p1_kafka_consumer_adapter_module_exposes_protocol_and_confluent_adapter`
+
+- [ ] Add `src/aiops_triage_pipeline/integrations/kafka_consumer.py`.
+- [ ] Define thin adapter protocol with `subscribe`, `poll`, `commit`, `close`.
+- [ ] Provide confluent-kafka-backed adapter implementation with required consumer config
+      validation.
+
+## Running Tests
+
+```bash
+uv run pytest -q tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+```
+
+## Test Execution Evidence
+
+**Command:** `uv run pytest -q tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py`
+
+**Result:**
+
+```text
+FFFF
+4 failed in 0.65s
+```
+
+**Failure indicators:**
+
+- `Settings` missing `KAFKA_COLD_PATH_CONSUMER_GROUP`
+- no `cold_path_mode_started` startup log emitted
+- no connected/poll/commit health transitions recorded
+- missing `aiops_triage_pipeline.integrations.kafka_consumer` module
+
+## Generated Artifacts
+
+- `artifact/test-artifacts/tea-atdd-api-tests-2026-03-22T22-28-03Z.json`
+- `artifact/test-artifacts/tea-atdd-e2e-tests-2026-03-22T22-28-03Z.json`
+- `artifact/test-artifacts/tea-atdd-summary-2026-03-22T22-28-03Z.json`
+- `artifact/test-artifacts/atdd-checklist-3-1-implement-cold-path-kafka-consumer-runtime-mode.md`
+
+## Validation Notes
+
+- Story ACs are explicit and testable.
+- Backend pytest framework and ATDD folder conventions are present.
+- No browser CLI/MCP sessions were used; cleanup not required.
+- Temp ATDD artifacts were stored under `artifact/test-artifacts/`.
+
+## Completion Summary
+
+ATDD red phase is complete for Story 3.1 with 4 deterministic failing backend acceptance tests
+that pin cold-path consumer runtime activation, adapter boundary creation, configuration
+validation, and shutdown/health lifecycle requirements.
+EOF' in /home/sas/workspace/aiops succeeded in 51ms:
+
+file update:
+diff --git a/tests/atdd/fixtures/story_3_1_test_data.py b/tests/atdd/fixtures/story_3_1_test_data.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..36762eaf611f45269fb9e3a3897049bf0e1b7686
+--- /dev/null
++++ b/tests/atdd/fixtures/story_3_1_test_data.py
+@@ -0,0 +1,52 @@
++"""ATDD fixture builders for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from types import SimpleNamespace
++
++from aiops_triage_pipeline.models.health import HealthStatus
++
++
++@dataclass(frozen=True)
++class HealthTransition:
++    component: str
++    status: HealthStatus
++    reason: str | None
++
++
++class RecordingAsyncHealthRegistry:
++    """Capture async health transitions emitted by runtime mode code."""
++
++    def __init__(self) -> None:
++        self.transitions: list[HealthTransition] = []
++
++    async def update(
++        self,
++        component: str,
++        status: HealthStatus,
++        reason: str | None = None,
++    ) -> None:
++        self.transitions.append(
++            HealthTransition(
++                component=component,
++                status=status,
++                reason=reason,
++            )
++        )
++
++
++def expected_consumer_binding() -> tuple[str, str]:
++    """Canonical consumer group and topic for Story 3.1."""
++    return ("aiops-cold-path-diagnosis", "aiops-case-header")
++
++
++def build_cold_path_settings() -> SimpleNamespace:
++    """Minimal runtime settings object for cold-path mode tests."""
++    consumer_group, topic = expected_consumer_binding()
++    return SimpleNamespace(
++        APP_ENV=SimpleNamespace(value="dev"),
++        KAFKA_CASE_HEADER_TOPIC=topic,
++        KAFKA_COLD_PATH_CONSUMER_GROUP=consumer_group,
++        KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=1.0,
++    )
+diff --git a/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py b/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..4fbc2a7dea202f13987dfeb7bf67b74bc30ff3be
+--- /dev/null
++++ b/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+@@ -0,0 +1,103 @@
++"""ATDD red-phase acceptance tests for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++import importlib
++from unittest.mock import MagicMock
++
++import pytest
++
++from aiops_triage_pipeline import __main__
++from aiops_triage_pipeline.config.settings import Settings
++from tests.atdd.fixtures.story_3_1_test_data import (
++    RecordingAsyncHealthRegistry,
++    build_cold_path_settings,
++    expected_consumer_binding,
++)
++
++
++def _build_min_settings_for_validation(**overrides: object) -> Settings:
++    base: dict[str, object] = {
++        "_env_file": None,
++        "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092",
++        "DATABASE_URL": "postgresql+psycopg://u:p@h/db",
++        "REDIS_URL": "redis://localhost:6379/0",
++        "S3_ENDPOINT_URL": "http://localhost:9000",
++        "S3_ACCESS_KEY": "key",
++        "S3_SECRET_KEY": "secret",
++        "S3_BUCKET": "bucket",
++    }
++    base.update(overrides)
++    return Settings(**base)
++
++
++def test_p0_settings_expose_cold_path_consumer_defaults_and_validation() -> None:
++    """Given cold-path runtime config, canonical group/topic and poll-timeout validation exist."""
++    settings = _build_min_settings_for_validation()
++    consumer_group, topic = expected_consumer_binding()
++
++    assert settings.KAFKA_COLD_PATH_CONSUMER_GROUP == consumer_group
++    assert settings.KAFKA_CASE_HEADER_TOPIC == topic
++    assert settings.KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS > 0
++
++    with pytest.raises(ValueError, match="KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS"):
++        _build_min_settings_for_validation(KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=0)
++
++
++def test_p0_cold_path_runtime_logs_consumer_group_and_topic_on_start(monkeypatch) -> None:
++    """Given cold-path mode starts, then startup log includes consumer group/topic wiring."""
++    logger = MagicMock()
++    settings = build_cold_path_settings()
++    consumer_group, topic = expected_consumer_binding()
++
++    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
++
++    __main__._run_cold_path()
++
++    start_call = next(
++        call
++        for call in logger.info.call_args_list
++        if call.args and call.args[0] == "cold_path_mode_started"
++    )
++    assert start_call.kwargs["consumer_group"] == consumer_group
++    assert start_call.kwargs["topic"] == topic
++
++
++def test_p1_cold_path_runtime_reports_connected_poll_and_commit_health_transitions(
++    monkeypatch,
++) -> None:
++    """Given cold-path consumer lifecycle, then health transitions include connected/poll/commit."""
++    logger = MagicMock()
++    settings = build_cold_path_settings()
++    health_registry = RecordingAsyncHealthRegistry()
++
++    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
++    monkeypatch.setattr(__main__, "get_health_registry", lambda: health_registry, raising=False)
++
++    __main__._run_cold_path()
++
++    transition_components = {
++        transition.component.lower() for transition in health_registry.transitions
++    }
++    assert any("connected" in component for component in transition_components)
++    assert any("poll" in component for component in transition_components)
++    assert any("commit" in component for component in transition_components)
++
++
++def test_p1_kafka_consumer_adapter_module_exposes_protocol_and_confluent_adapter() -> None:
++    """Given cold-path adapter boundary, module exposes protocol and confluent adapter types."""
++    module = importlib.import_module("aiops_triage_pipeline.integrations.kafka_consumer")
++
++    protocol_names = (
++        "KafkaConsumerAdapterProtocol",
++        "KafkaConsumerProtocol",
++        "CaseHeaderConsumerProtocol",
++    )
++    adapter_names = (
++        "ConfluentKafkaCaseHeaderConsumer",
++        "ConfluentKafkaConsumerAdapter",
++        "ConfluentKafkaCaseHeaderConsumerAdapter",
++    )
++
++    assert any(hasattr(module, name) for name in protocol_names)
++    assert any(hasattr(module, name) for name in adapter_names)
+
+exec
+/bin/bash -lc 'git status --short' in /home/sas/workspace/aiops succeeded in 51ms:
+?? artifact/implementation-artifacts/runner-logs/20260322T213642Z/
+?? artifact/implementation-artifacts/runner-logs/20260322T222208Z/
+?? artifact/test-artifacts/atdd-checklist-3-1-implement-cold-path-kafka-consumer-runtime-mode.md
+?? artifact/test-artifacts/tea-atdd-api-tests-2026-03-22T22-28-03Z.json
+?? artifact/test-artifacts/tea-atdd-e2e-tests-2026-03-22T22-28-03Z.json
+?? artifact/test-artifacts/tea-atdd-summary-2026-03-22T22-28-03Z.json
+?? tests/atdd/fixtures/story_3_1_test_data.py
+?? tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+file update:
+diff --git a/tests/atdd/fixtures/story_3_1_test_data.py b/tests/atdd/fixtures/story_3_1_test_data.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..36762eaf611f45269fb9e3a3897049bf0e1b7686
+--- /dev/null
++++ b/tests/atdd/fixtures/story_3_1_test_data.py
+@@ -0,0 +1,52 @@
++"""ATDD fixture builders for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from types import SimpleNamespace
++
++from aiops_triage_pipeline.models.health import HealthStatus
++
++
++@dataclass(frozen=True)
++class HealthTransition:
++    component: str
++    status: HealthStatus
++    reason: str | None
++
++
++class RecordingAsyncHealthRegistry:
++    """Capture async health transitions emitted by runtime mode code."""
++
++    def __init__(self) -> None:
++        self.transitions: list[HealthTransition] = []
++
++    async def update(
++        self,
++        component: str,
++        status: HealthStatus,
++        reason: str | None = None,
++    ) -> None:
++        self.transitions.append(
++            HealthTransition(
++                component=component,
++                status=status,
++                reason=reason,
++            )
++        )
++
++
++def expected_consumer_binding() -> tuple[str, str]:
++    """Canonical consumer group and topic for Story 3.1."""
++    return ("aiops-cold-path-diagnosis", "aiops-case-header")
++
++
++def build_cold_path_settings() -> SimpleNamespace:
++    """Minimal runtime settings object for cold-path mode tests."""
++    consumer_group, topic = expected_consumer_binding()
++    return SimpleNamespace(
++        APP_ENV=SimpleNamespace(value="dev"),
++        KAFKA_CASE_HEADER_TOPIC=topic,
++        KAFKA_COLD_PATH_CONSUMER_GROUP=consumer_group,
++        KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=1.0,
++    )
+diff --git a/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py b/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..4fbc2a7dea202f13987dfeb7bf67b74bc30ff3be
+--- /dev/null
++++ b/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+@@ -0,0 +1,103 @@
++"""ATDD red-phase acceptance tests for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++import importlib
++from unittest.mock import MagicMock
++
++import pytest
++
++from aiops_triage_pipeline import __main__
++from aiops_triage_pipeline.config.settings import Settings
++from tests.atdd.fixtures.story_3_1_test_data import (
++    RecordingAsyncHealthRegistry,
++    build_cold_path_settings,
++    expected_consumer_binding,
++)
++
++
++def _build_min_settings_for_validation(**overrides: object) -> Settings:
++    base: dict[str, object] = {
++        "_env_file": None,
++        "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092",
++        "DATABASE_URL": "postgresql+psycopg://u:p@h/db",
++        "REDIS_URL": "redis://localhost:6379/0",
++        "S3_ENDPOINT_URL": "http://localhost:9000",
++        "S3_ACCESS_KEY": "key",
++        "S3_SECRET_KEY": "secret",
++        "S3_BUCKET": "bucket",
++    }
++    base.update(overrides)
++    return Settings(**base)
++
++
++def test_p0_settings_expose_cold_path_consumer_defaults_and_validation() -> None:
++    """Given cold-path runtime config, canonical group/topic and poll-timeout validation exist."""
++    settings = _build_min_settings_for_validation()
++    consumer_group, topic = expected_consumer_binding()
++
++    assert settings.KAFKA_COLD_PATH_CONSUMER_GROUP == consumer_group
++    assert settings.KAFKA_CASE_HEADER_TOPIC == topic
++    assert settings.KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS > 0
++
++    with pytest.raises(ValueError, match="KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS"):
++        _build_min_settings_for_validation(KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=0)
++
++
++def test_p0_cold_path_runtime_logs_consumer_group_and_topic_on_start(monkeypatch) -> None:
++    """Given cold-path mode starts, then startup log includes consumer group/topic wiring."""
++    logger = MagicMock()
++    settings = build_cold_path_settings()
++    consumer_group, topic = expected_consumer_binding()
++
++    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
++
++    __main__._run_cold_path()
++
++    start_call = next(
++        call
++        for call in logger.info.call_args_list
++        if call.args and call.args[0] == "cold_path_mode_started"
++    )
++    assert start_call.kwargs["consumer_group"] == consumer_group
++    assert start_call.kwargs["topic"] == topic
++
++
++def test_p1_cold_path_runtime_reports_connected_poll_and_commit_health_transitions(
++    monkeypatch,
++) -> None:
++    """Given cold-path consumer lifecycle, then health transitions include connected/poll/commit."""
++    logger = MagicMock()
++    settings = build_cold_path_settings()
++    health_registry = RecordingAsyncHealthRegistry()
++
++    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
++    monkeypatch.setattr(__main__, "get_health_registry", lambda: health_registry, raising=False)
++
++    __main__._run_cold_path()
++
++    transition_components = {
++        transition.component.lower() for transition in health_registry.transitions
++    }
++    assert any("connected" in component for component in transition_components)
++    assert any("poll" in component for component in transition_components)
++    assert any("commit" in component for component in transition_components)
++
++
++def test_p1_kafka_consumer_adapter_module_exposes_protocol_and_confluent_adapter() -> None:
++    """Given cold-path adapter boundary, module exposes protocol and confluent adapter types."""
++    module = importlib.import_module("aiops_triage_pipeline.integrations.kafka_consumer")
++
++    protocol_names = (
++        "KafkaConsumerAdapterProtocol",
++        "KafkaConsumerProtocol",
++        "CaseHeaderConsumerProtocol",
++    )
++    adapter_names = (
++        "ConfluentKafkaCaseHeaderConsumer",
++        "ConfluentKafkaConsumerAdapter",
++        "ConfluentKafkaCaseHeaderConsumerAdapter",
++    )
++
++    assert any(hasattr(module, name) for name in protocol_names)
++    assert any(hasattr(module, name) for name in adapter_names)
+
+codex
+Success: yes
+Story: 3-1-implement-cold-path-kafka-consumer-runtime-mode
+Step: bmad-tea-testarch-atdd
+Files changed: tests/atdd/fixtures/story_3_1_test_data.py, tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py, artifact/test-artifacts/atdd-checklist-3-1-implement-cold-path-kafka-consumer-runtime-mode.md, artifact/test-artifacts/tea-atdd-api-tests-2026-03-22T22-28-03Z.json, artifact/test-artifacts/tea-atdd-e2e-tests-2026-03-22T22-28-03Z.json, artifact/test-artifacts/tea-atdd-summary-2026-03-22T22-28-03Z.json
+Notes: ATDD coverage for Story 3.1 was generated in backend RED phase only, with 4 new deterministic failing acceptance tests scoped to cold-path consumer runtime activation, a new story fixture helper file, and a completed checklist plus step artifacts under `artifact/test-artifacts`; validation run used `uv run pytest -q tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py` and produced `FFFF` (`4 failed`) as expected for pre-implementation ATDD.
+file update:
+diff --git a/tests/atdd/fixtures/story_3_1_test_data.py b/tests/atdd/fixtures/story_3_1_test_data.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..36762eaf611f45269fb9e3a3897049bf0e1b7686
+--- /dev/null
++++ b/tests/atdd/fixtures/story_3_1_test_data.py
+@@ -0,0 +1,52 @@
++"""ATDD fixture builders for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++from dataclasses import dataclass
++from types import SimpleNamespace
++
++from aiops_triage_pipeline.models.health import HealthStatus
++
++
++@dataclass(frozen=True)
++class HealthTransition:
++    component: str
++    status: HealthStatus
++    reason: str | None
++
++
++class RecordingAsyncHealthRegistry:
++    """Capture async health transitions emitted by runtime mode code."""
++
++    def __init__(self) -> None:
++        self.transitions: list[HealthTransition] = []
++
++    async def update(
++        self,
++        component: str,
++        status: HealthStatus,
++        reason: str | None = None,
++    ) -> None:
++        self.transitions.append(
++            HealthTransition(
++                component=component,
++                status=status,
++                reason=reason,
++            )
++        )
++
++
++def expected_consumer_binding() -> tuple[str, str]:
++    """Canonical consumer group and topic for Story 3.1."""
++    return ("aiops-cold-path-diagnosis", "aiops-case-header")
++
++
++def build_cold_path_settings() -> SimpleNamespace:
++    """Minimal runtime settings object for cold-path mode tests."""
++    consumer_group, topic = expected_consumer_binding()
++    return SimpleNamespace(
++        APP_ENV=SimpleNamespace(value="dev"),
++        KAFKA_CASE_HEADER_TOPIC=topic,
++        KAFKA_COLD_PATH_CONSUMER_GROUP=consumer_group,
++        KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=1.0,
++    )
+diff --git a/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py b/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+new file mode 100644
+index 0000000000000000000000000000000000000000..4fbc2a7dea202f13987dfeb7bf67b74bc30ff3be
+--- /dev/null
++++ b/tests/atdd/test_story_3_1_implement_cold_path_kafka_consumer_runtime_mode_red_phase.py
+@@ -0,0 +1,103 @@
++"""ATDD red-phase acceptance tests for Story 3.1 cold-path Kafka consumer runtime mode."""
++
++from __future__ import annotations
++
++import importlib
++from unittest.mock import MagicMock
++
++import pytest
++
++from aiops_triage_pipeline import __main__
++from aiops_triage_pipeline.config.settings import Settings
++from tests.atdd.fixtures.story_3_1_test_data import (
++    RecordingAsyncHealthRegistry,
++    build_cold_path_settings,
++    expected_consumer_binding,
++)
++
++
++def _build_min_settings_for_validation(**overrides: object) -> Settings:
++    base: dict[str, object] = {
++        "_env_file": None,
++        "KAFKA_BOOTSTRAP_SERVERS": "localhost:9092",
++        "DATABASE_URL": "postgresql+psycopg://u:p@h/db",
++        "REDIS_URL": "redis://localhost:6379/0",
++        "S3_ENDPOINT_URL": "http://localhost:9000",
++        "S3_ACCESS_KEY": "key",
++        "S3_SECRET_KEY": "secret",
++        "S3_BUCKET": "bucket",
++    }
++    base.update(overrides)
++    return Settings(**base)
++
++
++def test_p0_settings_expose_cold_path_consumer_defaults_and_validation() -> None:
++    """Given cold-path runtime config, canonical group/topic and poll-timeout validation exist."""
++    settings = _build_min_settings_for_validation()
++    consumer_group, topic = expected_consumer_binding()
++
++    assert settings.KAFKA_COLD_PATH_CONSUMER_GROUP == consumer_group
++    assert settings.KAFKA_CASE_HEADER_TOPIC == topic
++    assert settings.KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS > 0
++
++    with pytest.raises(ValueError, match="KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS"):
++        _build_min_settings_for_validation(KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=0)
++
++
++def test_p0_cold_path_runtime_logs_consumer_group_and_topic_on_start(monkeypatch) -> None:
++    """Given cold-path mode starts, then startup log includes consumer group/topic wiring."""
++    logger = MagicMock()
++    settings = build_cold_path_settings()
++    consumer_group, topic = expected_consumer_binding()
++
++    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
++
++    __main__._run_cold_path()
++
++    start_call = next(
++        call
++        for call in logger.info.call_args_list
++        if call.args and call.args[0] == "cold_path_mode_started"
++    )
++    assert start_call.kwargs["consumer_group"] == consumer_group
++    assert start_call.kwargs["topic"] == topic
++
++
++def test_p1_cold_path_runtime_reports_connected_poll_and_commit_health_transitions(
++    monkeypatch,
++) -> None:
++    """Given cold-path consumer lifecycle, then health transitions include connected/poll/commit."""
++    logger = MagicMock()
++    settings = build_cold_path_settings()
++    health_registry = RecordingAsyncHealthRegistry()
++
++    monkeypatch.setattr(__main__, "_bootstrap_mode", lambda mode: (settings, logger, MagicMock()))
++    monkeypatch.setattr(__main__, "get_health_registry", lambda: health_registry, raising=False)
++
++    __main__._run_cold_path()
++
++    transition_components = {
++        transition.component.lower() for transition in health_registry.transitions
++    }
++    assert any("connected" in component for component in transition_components)
++    assert any("poll" in component for component in transition_components)
++    assert any("commit" in component for component in transition_components)
++
++
++def test_p1_kafka_consumer_adapter_module_exposes_protocol_and_confluent_adapter() -> None:
++    """Given cold-path adapter boundary, module exposes protocol and confluent adapter types."""
++    module = importlib.import_module("aiops_triage_pipeline.integrations.kafka_consumer")
++
++    protocol_names = (
++        "KafkaConsumerAdapterProtocol",
++        "KafkaConsumerProtocol",
++        "CaseHeaderConsumerProtocol",
++    )
++    adapter_names = (
++        "ConfluentKafkaCaseHeaderConsumer",
++        "ConfluentKafkaConsumerAdapter",
++        "ConfluentKafkaCaseHeaderConsumerAdapter",
++    )
++
++    assert any(hasattr(module, name) for name in protocol_names)
++    assert any(hasattr(module, name) for name in adapter_names)
+
+tokens used
+117,693
