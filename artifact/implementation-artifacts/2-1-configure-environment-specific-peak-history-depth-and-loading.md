@@ -1,6 +1,6 @@
 # Story 2.1: Configure Environment-Specific Peak History Depth and Loading
 
-Status: review
+Status: done
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -21,7 +21,7 @@ so that scoring has sufficient baseline context without code changes.
 ## Tasks / Subtasks
 
 - [x] Add Docker pre-check as first step (epic retro action item) (AC: all)
-  - [x] Verify `docker-desktop.service` is running before executing any testcontainers-backed tests.
+  - [x] Verify Docker engine reachability with `bash scripts/docker-precheck.sh` before executing testcontainers-backed tests.
 
 - [x] Add `STAGE2_PEAK_HISTORY_MAX_DEPTH` to all three environment files with correct sample counts (AC: 1, 2)
   - [x] Set `STAGE2_PEAK_HISTORY_MAX_DEPTH=2016` in `config/.env.dev` (7 days × 288 samples/day).
@@ -279,14 +279,14 @@ gpt-5 (Codex)
 
 ### Debug Log References
 
-- Docker pre-check executed before testcontainers-backed regression (`systemctl is-active docker-desktop.service` reported inactive; `docker info` succeeded against Docker Desktop engine).
+- Added reusable Docker pre-check script (`scripts/docker-precheck.sh`) and verified Docker reachability before regression runs.
 - Added `STAGE2_PEAK_HISTORY_MAX_DEPTH` to all named env files with explicit day-to-sample comments.
-- Added `validate_peak_depth_not_default_for_named_envs` in `Settings` to fail startup for `APP_ENV in {dev,uat,prod}` when depth remains `12`.
-- Updated pre-existing settings tests to provide explicit depth for named env instantiation paths that now require it.
-- Updated runtime/development docs with the environment depth mapping and startup validation note.
+- Added `validate_peak_depth_type_for_named_envs` + `validate_peak_depth_not_default_for_named_envs` in `Settings` so named envs fail with env-aware errors for invalid or legacy-default depth values.
+- Added AC2 env-file loading test coverage and removed stale RED-phase comments from Story 2.1 tests.
+- Updated runtime/development docs with depth mapping, Docker pre-check command, and corrected `SHARD_LEASE_TTL_SECONDS` default (`270`).
 - Quality gates executed:
-  - `uv run pytest -q tests/unit/config/test_settings.py` -> `60 passed`.
-  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs` -> `1194 passed`, `0 skipped`.
+  - `uv run pytest -q tests/unit/config/test_settings.py` -> `62 passed`.
+  - `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs` -> `1196 passed`, `0 skipped`.
   - Scoped lint on changed files passed: `uv run ruff check src/aiops_triage_pipeline/config/settings.py tests/unit/config/test_settings.py docs/development-guide.md docs/runtime-modes.md`.
 
 ### Completion Notes List
@@ -294,7 +294,7 @@ gpt-5 (Codex)
 - Implemented FR12/FR13/FR14 with minimal surface area: env config values, one startup validator, docs, and test updates.
 - Preserved existing `STAGE2_PEAK_HISTORY_MAX_DEPTH > 0` validation and retained Python default `12` for local/harness test isolation.
 - Confirmed no contract, gating stage, diagnosis, audit, or integration module changes.
-- Story status moved to `review` after all tasks/subtasks and required validations completed.
+- Story status moved to `done` after resolving all review findings and re-running quality gates.
 
 ### File List
 
@@ -305,6 +305,7 @@ gpt-5 (Codex)
 - tests/unit/config/test_settings.py
 - docs/development-guide.md
 - docs/runtime-modes.md
+- scripts/docker-precheck.sh
 - artifact/implementation-artifacts/sprint-status.yaml
 - artifact/implementation-artifacts/2-1-configure-environment-specific-peak-history-depth-and-loading.md
 
@@ -313,3 +314,24 @@ gpt-5 (Codex)
 - 2026-03-29: Added explicit `STAGE2_PEAK_HISTORY_MAX_DEPTH` values for `dev/uat/prod` env files with day conversion comments.
 - 2026-03-29: Added startup validator in `Settings` to reject legacy depth fallback (`12`) for named environments.
 - 2026-03-29: Updated settings tests and docs; executed full regression with zero skipped tests.
+- 2026-03-29: Resolved code-review findings: added env-aware invalid depth validation, strengthened AC2 env-file loading tests, added reusable Docker pre-check script, corrected runtime TTL docs, and revalidated full regression (`1196 passed`, `0 skipped`).
+
+## Senior Developer Review (AI)
+
+### Outcome
+
+- Approved after fixes.
+
+### Findings Addressed
+
+- Added env-aware validation for non-integer `STAGE2_PEAK_HISTORY_MAX_DEPTH` in named environments (`APP_ENV in {dev, uat, prod}`).
+- Added direct env-file loading coverage for FR13/AC2 (`config/.env.dev` path, no constructor override fallback path).
+- Removed stale RED-phase statements from Story 2.1 test docstrings/comments.
+- Corrected runtime documentation drift for `SHARD_LEASE_TTL_SECONDS` default (`270`).
+- Added reusable Docker readiness pre-check (`bash scripts/docker-precheck.sh`) and documented usage.
+
+### Verification
+
+- `uv run ruff check src/aiops_triage_pipeline/config/settings.py tests/unit/config/test_settings.py`
+- `uv run pytest -q tests/unit/config/test_settings.py` (`62 passed`)
+- `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs` (`1196 passed`, `0 skipped`)

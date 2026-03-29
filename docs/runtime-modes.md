@@ -103,7 +103,7 @@ to allow incremental rollout.
 |---|---|---|
 | `SHARD_REGISTRY_ENABLED` | `false` | Enable/disable shard coordination |
 | `SHARD_COORDINATION_SHARD_COUNT` | `4` | Number of shards to distribute scopes across |
-| `SHARD_LEASE_TTL_SECONDS` | `360` | Shard lease TTL (must be > interval + margin) |
+| `SHARD_LEASE_TTL_SECONDS` | `270` | Shard lease TTL (must stay below scheduler interval for clean per-cycle re-acquire) |
 | `SHARD_CHECKPOINT_TTL_SECONDS` | `660` | Checkpoint key TTL (should exceed 2 × interval) |
 
 **Rollback:** Set `SHARD_REGISTRY_ENABLED=false` to revert to single-pod full-scope processing instantly.

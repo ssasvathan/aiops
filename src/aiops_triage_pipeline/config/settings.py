@@ -136,6 +136,30 @@ class Settings(BaseSettings):
         """Maximum allowed action for this environment (architecture decision 5D)."""
         return ENV_ACTION_CAPS.get(self.APP_ENV.value, "OBSERVE")
 
+    @model_validator(mode="before")
+    @classmethod
+    def validate_peak_depth_type_for_named_envs(cls, data: object) -> object:
+        """Surface env-aware errors when peak depth is non-integer in named environments."""
+        if not isinstance(data, dict):
+            return data
+
+        raw_app_env = data.get("APP_ENV", _APP_ENV)
+        app_env = raw_app_env if isinstance(raw_app_env, AppEnv) else str(raw_app_env).lower()
+        if app_env not in {AppEnv.dev.value, AppEnv.uat.value, AppEnv.prod.value}:
+            return data
+
+        raw_depth = data.get("STAGE2_PEAK_HISTORY_MAX_DEPTH")
+        if raw_depth is None:
+            return data
+        try:
+            int(raw_depth)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "STAGE2_PEAK_HISTORY_MAX_DEPTH must be a valid integer for "
+                f"APP_ENV={app_env}; got {raw_depth!r}"
+            ) from exc
+        return data
+
     @model_validator(mode="after")
     def validate_llm_prod_mode(self) -> "Settings":
         """Reject MOCK and OFF for INTEGRATION_MODE_LLM in prod — requires LIVE (or LOG)."""

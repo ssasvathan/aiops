@@ -50,6 +50,7 @@ and test harness execution.
 ## Test Strategy and Commands
 
 ```bash
+bash scripts/docker-precheck.sh
 uv run pytest -q tests/unit
 uv run pytest -q tests/integration -m integration
 TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs
@@ -59,6 +60,7 @@ uv run ruff check
 ## Common Tasks
 
 - Verify compose health: `docker compose ps`
+- Verify Docker engine readiness: `bash scripts/docker-precheck.sh`
 - Validate Kafka topics and service readiness: `bash scripts/smoke-test.sh`
 - Inspect env config: `config/.env.*`
 - Inspect runtime policy contracts: `config/policies/*.yaml`
