@@ -46,6 +46,8 @@ def build_cold_path_settings() -> SimpleNamespace:
     consumer_group, topic = expected_consumer_binding()
     return SimpleNamespace(
         APP_ENV=SimpleNamespace(value="dev"),
+        HEALTH_SERVER_HOST="127.0.0.1",
+        HEALTH_SERVER_PORT=0,
         KAFKA_CASE_HEADER_TOPIC=topic,
         KAFKA_COLD_PATH_CONSUMER_GROUP=consumer_group,
         KAFKA_COLD_PATH_POLL_TIMEOUT_SECONDS=1.0,

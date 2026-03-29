@@ -5,6 +5,7 @@ from time import perf_counter
 
 import pytest
 
+import aiops_triage_pipeline.pipeline.stages.gating as gating
 from aiops_triage_pipeline.contracts.enums import (
     Action,
     CriticalityTier,
@@ -22,6 +23,7 @@ from aiops_triage_pipeline.contracts.rulebook import (
     RulebookDefaults,
     RulebookV1,
 )
+from aiops_triage_pipeline.models.peak import SustainedStatus
 from aiops_triage_pipeline.pipeline.stages.evidence import collect_evidence_stage_output
 from aiops_triage_pipeline.pipeline.stages.gating import (
     GateInputContext,
@@ -155,6 +157,77 @@ def _gate_input_for_eval() -> GateInputV1:
 def _parse_logs(stream: io.StringIO) -> list[dict]:
     lines = [line for line in stream.getvalue().splitlines() if line.strip()]
     return [json.loads(line) for line in lines]
+
+
+def _build_story_1_1_stage_inputs(
+    *,
+    sustained_value: bool | None,
+    is_peak_window: bool,
+) -> tuple:
+    samples = {
+        "topic_messages_in_per_sec": [
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 180.0,
+            },
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 0.4,
+            },
+        ],
+        "total_produce_requests_per_sec": [
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 220.0,
+            }
+        ],
+        "failed_produce_requests_per_sec": [
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 24.0,
+            }
+        ],
+    }
+    scope = ("prod", "cluster-a", "orders")
+    sustained_key = ("prod", "cluster-a", "topic:orders", "VOLUME_DROP")
+    evidence_output = collect_evidence_stage_output(samples)
+    rulebook = load_rulebook_policy()
+    peak_output = collect_peak_stage_output(
+        rows=evidence_output.rows,
+        historical_windows_by_scope={scope: [float(x) for x in range(1, 21)]},
+        anomaly_findings=evidence_output.anomaly_result.findings,
+        evaluation_time=datetime(2026, 3, 29, 12, 0, tzinfo=UTC),
+        evidence_status_map_by_scope=evidence_output.evidence_status_map_by_scope,
+        peak_policy=_peak_policy_for_tests(),
+        rulebook_policy=rulebook,
+    )
+
+    peak_context = peak_output.peak_context_by_scope[scope]
+    updated_peak_context = peak_context.model_copy(update={"is_peak_window": is_peak_window})
+    updated_peak_context_by_scope = dict(peak_output.peak_context_by_scope)
+    updated_peak_context_by_scope[scope] = updated_peak_context
+
+    sustained_by_key = dict(peak_output.sustained_by_key)
+    if sustained_value is None:
+        sustained_by_key.pop(sustained_key, None)
+    else:
+        sustained_by_key[sustained_key] = SustainedStatus(
+            identity_key=sustained_key,
+            is_sustained=sustained_value,
+            consecutive_anomalous_buckets=rulebook.sustained_intervals_required,
+            required_buckets=rulebook.sustained_intervals_required,
+            last_evaluated_at=datetime(2026, 3, 29, 12, 0, tzinfo=UTC),
+            reason_codes=("TEST_SUSTAINED_STATUS",),
+        )
+
+    peak_output = peak_output.model_copy(
+        update={
+            "peak_context_by_scope": updated_peak_context_by_scope,
+            "sustained_by_key": sustained_by_key,
+        }
+    )
+
+    return evidence_output, peak_output, scope
 
 
 def test_collect_gate_inputs_by_scope_propagates_unknown_evidence_status_map() -> None:
@@ -294,6 +367,132 @@ def test_collect_gate_inputs_by_scope_uses_topic_context_fallback_for_group_scop
     assert gate_input.topic == "payments"
     assert gate_input.stream_id == "stream-payments"
     assert gate_input.anomaly_family == "CONSUMER_LAG"
+
+
+def test_collect_gate_inputs_by_scope_populates_score_metadata_and_candidate_action() -> None:
+    evidence_output, peak_output, scope = _build_story_1_1_stage_inputs(
+        sustained_value=True,
+        is_peak_window=True,
+    )
+
+    gate_inputs_by_scope = collect_gate_inputs_by_scope(
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        context_by_scope={
+            scope: GateInputContext(
+                stream_id="stream-orders",
+                topic_role="SHARED_TOPIC",
+                criticality_tier=CriticalityTier.TIER_0,
+            )
+        },
+    )
+
+    gate_input = gate_inputs_by_scope[scope][0]
+    assert gate_input.diagnosis_confidence > 0.0
+    assert gate_input.proposed_action == Action.PAGE
+    assert gate_input.decision_basis is not None
+    assert gate_input.decision_basis["score_version"] == "v1"
+    assert gate_input.decision_basis["base_score"] == pytest.approx(1.0)
+    assert gate_input.decision_basis["sustained_boost"] == pytest.approx(0.08)
+    assert gate_input.decision_basis["peak_boost"] == pytest.approx(0.05)
+    assert gate_input.decision_basis["final_score"] == pytest.approx(1.0)
+    assert gate_input.decision_basis["score_reason_code"] == "HIGH_CONFIDENCE_SUSTAINED_PEAK"
+    assert gate_input.decision_basis["fallback_applied"] is False
+
+
+def test_collect_gate_inputs_by_scope_handles_sustained_none_without_boost() -> None:
+    evidence_output, peak_output, scope = _build_story_1_1_stage_inputs(
+        sustained_value=None,
+        is_peak_window=True,
+    )
+    context = {
+        scope: GateInputContext(
+            stream_id="stream-orders",
+            topic_role="SHARED_TOPIC",
+            criticality_tier=CriticalityTier.TIER_0,
+        )
+    }
+
+    first = collect_gate_inputs_by_scope(
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        context_by_scope=context,
+    )
+    second = collect_gate_inputs_by_scope(
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        context_by_scope=context,
+    )
+
+    assert first == second
+    gate_input = first[scope][0]
+    assert gate_input.sustained is False
+    assert gate_input.decision_basis is not None
+    assert gate_input.decision_basis["sustained_boost"] == pytest.approx(0.0)
+
+
+def test_collect_gate_inputs_by_scope_applies_scoring_fallback_on_internal_exception(
+    monkeypatch: pytest.MonkeyPatch,
+    log_stream: io.StringIO,
+) -> None:
+    evidence_output, peak_output, scope = _build_story_1_1_stage_inputs(
+        sustained_value=True,
+        is_peak_window=True,
+    )
+
+    def _raise_scoring_failure(*args: object, **kwargs: object) -> float:  # noqa: ARG001
+        raise RuntimeError("intentional-story-1-1-scoring-failure")
+
+    monkeypatch.setattr(gating, "_score_base_from_evidence_status_map", _raise_scoring_failure)
+
+    gate_inputs_by_scope = collect_gate_inputs_by_scope(
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        context_by_scope={
+            scope: GateInputContext(
+                stream_id="stream-orders",
+                topic_role="SHARED_TOPIC",
+                criticality_tier=CriticalityTier.TIER_0,
+                proposed_action=Action.PAGE,
+                diagnosis_confidence=0.99,
+            )
+        },
+    )
+
+    gate_input = gate_inputs_by_scope[scope][0]
+    assert gate_input.diagnosis_confidence == pytest.approx(0.0)
+    assert gate_input.proposed_action == Action.OBSERVE
+    assert gate_input.decision_basis is not None
+    assert gate_input.decision_basis["fallback_applied"] is True
+    assert gate_input.decision_basis["score_reason_code"] == "SCORING_FALLBACK_APPLIED"
+
+    fallback_events = [
+        entry
+        for entry in _parse_logs(log_stream)
+        if entry.get("event_type") == "gating.scoring.fallback_applied"
+    ]
+    assert fallback_events
+
+
+def test_score_helpers_enforce_story_1_1_action_bands() -> None:
+    assert gating._derive_proposed_action_from_score(0.59) == Action.OBSERVE
+    assert gating._derive_proposed_action_from_score(0.60) == Action.TICKET
+    assert gating._derive_proposed_action_from_score(0.85) == Action.PAGE
+
+    high_confidence_score = gating._score_final(
+        base_score=0.8,
+        sustained_boost=gating._score_sustained_boost(
+            True,
+            consecutive_buckets=5,
+            required_buckets=5,
+        ),
+        peak_boost=gating._score_peak_boost(
+            is_peak_window=True,
+            is_near_peak_window=False,
+        ),
+    )
+    assert high_confidence_score >= 0.85
+    assert gating._derive_proposed_action_from_score(high_confidence_score) == Action.PAGE
 
 
 def test_collect_gate_inputs_by_scope_raises_when_context_missing() -> None:

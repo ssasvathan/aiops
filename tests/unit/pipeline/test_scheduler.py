@@ -20,7 +20,7 @@ from aiops_triage_pipeline.integrations.prometheus import MetricQueryDefinition
 from aiops_triage_pipeline.integrations.slack import SlackClient, SlackIntegrationMode
 from aiops_triage_pipeline.models.events import DegradedModeEvent
 from aiops_triage_pipeline.models.health import HealthStatus
-from aiops_triage_pipeline.models.peak import PeakProfile
+from aiops_triage_pipeline.models.peak import PeakProfile, SustainedStatus
 from aiops_triage_pipeline.pipeline.scheduler import (
     SchedulerTick,
     emit_redis_degraded_mode_events,
@@ -757,6 +757,83 @@ def test_run_gate_input_stage_cycle_preserves_unknown_evidence_status() -> None:
         gate_input.evidence_status_map["failed_produce_requests_per_sec"]
         == EvidenceStatus.UNKNOWN
     )
+
+
+def test_run_gate_input_stage_cycle_applies_scoring_before_max_safe_action_cap() -> None:
+    samples = {
+        "topic_messages_in_per_sec": [
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 180.0,
+            },
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 0.4,
+            },
+        ],
+        "total_produce_requests_per_sec": [
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 220.0,
+            }
+        ],
+        "failed_produce_requests_per_sec": [
+            {
+                "labels": {"env": "prod", "cluster_name": "cluster-a", "topic": "orders"},
+                "value": 24.0,
+            }
+        ],
+    }
+    evidence_output = collect_evidence_stage_output(samples, max_safe_action=Action.NOTIFY)
+    scope = ("prod", "cluster-a", "orders")
+    sustained_key = ("prod", "cluster-a", "topic:orders", "VOLUME_DROP")
+    peak_output = run_peak_stage_cycle(
+        evidence_output=evidence_output,
+        historical_windows_by_scope={scope: [float(x) for x in range(1, 21)]},
+        evaluation_time=datetime(2026, 3, 2, 12, 5, tzinfo=UTC),
+        peak_policy=_peak_policy_for_tests(),
+    )
+    peak_context = peak_output.peak_context_by_scope[scope]
+    peak_output = peak_output.model_copy(
+        update={
+            "peak_context_by_scope": {
+                **dict(peak_output.peak_context_by_scope),
+                scope: peak_context.model_copy(update={"is_peak_window": True}),
+            },
+            "sustained_by_key": {
+                **dict(peak_output.sustained_by_key),
+                sustained_key: SustainedStatus(
+                    identity_key=sustained_key,
+                    is_sustained=True,
+                    consecutive_anomalous_buckets=5,
+                    required_buckets=5,
+                    last_evaluated_at=datetime(2026, 3, 2, 12, 5, tzinfo=UTC),
+                    reason_codes=("TEST_SUSTAINED_STATUS",),
+                ),
+            },
+        }
+    )
+
+    gate_inputs_by_scope = run_gate_input_stage_cycle(
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        context_by_scope={
+            scope: GateInputContext(
+                stream_id="stream-orders",
+                topic_role="SOURCE_TOPIC",
+                criticality_tier=CriticalityTier.TIER_0,
+                proposed_action=Action.OBSERVE,
+                diagnosis_confidence=0.0,
+            )
+        },
+    )
+
+    gate_input = gate_inputs_by_scope[scope][0]
+    assert gate_input.diagnosis_confidence == pytest.approx(1.0)
+    assert gate_input.proposed_action == Action.NOTIFY
+    assert gate_input.decision_basis is not None
+    assert gate_input.decision_basis["score_version"] == "v1"
+    assert gate_input.decision_basis["fallback_applied"] is False
 
 
 def test_run_gate_input_stage_cycle_skips_scopes_without_topology_context() -> None:

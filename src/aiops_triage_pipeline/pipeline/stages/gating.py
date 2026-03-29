@@ -10,6 +10,7 @@ from aiops_triage_pipeline.contracts.enums import (
     Action,
     CriticalityTier,
     Environment,
+    EvidenceStatus,
 )
 from aiops_triage_pipeline.contracts.gate_input import GateInputV1
 from aiops_triage_pipeline.contracts.rulebook import GateEffect, GateSpec, RulebookV1
@@ -26,6 +27,18 @@ _ACTION_PRIORITY: dict[Action, int] = {
     Action.TICKET: 2,
     Action.PAGE: 3,
 }
+
+SCORE_V1_VERSION = "v1"
+SCORE_V1_BASE_PRESENT_WEIGHT = 1.0
+SCORE_V1_BASE_UNKNOWN_WEIGHT = 0.25
+SCORE_V1_BASE_ABSENT_WEIGHT = 0.0
+SCORE_V1_BASE_STALE_WEIGHT = 0.0
+SCORE_V1_SUSTAINED_AMPLIFIER_MAX = 0.08
+SCORE_V1_PEAK_AMPLIFIER = 0.05
+SCORE_V1_NEAR_PEAK_AMPLIFIER = 0.03
+SCORE_V1_ACTION_BAND_TICKET_MIN = 0.60
+SCORE_V1_ACTION_BAND_PAGE_MIN = 0.85
+SCORE_V1_DECIMAL_PRECISION = 6
 
 
 @dataclass(frozen=True)
@@ -63,6 +76,17 @@ class _EvaluationState:
     postmortem_required: bool = False
     postmortem_mode: str | None = None
     postmortem_reason_codes: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class _ScoringResult:
+    base_score: float
+    sustained_boost: float
+    peak_boost: float
+    final_score: float
+    proposed_action: Action
+    score_reason_code: str
+    fallback_applied: bool = False
 
 
 def evaluate_rulebook_gates(
@@ -263,7 +287,41 @@ def collect_gate_inputs_by_scope(
                 anomaly_family=anomaly_family,
             )
             sustained_status = peak_output.sustained_by_key.get(sustained_key)
-            sustained = sustained_status.is_sustained if sustained_status is not None else False
+            is_sustained_for_scoring: bool | None = (
+                sustained_status.is_sustained if sustained_status is not None else None
+            )
+            sustained_for_gate_input = is_sustained_for_scoring is True
+
+            try:
+                scoring_result = _derive_scoring_result(
+                    evidence_status_map=evidence_status_map,
+                    is_sustained=is_sustained_for_scoring,
+                    sustained_consecutive_buckets=(
+                        sustained_status.consecutive_anomalous_buckets
+                        if sustained_status is not None
+                        else None
+                    ),
+                    sustained_required_buckets=(
+                        sustained_status.required_buckets
+                        if sustained_status is not None
+                        else None
+                    ),
+                    is_peak_window=(
+                        peak_context.is_peak_window if peak_context is not None else None
+                    ),
+                    is_near_peak_window=(
+                        peak_context.is_near_peak_window if peak_context is not None else None
+                    ),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "gating_scoring_fallback_applied",
+                    event_type="gating.scoring.fallback_applied",
+                    scope=scope,
+                    anomaly_family=anomaly_family,
+                    error=str(exc),
+                )
+                scoring_result = _fallback_scoring_result()
 
             gate_inputs_by_scope[scope].append(
                 GateInputV1(
@@ -275,11 +333,11 @@ def collect_gate_inputs_by_scope(
                     anomaly_family=anomaly_family,
                     criticality_tier=context.criticality_tier,
                     proposed_action=_cap_action_to_max_safe(
-                        proposed_action=context.proposed_action,
+                        proposed_action=scoring_result.proposed_action,
                         max_safe_action=max_safe_action,
                     ),
-                    diagnosis_confidence=context.diagnosis_confidence,
-                    sustained=sustained,
+                    diagnosis_confidence=scoring_result.final_score,
+                    sustained=sustained_for_gate_input,
                     findings=tuple(findings),
                     evidence_status_map=evidence_status_map,
                     action_fingerprint=_action_fingerprint(
@@ -296,10 +354,9 @@ def collect_gate_inputs_by_scope(
                     partition_count_observed=context.partition_count_observed,
                     peak=peak,
                     case_id=context.case_id,
-                    decision_basis=(
-                        dict(context.decision_basis)
-                        if context.decision_basis is not None
-                        else None
+                    decision_basis=_merge_decision_basis(
+                        existing_decision_basis=context.decision_basis,
+                        scoring_result=scoring_result,
                     ),
                 )
             )
@@ -322,6 +379,173 @@ def _validate_rulebook_gate_order(gates: tuple[GateSpec, ...]) -> None:
         raise ValueError(
             f"Rulebook gate order must be {_EXPECTED_GATE_ORDER}; got {gate_ids}"
         )
+
+
+def _derive_scoring_result(
+    *,
+    evidence_status_map: Mapping[str, EvidenceStatus],
+    is_sustained: bool | None,
+    sustained_consecutive_buckets: int | None,
+    sustained_required_buckets: int | None,
+    is_peak_window: bool | None,
+    is_near_peak_window: bool | None,
+) -> _ScoringResult:
+    base_score = _score_base_from_evidence_status_map(evidence_status_map)
+    sustained_boost = _score_sustained_boost(
+        is_sustained=is_sustained,
+        consecutive_buckets=sustained_consecutive_buckets,
+        required_buckets=sustained_required_buckets,
+    )
+    peak_boost = _score_peak_boost(
+        is_peak_window=is_peak_window,
+        is_near_peak_window=is_near_peak_window,
+    )
+    final_score = _score_final(
+        base_score=base_score,
+        sustained_boost=sustained_boost,
+        peak_boost=peak_boost,
+    )
+    proposed_action = _derive_proposed_action_from_score(final_score)
+    score_reason_code = _derive_score_reason_code(
+        final_score=final_score,
+        sustained_boost=sustained_boost,
+        peak_boost=peak_boost,
+    )
+
+    return _ScoringResult(
+        base_score=base_score,
+        sustained_boost=sustained_boost,
+        peak_boost=peak_boost,
+        final_score=final_score,
+        proposed_action=proposed_action,
+        score_reason_code=score_reason_code,
+        fallback_applied=False,
+    )
+
+
+def _score_base_from_evidence_status_map(
+    evidence_status_map: Mapping[str, EvidenceStatus],
+) -> float:
+    if not evidence_status_map:
+        return 0.0
+
+    weighted_total = 0.0
+    for status in evidence_status_map.values():
+        weighted_total += _score_weight_for_evidence_status(status)
+    return _clamp_score(weighted_total / float(len(evidence_status_map)))
+
+
+def _score_weight_for_evidence_status(status: EvidenceStatus) -> float:
+    if status == EvidenceStatus.PRESENT:
+        return SCORE_V1_BASE_PRESENT_WEIGHT
+    if status == EvidenceStatus.UNKNOWN:
+        return SCORE_V1_BASE_UNKNOWN_WEIGHT
+    if status == EvidenceStatus.ABSENT:
+        return SCORE_V1_BASE_ABSENT_WEIGHT
+    if status == EvidenceStatus.STALE:
+        return SCORE_V1_BASE_STALE_WEIGHT
+    raise ValueError(f"Unsupported evidence status for scoring: {status!r}")
+
+
+def _score_sustained_boost(
+    is_sustained: bool | None,
+    *,
+    consecutive_buckets: int | None = None,
+    required_buckets: int | None = None,
+) -> float:
+    if is_sustained is not True:
+        return 0.0
+
+    if (
+        consecutive_buckets is None
+        or required_buckets is None
+        or required_buckets <= 0
+    ):
+        return SCORE_V1_SUSTAINED_AMPLIFIER_MAX
+
+    sustained_ratio = _clamp_score(consecutive_buckets / float(required_buckets))
+    return _clamp_score(SCORE_V1_SUSTAINED_AMPLIFIER_MAX * sustained_ratio)
+
+
+def _score_peak_boost(*, is_peak_window: bool | None, is_near_peak_window: bool | None) -> float:
+    if is_peak_window is True:
+        return SCORE_V1_PEAK_AMPLIFIER
+    if is_near_peak_window is True:
+        return SCORE_V1_NEAR_PEAK_AMPLIFIER
+    return 0.0
+
+
+def _score_final(*, base_score: float, sustained_boost: float, peak_boost: float) -> float:
+    return _clamp_score(base_score + sustained_boost + peak_boost)
+
+
+def _clamp_score(value: float) -> float:
+    return round(max(0.0, min(1.0, value)), SCORE_V1_DECIMAL_PRECISION)
+
+
+def _derive_proposed_action_from_score(score: float) -> Action:
+    if score < SCORE_V1_ACTION_BAND_TICKET_MIN:
+        return Action.OBSERVE
+    if score < SCORE_V1_ACTION_BAND_PAGE_MIN:
+        return Action.TICKET
+    return Action.PAGE
+
+
+def _derive_score_reason_code(
+    *,
+    final_score: float,
+    sustained_boost: float,
+    peak_boost: float,
+) -> str:
+    if final_score < SCORE_V1_ACTION_BAND_TICKET_MIN:
+        return "LOW_CONFIDENCE_INSUFFICIENT_EVIDENCE"
+    if final_score >= SCORE_V1_ACTION_BAND_PAGE_MIN:
+        if sustained_boost > 0.0 and peak_boost > 0.0:
+            return "HIGH_CONFIDENCE_SUSTAINED_PEAK"
+        if sustained_boost > 0.0:
+            return "HIGH_CONFIDENCE_SUSTAINED"
+        return "HIGH_CONFIDENCE"
+    if sustained_boost > 0.0 and peak_boost > 0.0:
+        return "MEDIUM_CONFIDENCE_SUSTAINED_PEAK"
+    if sustained_boost > 0.0:
+        return "MEDIUM_CONFIDENCE_SUSTAINED"
+    return "MEDIUM_CONFIDENCE_BASELINE"
+
+
+def _fallback_scoring_result() -> _ScoringResult:
+    return _ScoringResult(
+        base_score=0.0,
+        sustained_boost=0.0,
+        peak_boost=0.0,
+        final_score=0.0,
+        proposed_action=Action.OBSERVE,
+        score_reason_code="SCORING_FALLBACK_APPLIED",
+        fallback_applied=True,
+    )
+
+
+def _merge_decision_basis(
+    *,
+    existing_decision_basis: Mapping[str, Any] | None,
+    scoring_result: _ScoringResult,
+) -> dict[str, Any]:
+    decision_basis = (
+        dict(existing_decision_basis)
+        if existing_decision_basis is not None
+        else {}
+    )
+    decision_basis.update(
+        {
+            "score_version": SCORE_V1_VERSION,
+            "base_score": scoring_result.base_score,
+            "sustained_boost": scoring_result.sustained_boost,
+            "peak_boost": scoring_result.peak_boost,
+            "final_score": scoring_result.final_score,
+            "score_reason_code": scoring_result.score_reason_code,
+            "fallback_applied": scoring_result.fallback_applied,
+        }
+    )
+    return decision_basis
 
 
 def _ag4_failure_reason_codes(*, gate_spec: GateSpec, gate_input: GateInputV1) -> tuple[str, ...]:

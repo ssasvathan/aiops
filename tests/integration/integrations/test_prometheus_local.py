@@ -5,6 +5,7 @@ import socket
 import time
 from datetime import UTC, datetime
 from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
 from urllib.request import urlopen
 
 import pytest
@@ -29,8 +30,27 @@ def _wait_for_prometheus(base_url: str, timeout_seconds: float = 30.0) -> None:
     while time.monotonic() < deadline:
         try:
             with urlopen(f"{base_url}/-/healthy", timeout=1.0) as response:  # noqa: S310
+                if response.status != 200:
+                    time.sleep(0.25)
+                    continue
+            with urlopen(f"{base_url}/-/ready", timeout=1.0) as response:  # noqa: S310
+                if response.status != 200:
+                    time.sleep(0.25)
+                    continue
+            query = urlencode(
+                {
+                    "query": "up",
+                    "time": f"{datetime.now(tz=UTC).timestamp():.6f}",
+                }
+            )
+            with urlopen(f"{base_url}/api/v1/query?{query}", timeout=1.0) as response:  # noqa: S310
                 if response.status == 200:
                     return
+        except HTTPError as exc:
+            if exc.code == 503:
+                time.sleep(0.25)
+                continue
+            raise
         except (URLError, TimeoutError, ConnectionError, OSError):
             time.sleep(0.25)
     raise TimeoutError(f"Timed out waiting for Prometheus at {base_url}")

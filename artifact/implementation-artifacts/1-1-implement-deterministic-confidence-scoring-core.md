@@ -1,6 +1,6 @@
 # Story 1.1: Implement Deterministic Confidence Scoring Core
 
-Status: ready-for-dev
+Status: review
 
 ## Story
 
@@ -16,24 +16,24 @@ so that gate decisions are explainable and repeatable.
 
 ## Tasks / Subtasks
 
-- [ ] Implement deterministic scoring in `pipeline/stages/gating.py` (AC: 1, 2, 3)
-  - [ ] Add module-local v1 constants with `SCORE_V1_` prefix for base weighting, sustained amplifier, peak amplifier, and action bands.
-  - [ ] Add private helpers (`_score_*`, `_derive_*`) to compute base score, sustained boost, peak boost, final clamp to `[0.0, 1.0]`, and candidate action mapping (`<0.6=OBSERVE`, `0.6-<0.85=TICKET`, `>=0.85=PAGE`).
-  - [ ] Keep scoring function pure and deterministic (no network, file, Redis, or time dependency).
-- [ ] Integrate scoring into gate-input assembly before `GateInputV1` materialization (AC: 1, 2)
-  - [ ] In `collect_gate_inputs_by_scope`, derive scoring inputs from `evidence_status_map`, `peak_output.peak_context_by_scope`, and sustained state.
-  - [ ] Preserve three-state sustained semantics for scoring (`True | False | None`) before converting `GateInputV1.sustained` to boolean.
-  - [ ] Populate `GateInputV1.diagnosis_confidence` and `GateInputV1.proposed_action` from scoring output, then apply existing `max_safe_action` cap logic.
-- [ ] Add deterministic scoring metadata and fallback marker for audit/debug clarity (AC: 1, 3)
-  - [ ] Add stable `decision_basis` keys: `score_version`, `base_score`, `sustained_boost`, `peak_boost`, `final_score`, `score_reason_code`, `fallback_applied`.
-  - [ ] On scoring exception, log warning with `event_type="gating.scoring.fallback_applied"` and produce deterministic fallback payload.
-- [ ] Expand unit tests to cover scoring boundaries and fallback behavior (AC: 1, 2, 3)
-  - [ ] Add AG4 boundary tests explicitly tied to score derivation (`0.59` capped, `0.60` passes, high-confidence sustained+peak reaches high-urgency candidate band).
-  - [ ] Add `is_sustained=None` scoring-path test to verify no sustained boost and deterministic output.
-  - [ ] Add scoring exception-path test to verify `0.0/OBSERVE` fallback and no unhandled exception.
-- [ ] Run quality gates with zero skipped tests (AC: 1, 2, 3)
-  - [ ] Run targeted unit tests for `gating.py` and scheduler gate-input flow.
-  - [ ] Run full regression with Docker-backed testcontainers and confirm `0 skipped`.
+- [x] Implement deterministic scoring in `pipeline/stages/gating.py` (AC: 1, 2, 3)
+  - [x] Add module-local v1 constants with `SCORE_V1_` prefix for base weighting, sustained amplifier, peak amplifier, and action bands.
+  - [x] Add private helpers (`_score_*`, `_derive_*`) to compute base score, sustained boost, peak boost, final clamp to `[0.0, 1.0]`, and candidate action mapping (`<0.6=OBSERVE`, `0.6-<0.85=TICKET`, `>=0.85=PAGE`).
+  - [x] Keep scoring function pure and deterministic (no network, file, Redis, or time dependency).
+- [x] Integrate scoring into gate-input assembly before `GateInputV1` materialization (AC: 1, 2)
+  - [x] In `collect_gate_inputs_by_scope`, derive scoring inputs from `evidence_status_map`, `peak_output.peak_context_by_scope`, and sustained state.
+  - [x] Preserve three-state sustained semantics for scoring (`True | False | None`) before converting `GateInputV1.sustained` to boolean.
+  - [x] Populate `GateInputV1.diagnosis_confidence` and `GateInputV1.proposed_action` from scoring output, then apply existing `max_safe_action` cap logic.
+- [x] Add deterministic scoring metadata and fallback marker for audit/debug clarity (AC: 1, 3)
+  - [x] Add stable `decision_basis` keys: `score_version`, `base_score`, `sustained_boost`, `peak_boost`, `final_score`, `score_reason_code`, `fallback_applied`.
+  - [x] On scoring exception, log warning with `event_type="gating.scoring.fallback_applied"` and produce deterministic fallback payload.
+- [x] Expand unit tests to cover scoring boundaries and fallback behavior (AC: 1, 2, 3)
+  - [x] Add AG4 boundary tests explicitly tied to score derivation (`0.59` capped, `0.60` passes, high-confidence sustained+peak reaches high-urgency candidate band).
+  - [x] Add `is_sustained=None` scoring-path test to verify no sustained boost and deterministic output.
+  - [x] Add scoring exception-path test to verify `0.0/OBSERVE` fallback and no unhandled exception.
+- [x] Run quality gates with zero skipped tests (AC: 1, 2, 3)
+  - [x] Run targeted unit tests for `gating.py` and scheduler gate-input flow.
+  - [x] Run full regression with Docker-backed testcontainers and confirm `0 skipped`.
 
 ## Dev Notes
 
@@ -139,12 +139,30 @@ GPT-5 Codex
 
 - Artifact discovery + analysis executed across epics, PRD, architecture shards, project-context, and code/test surfaces.
 - Latest package version snapshot gathered from official PyPI JSON APIs.
+- Implemented deterministic score derivation in `collect_gate_inputs_by_scope` with tri-state sustained handling and safe fallback logging (`event_type="gating.scoring.fallback_applied"`).
+- Added/updated tests: Story 1.1 ATDD, stage-level gating unit tests, and scheduler gate-input scoring/cap wiring tests.
+- Regression gate command executed with Docker-backed testcontainers; Docker runtime prerequisite was fixed by starting `docker-desktop.service`.
+- Full regression remediation: updated Story 3.1 ATDD fixture settings and hardened Prometheus integration fallback readiness probing to eliminate unrelated suite blockers before re-running full gates.
 
 ### Completion Notes List
 
 - Story created as `ready-for-dev` with implementation guardrails and explicit no-regression boundaries.
 - Scope strictly constrained to deterministic scoring core (Story 1.1), no contract/schema changes.
+- AC1/AC2/AC3 implementation is complete in `gating.py`, including `SCORE_V1_*` constants, `_score_*`/`_derive_*` helpers, metadata propagation, and exception fallback behavior.
+- Targeted validation passed: `118 passed` across Story 1.1 ATDD + touched unit suites.
+- Full regression quality gate now passes with Docker-backed testcontainers: `1164 passed`, `0 skipped`.
+- Additional regression fixes applied to unblock suite execution: `tests/atdd/fixtures/story_3_1_test_data.py` and `tests/integration/integrations/test_prometheus_local.py`.
 
 ### File List
 
 - artifact/implementation-artifacts/1-1-implement-deterministic-confidence-scoring-core.md
+- artifact/implementation-artifacts/sprint-status.yaml
+- src/aiops_triage_pipeline/pipeline/stages/gating.py
+- tests/atdd/fixtures/story_3_1_test_data.py
+- tests/unit/pipeline/stages/test_gating.py
+- tests/unit/pipeline/test_scheduler.py
+- tests/integration/integrations/test_prometheus_local.py
+
+## Change Log
+
+- 2026-03-29: Completed Story 1.1 quality gate by running full Docker-backed regression with zero skipped tests; resolved unrelated test-suite blockers in Story 3.1 ATDD fixture and Prometheus fallback readiness check.
