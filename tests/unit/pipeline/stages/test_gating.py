@@ -652,6 +652,49 @@ def test_collect_gate_inputs_scoring_payload_covers_low_confidence_path() -> Non
     assert scoring_payload["final_score"] == pytest.approx(gate_input.diagnosis_confidence)
 
 
+def test_collect_gate_inputs_all_unknown_stays_below_ag4_floor() -> None:
+    """AC 1: all-UNKNOWN scoring path must remain below 0.6 and non-escalating."""
+    evidence_output, peak_output, scope = _build_story_1_1_stage_inputs(
+        sustained_value=True,
+        is_peak_window=True,
+    )
+    all_unknown_map = {
+        metric_name: EvidenceStatus.UNKNOWN
+        for metric_name in evidence_output.evidence_status_map_by_scope[scope]
+    }
+    evidence_output_all_unknown = evidence_output.model_copy(
+        update={"evidence_status_map_by_scope": {scope: all_unknown_map}}
+    )
+
+    gate_inputs = collect_gate_inputs_by_scope(
+        evidence_output=evidence_output_all_unknown,
+        peak_output=peak_output,
+        context_by_scope={
+            scope: GateInputContext(
+                stream_id="stream-orders",
+                topic_role="SHARED_TOPIC",
+                criticality_tier=CriticalityTier.TIER_0,
+            )
+        },
+    )
+    gate_input = gate_inputs[scope][0]
+
+    assert gate_input.diagnosis_confidence == pytest.approx(0.38)
+    assert gate_input.diagnosis_confidence < 0.6
+    assert gate_input.proposed_action == Action.OBSERVE
+    assert gate_input.decision_basis is not None
+    assert gate_input.decision_basis["score_reason_code"] == "LOW_CONFIDENCE_INSUFFICIENT_EVIDENCE"
+
+    decision = evaluate_rulebook_gates(
+        gate_input=gate_input,
+        rulebook=load_rulebook_policy(),
+        dedupe_store=_DedupeStore(remember_result=True),
+    )
+    assert decision.final_action == Action.OBSERVE
+    assert "AG2_INSUFFICIENT_EVIDENCE" in decision.gate_reason_codes
+    assert "LOW_CONFIDENCE" not in decision.gate_reason_codes
+
+
 def test_collect_gate_inputs_by_scope_handles_sustained_none_without_boost() -> None:
     evidence_output, peak_output, scope = _build_story_1_1_stage_inputs(
         sustained_value=None,
