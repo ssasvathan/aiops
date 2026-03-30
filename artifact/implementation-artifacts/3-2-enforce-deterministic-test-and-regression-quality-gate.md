@@ -1,6 +1,6 @@
 # Story 3.2: Enforce Deterministic Test and Regression Quality Gate
 
-Status: review
+Status: in-progress
 
 <!-- Note: Validation is optional. Run validate-create-story for quality check before dev-story. -->
 
@@ -35,6 +35,12 @@ so that release readiness is demonstrated objectively.
 - [x] Document evidence and update story status trail (AC: 2)
   - [x] Capture command evidence and pass/fail outcomes in this story file.
   - [x] Keep sprint status transitions aligned with workflow (`ready-for-dev` -> `in-progress` -> `review` -> `done`).
+
+### Review Follow-ups (AI)
+
+- [ ] [AI-Review][HIGH] Add an explicit all-`UNKNOWN` scoring-path test that verifies AG4 low-confidence behavior from `collect_gate_inputs_by_scope` output (not only AG2 insufficient-evidence behavior) to fully satisfy AC1. [tests/unit/pipeline/stages/test_gating.py:373]
+- [ ] [AI-Review][MEDIUM] Align Dev Agent Record File List with replay-verification evidence, or explicitly document why replay verification required no file edits. [artifact/implementation-artifacts/3-2-enforce-deterministic-test-and-regression-quality-gate.md:228]
+- [ ] [AI-Review][MEDIUM] Record git-clean review context in the story review notes so claim verification remains auditable when no local diff is present. [artifact/implementation-artifacts/3-2-enforce-deterministic-test-and-regression-quality-gate.md:198]
 
 ## Dev Notes
 
@@ -231,8 +237,57 @@ gpt-5 (Codex)
 - artifact/implementation-artifacts/3-2-enforce-deterministic-test-and-regression-quality-gate.md
 - artifact/implementation-artifacts/sprint-status.yaml
 
+## Senior Developer Review (AI)
+
+### Reviewer
+
+- Reviewer: Sas (AI Senior Developer Reviewer)
+- Date: 2026-03-29
+- Outcome: Changes Requested
+
+### Scope Reviewed
+
+- Story claims, ACs, and completed task checks in this story file.
+- Claimed code/test surface:
+  - `tests/unit/pipeline/stages/test_gating.py`
+  - `tests/unit/audit/test_decision_reproducibility.py`
+- Sprint tracking file:
+  - `artifact/implementation-artifacts/sprint-status.yaml`
+
+### Findings
+
+1. HIGH - AC1 coverage gap for all-`UNKNOWN` scoring path
+   - AC1 explicitly requires all-`UNKNOWN` boundary behavior verification (`all-UNKNOWN remains below 0.6`), but current tests focus on:
+     - high-confidence `PRESENT+sustained+peak` scoring path (`test_collect_gate_inputs_by_scope_populates_score_metadata_and_candidate_action`) [tests/unit/pipeline/stages/test_gating.py:373]
+     - mixed/partial quality with some `UNKNOWN` values (not fully all-`UNKNOWN`) [tests/unit/pipeline/stages/test_gating.py:551]
+     - AG2 insufficient-evidence behavior for unknown statuses [tests/unit/pipeline/stages/test_gating.py:1084]
+   - Impact: Task marked complete for all-`UNKNOWN` assertion is only partially substantiated; AC1 remains partially implemented.
+
+2. MEDIUM - Replay-verification traceability gap in File List
+   - Story tasks and debug log state replay verification was executed via `tests/unit/audit/test_decision_reproducibility.py` [artifact/implementation-artifacts/3-2-enforce-deterministic-test-and-regression-quality-gate.md:26, :208].
+   - Dev Agent Record File List omits this file [artifact/implementation-artifacts/3-2-enforce-deterministic-test-and-regression-quality-gate.md:228].
+   - Impact: Reviewer traceability is weaker because verified surfaces and file inventory are inconsistent.
+
+3. MEDIUM - Git/story reconciliation gap for review transparency
+   - Local repository is clean during review (`git status --porcelain` empty; no staged or unstaged file diff).
+   - Story does not explicitly state this reconciliation context in review notes, while tasks are marked complete.
+   - Impact: Future reviewers cannot quickly differentiate "already committed implementation" from "unchecked claim" without manual git archaeology.
+
+### Validation Evidence (Independent Re-run)
+
+- `uv run pytest -q tests/unit/pipeline/stages/test_gating.py` -> `68 passed`
+- `uv run pytest -q tests/unit/audit/test_decision_reproducibility.py` -> `21 passed`
+- `TESTCONTAINERS_RYUK_DISABLED=true DOCKER_HOST=unix://$HOME/.docker/desktop/docker.sock uv run pytest -q -rs` -> `1207 passed`, `0 skipped`
+- `uv run ruff check tests/unit/pipeline/stages/test_gating.py tests/unit/audit/test_decision_reproducibility.py` -> `All checks passed!`
+
+### Notes
+
+- No dependency or API surface changes were introduced in this story, so additional package documentation search beyond existing story references was not required for this review.
+- Story status moved to `in-progress` pending closure of HIGH/MEDIUM follow-ups.
+
 ## Change Log
 
 - 2026-03-29: Story 3.2 created via create-story workflow; status set to `ready-for-dev` with full context package.
 - 2026-03-29: Story 3.2 implementation completed; deterministic boundary/replay evidence validated and story status set to `review`.
 - 2026-03-29: Applied minimal Ruff line-length compliance updates in `tests/unit/pipeline/stages/test_gating.py`; full regression re-run passed with `0 skipped`.
+- 2026-03-29: Senior Developer Review (AI) completed; HIGH/MEDIUM follow-ups logged, story moved to `in-progress`, and sprint status synced accordingly.
