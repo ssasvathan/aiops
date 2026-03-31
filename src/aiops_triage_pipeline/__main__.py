@@ -12,7 +12,7 @@ from typing import Any, Mapping
 
 import redis as redis_lib
 import structlog
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, delete
 
 from aiops_triage_pipeline.cache.dedupe import RedisActionDedupeStore
 from aiops_triage_pipeline.cache.evidence_window import (
@@ -25,6 +25,7 @@ from aiops_triage_pipeline.cache.peak_cache import (
     persist_peak_profiles,
 )
 from aiops_triage_pipeline.config.settings import (
+    AppEnv,
     IntegrationMode,
     Settings,
     get_settings,
@@ -81,6 +82,7 @@ from aiops_triage_pipeline.logging.setup import configure_logging, get_logger
 from aiops_triage_pipeline.models.evidence import EvidenceRow
 from aiops_triage_pipeline.models.health import HealthStatus
 from aiops_triage_pipeline.outbox.repository import OutboxSqlRepository
+from aiops_triage_pipeline.outbox.schema import create_outbox_table, outbox_table
 from aiops_triage_pipeline.outbox.worker import OutboxPublisherWorker
 from aiops_triage_pipeline.pipeline.baseline_store import load_metric_baselines
 from aiops_triage_pipeline.pipeline.scheduler import (
@@ -132,6 +134,22 @@ _OPERATIONAL_ALERT_POLICY_PATH = (
 _CASEFILE_TRIAGE_HASH_MISMATCH_ERROR = (
     "triage_hash does not match canonical serialized payload bytes"
 )
+_HARNESS_CASE_ID_PREFIX = "case-harness-"
+_HARNESS_CASEFILE_PREFIX = f"cases/{_HARNESS_CASE_ID_PREFIX}"
+_HARNESS_CLEANUP_GOVERNANCE_APPROVAL_REF = "DEV-HARNESS-STATE-SWEEP"
+_HARNESS_REDIS_KEY_PATTERNS: tuple[str, ...] = (
+    "dedupe:harness/*",
+    "aiops:baseline:*:harness|harness-cluster|*",
+    "aiops:peak:harness-cluster:*",
+    "peak:harness|harness-cluster|*",
+    "aiops:sustained:harness-cluster:*",
+    "evidence:findings|harness|harness-cluster|*",
+    "evidence:findings:harness|harness-cluster|*",
+    "evidence:harness|harness-cluster|*",
+    "evidence_window:harness|harness-cluster|*",
+)
+_HARNESS_REDIS_DELETE_BATCH_SIZE = 500
+_HARNESS_OBJECT_DELETE_BATCH_SIZE = 1000
 
 
 class _PeakHistoryRetention:
@@ -245,7 +263,13 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="AIOps Triage Pipeline")
     parser.add_argument(
         "--mode",
-        choices=["hot-path", "cold-path", "outbox-publisher", "casefile-lifecycle"],
+        choices=[
+            "hot-path",
+            "cold-path",
+            "outbox-publisher",
+            "casefile-lifecycle",
+            "harness-cleanup",
+        ],
         required=True,
         help="Pipeline mode to run",
     )
@@ -267,6 +291,9 @@ def main() -> None:
         return
     if args.mode == "casefile-lifecycle":
         _run_casefile_lifecycle(once=args.once)
+        return
+    if args.mode == "harness-cleanup":
+        _run_harness_cleanup()
         return
 
     raise RuntimeError(f"Unsupported mode: {args.mode}")
@@ -1453,6 +1480,116 @@ def _run_casefile_lifecycle(*, once: bool) -> None:
     while True:
         runner.run_once()
         time.sleep(settings.CASEFILE_LIFECYCLE_POLL_INTERVAL_SECONDS)
+
+
+def _chunk_keys(keys: list[str], chunk_size: int) -> list[list[str]]:
+    return [keys[index : index + chunk_size] for index in range(0, len(keys), chunk_size)]
+
+
+def _collect_harness_casefile_keys(*, object_store_client) -> list[str]:
+    keys: list[str] = []
+    continuation_token: str | None = None
+    while True:
+        page = object_store_client.list_objects_page(
+            prefix=_HARNESS_CASEFILE_PREFIX,
+            continuation_token=continuation_token,
+            max_keys=_HARNESS_OBJECT_DELETE_BATCH_SIZE,
+        )
+        keys.extend(obj.key for obj in page.objects)
+        continuation_token = page.next_continuation_token
+        if continuation_token is None:
+            return sorted(set(keys))
+
+
+def _delete_harness_casefiles(*, object_store_client, keys: list[str]) -> tuple[int, int]:
+    deleted_count = 0
+    failed_count = 0
+    if not keys:
+        return deleted_count, failed_count
+
+    for batch in _chunk_keys(keys, _HARNESS_OBJECT_DELETE_BATCH_SIZE):
+        delete_result = object_store_client.delete_objects_batch(
+            keys=batch,
+            governance_approval_ref=_HARNESS_CLEANUP_GOVERNANCE_APPROVAL_REF,
+        )
+        deleted_count += len(delete_result.deleted_keys)
+        failed_count += len(delete_result.failed_keys)
+    return deleted_count, failed_count
+
+
+def _delete_harness_outbox_rows(*, engine) -> int:
+    with engine.begin() as conn:
+        create_outbox_table(conn)
+        result = conn.execute(
+            delete(outbox_table).where(outbox_table.c.case_id.like(f"{_HARNESS_CASE_ID_PREFIX}%"))
+        )
+    return int(result.rowcount or 0)
+
+
+def _delete_harness_redis_keys(*, redis_client) -> tuple[int, int]:
+    discovered_keys: set[str] = set()
+    for pattern in _HARNESS_REDIS_KEY_PATTERNS:
+        for raw_key in redis_client.scan_iter(
+            match=pattern,
+            count=_HARNESS_REDIS_DELETE_BATCH_SIZE,
+        ):
+            if isinstance(raw_key, bytes):
+                decoded = raw_key.decode("utf-8", errors="ignore").strip()
+            else:
+                decoded = str(raw_key).strip()
+            if decoded:
+                discovered_keys.add(decoded)
+
+    deleted_count = 0
+    sorted_keys = sorted(discovered_keys)
+    for batch in _chunk_keys(sorted_keys, _HARNESS_REDIS_DELETE_BATCH_SIZE):
+        deleted_count += int(redis_client.delete(*batch))
+    return len(sorted_keys), deleted_count
+
+
+def _run_harness_cleanup() -> None:
+    settings, logger, _ = _bootstrap_mode("harness-cleanup")
+    app_env_value = (
+        settings.APP_ENV.value if hasattr(settings.APP_ENV, "value") else str(settings.APP_ENV)
+    )
+    if app_env_value not in {AppEnv.local.value, AppEnv.harness.value}:
+        raise ValueError(
+            "harness-cleanup mode is only allowed for APP_ENV in {local, harness}; "
+            f"got {app_env_value}"
+        )
+
+    logger.info(
+        "harness_cleanup_started",
+        event_type="harness.cleanup.start",
+        app_env=app_env_value,
+        case_id_prefix=_HARNESS_CASE_ID_PREFIX,
+        casefile_prefix=_HARNESS_CASEFILE_PREFIX,
+        redis_patterns=_HARNESS_REDIS_KEY_PATTERNS,
+    )
+
+    object_store_client = build_s3_object_store_client_from_settings(settings)
+    engine = create_engine(settings.DATABASE_URL)
+    redis_client = redis_lib.Redis.from_url(settings.REDIS_URL)
+
+    harness_casefile_keys = _collect_harness_casefile_keys(object_store_client=object_store_client)
+    casefiles_deleted_count, casefiles_failed_count = _delete_harness_casefiles(
+        object_store_client=object_store_client,
+        keys=harness_casefile_keys,
+    )
+    outbox_deleted_count = _delete_harness_outbox_rows(engine=engine)
+    redis_matched_count, redis_deleted_count = _delete_harness_redis_keys(redis_client=redis_client)
+
+    logger.info(
+        "harness_cleanup_completed",
+        event_type="harness.cleanup.complete",
+        app_env=app_env_value,
+        casefiles_found_count=len(harness_casefile_keys),
+        casefiles_deleted_count=casefiles_deleted_count,
+        casefiles_failed_count=casefiles_failed_count,
+        outbox_rows_deleted_count=outbox_deleted_count,
+        redis_keys_matched_count=redis_matched_count,
+        redis_keys_deleted_count=redis_deleted_count,
+    )
 
 
 if __name__ == "__main__":

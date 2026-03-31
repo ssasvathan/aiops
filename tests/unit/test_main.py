@@ -86,6 +86,20 @@ def test_main_dispatches_cold_path_mode(monkeypatch) -> None:
     assert called["cold"] is True
 
 
+def test_main_dispatches_harness_cleanup_mode(monkeypatch) -> None:
+    called = {"cleanup": False}
+
+    def _mark_cleanup() -> None:
+        called["cleanup"] = True
+
+    monkeypatch.setattr(__main__, "_run_harness_cleanup", _mark_cleanup)
+    monkeypatch.setattr(sys, "argv", ["aiops-triage-pipeline", "--mode", "harness-cleanup"])
+
+    __main__.main()
+
+    assert called["cleanup"] is True
+
+
 def _make_mock_bootstrap(mode_capture: list[str]):
     """Return a mock _bootstrap_mode that records mode and returns a stub triple."""
     logger = MagicMock()
@@ -164,6 +178,91 @@ def test_run_hot_path_raises_when_topology_registry_not_configured(monkeypatch) 
 
     with pytest.raises(ValueError, match="TOPOLOGY_REGISTRY_PATH"):
         __main__._run_hot_path()
+
+
+def test_run_harness_cleanup_rejects_non_local_or_harness_env(monkeypatch) -> None:
+    settings = SimpleNamespace(
+        APP_ENV=SimpleNamespace(value="dev"),
+    )
+
+    monkeypatch.setattr(
+        __main__,
+        "_bootstrap_mode",
+        lambda mode: (settings, MagicMock(), MagicMock()),
+    )
+
+    with pytest.raises(ValueError, match="harness-cleanup mode is only allowed"):
+        __main__._run_harness_cleanup()
+
+
+def test_run_harness_cleanup_runs_sweep_and_logs_summary(monkeypatch) -> None:
+    settings = SimpleNamespace(
+        APP_ENV=__main__.AppEnv.local,
+        DATABASE_URL="postgresql+psycopg://aiops:aiops@localhost:5432/aiops",
+        REDIS_URL="redis://localhost:6379/0",
+    )
+    logger = MagicMock()
+    object_store_client = MagicMock()
+    engine = MagicMock()
+    redis_client = MagicMock()
+
+    monkeypatch.setattr(
+        __main__,
+        "_bootstrap_mode",
+        lambda mode: (settings, logger, MagicMock()),
+    )
+    monkeypatch.setattr(
+        __main__,
+        "build_s3_object_store_client_from_settings",
+        lambda _settings: object_store_client,
+    )
+    monkeypatch.setattr(__main__, "create_engine", lambda _url: engine)
+    monkeypatch.setattr(
+        __main__,
+        "redis_lib",
+        SimpleNamespace(
+            Redis=SimpleNamespace(from_url=lambda _url: redis_client),
+        ),
+    )
+    monkeypatch.setattr(
+        __main__,
+        "_collect_harness_casefile_keys",
+        lambda **kwargs: ["cases/case-harness-a/triage.json", "cases/case-harness-b/triage.json"],
+    )
+    monkeypatch.setattr(
+        __main__,
+        "_delete_harness_casefiles",
+        lambda **kwargs: (2, 0),
+    )
+    monkeypatch.setattr(
+        __main__,
+        "_delete_harness_outbox_rows",
+        lambda **kwargs: 3,
+    )
+    monkeypatch.setattr(
+        __main__,
+        "_delete_harness_redis_keys",
+        lambda **kwargs: (5, 5),
+    )
+
+    __main__._run_harness_cleanup()
+
+    complete_log = next(
+        (
+            call
+            for call in logger.info.call_args_list
+            if call.args and call.args[0] == "harness_cleanup_completed"
+        ),
+        None,
+    )
+    assert complete_log is not None
+    assert complete_log.kwargs["event_type"] == "harness.cleanup.complete"
+    assert complete_log.kwargs["casefiles_found_count"] == 2
+    assert complete_log.kwargs["casefiles_deleted_count"] == 2
+    assert complete_log.kwargs["casefiles_failed_count"] == 0
+    assert complete_log.kwargs["outbox_rows_deleted_count"] == 3
+    assert complete_log.kwargs["redis_keys_matched_count"] == 5
+    assert complete_log.kwargs["redis_keys_deleted_count"] == 5
 
 
 def _build_cold_path_settings_for_unit() -> SimpleNamespace:

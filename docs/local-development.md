@@ -29,6 +29,11 @@ This starts:
 - Harness
 - App container
 
+`app` startup now performs a harness-state sweep before entering hot-path mode:
+
+1. runs `--mode harness-cleanup` (clears harness casefiles/outbox/cache residue)
+2. then starts `--mode hot-path`
+
 ## Harness — Traffic Generation
 
 The `harness` service is a local-only dev tool that generates synthetic Prometheus metrics simulating real Kafka JMX exporter data. It starts automatically with `docker compose up`.
@@ -226,6 +231,24 @@ uv run pytest -q tests/unit
 
 - If smoke tests fail immediately, ensure services are running: `docker compose ps`
 - If Python commands fail on env resolution, verify `APP_ENV` and the matching `config/.env.<APP_ENV>` file exists.
+
+### Harness Residue Cleanup (Recommended Between Repeated Local Runs)
+
+If you repeatedly run harness/local cycles, stale `outbox` rows and casefile objects can drift out of sync and cause hot-path `hot_path_case_processing_failed` errors.
+
+Run the built-in cleanup sweep (safe-scoped to harness artifacts only):
+
+```bash
+APP_ENV=local uv run python -m aiops_triage_pipeline --mode harness-cleanup
+```
+
+When you use `docker compose up`, this sweep runs automatically for the `app` service.
+
+What it removes:
+
+- MinIO objects under `cases/case-harness-*/`
+- Postgres `outbox` rows where `case_id LIKE 'case-harness-%'`
+- Harness-related Redis dedupe/cache keys
 
 ### Harness Cases Show OBSERVE But No Cold-Path Summary
 

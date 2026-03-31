@@ -54,7 +54,8 @@ def configure_logging(log_level: str = "INFO") -> None:
     4. _add_severity — renames 'level' → 'severity', uppercased (NFR-O3)
     5. TimeStamper — adds ISO 8601 UTC 'timestamp' field (NFR-O3)
     6. StackInfoRenderer — formats stack_info if present
-    7. JSONRenderer — renders event dict as JSON string
+    7. format_exc_info — renders ``exc_info=True`` traceback into JSON-safe text
+    8. JSONRenderer — renders event dict as JSON string
 
     Args:
         log_level: Minimum log level: CRITICAL, DEBUG, ERROR, INFO, WARNING. Default INFO.
@@ -85,6 +86,7 @@ def configure_logging(log_level: str = "INFO") -> None:
             _add_severity,
             structlog.processors.TimeStamper(fmt="iso", utc=True),
             structlog.processors.StackInfoRenderer(),
+            structlog.processors.format_exc_info,
             structlog.processors.JSONRenderer(),
         ],
         logger_factory=structlog.stdlib.LoggerFactory(),

@@ -173,6 +173,12 @@ services:
   app:
     build: .
     env_file: config/.env.docker
+    # Force a clean harness-local state every compose startup to avoid stale
+    # outbox/casefile/cache residue causing false hot-path case errors.
+    entrypoint: ["/bin/bash", "-lc"]
+    command: >
+      uv run python -m aiops_triage_pipeline --mode harness-cleanup &&
+      exec uv run python -m aiops_triage_pipeline --mode hot-path
     volumes:
       - ./_bmad/input/feed-pack/topology-registry.yaml:/app/config/topology-registry.yaml:ro
     depends_on:

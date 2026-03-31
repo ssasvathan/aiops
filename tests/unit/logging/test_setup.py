@@ -123,6 +123,18 @@ def test_error_appears_at_info_level(log_stream):
     assert data["severity"] == "ERROR"
 
 
+def test_exc_info_renders_exception_traceback(log_stream):
+    """exc_info=True renders traceback details into the JSON payload."""
+    try:
+        raise RuntimeError("boom")
+    except RuntimeError:
+        get_logger("test").error("error_with_exc", exc_info=True)
+    data = _last_log(log_stream)
+    assert data["event"] == "error_with_exc"
+    assert "exception" in data
+    assert "RuntimeError: boom" in data["exception"]
+
+
 async def test_async_context_propagation():
     """correlation_id bound in parent propagates to child tasks via asyncio.create_task()."""
     configure_logging("INFO")
