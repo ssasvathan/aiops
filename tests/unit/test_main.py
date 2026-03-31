@@ -887,6 +887,43 @@ class TestColdPathProcessEventWiring:
             "Must log 'cold_path_evidence_summary_failed' on build_evidence_summary() failure"
         )
 
+    def test_cold_path_process_event_skips_diagnosis_when_stage_already_exists_for_triage_hash(
+        self, monkeypatch
+    ) -> None:
+        """Duplicate case headers should short-circuit when diagnosis.json already matches triage."""
+        from unittest.mock import MagicMock, patch
+
+        event = _make_case_header_event(case_id="case-duplicate-diagnosis-001")
+        fake_store = MagicMock()
+        logger = MagicMock()
+        run_probe = AsyncMock(return_value=MagicMock())
+        triage_hash = "d" * 64
+
+        with patch.object(
+            __main__,
+            "retrieve_case_context_with_hash",
+            return_value=SimpleNamespace(excerpt=MagicMock(), triage_hash=triage_hash),
+        ):
+            with patch.object(__main__, "build_evidence_summary", return_value="summary"):
+                with patch.object(
+                    __main__,
+                    "read_casefile_stage_json_or_none",
+                    return_value=SimpleNamespace(
+                        triage_hash=triage_hash,
+                        diagnosis_hash="e" * 64,
+                    ),
+                ):
+                    with patch.object(__main__, "run_cold_path_diagnosis", run_probe):
+                        __main__._cold_path_process_event(
+                            event,
+                            logger,
+                            object_store_client=fake_store,
+                        )
+
+        assert run_probe.call_count == 0
+        info_events = [c.args[0] for c in logger.info.call_args_list if c.args]
+        assert "cold_path_diagnosis_already_present" in info_events
+
 
 @pytest.mark.asyncio
 async def test_process_cold_path_message_uses_async_processor_boundary(monkeypatch) -> None:

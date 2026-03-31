@@ -110,6 +110,7 @@ from aiops_triage_pipeline.pipeline.stages.peak import (
     load_rulebook_policy,
 )
 from aiops_triage_pipeline.registry.loader import TopologyRegistryLoader
+from aiops_triage_pipeline.storage.casefile_io import read_casefile_stage_json_or_none
 from aiops_triage_pipeline.storage.client import build_s3_object_store_client_from_settings
 from aiops_triage_pipeline.storage.lifecycle import CasefileLifecycleRunner
 
@@ -1338,6 +1339,43 @@ async def _cold_path_process_event_async(
             event_type="cold_path.context_retrieval_failed",
             case_id=event.case_id,
             exc_info=True,
+        )
+        return
+
+    # Duplicate case-header events are expected; keep diagnosis write-once by short-circuiting
+    # when diagnosis.json already exists for the same triage hash.
+    existing_diagnosis = None
+    try:
+        existing_diagnosis = read_casefile_stage_json_or_none(
+            object_store_client=object_store_client,
+            case_id=event.case_id,
+            stage="diagnosis",
+        )
+    except Exception:  # noqa: BLE001
+        logger.warning(
+            "cold_path_existing_diagnosis_probe_failed",
+            event_type="cold_path.existing_diagnosis_probe_failed",
+            case_id=event.case_id,
+            exc_info=True,
+        )
+
+    if existing_diagnosis is not None:
+        if existing_diagnosis.triage_hash == triage_hash:
+            logger.info(
+                "cold_path_diagnosis_already_present",
+                event_type="cold_path.diagnosis_already_present",
+                case_id=event.case_id,
+                triage_hash=triage_hash,
+                diagnosis_hash=existing_diagnosis.diagnosis_hash,
+            )
+            return
+        logger.warning(
+            "cold_path_existing_diagnosis_triage_hash_mismatch",
+            event_type="cold_path.existing_diagnosis_triage_hash_mismatch",
+            case_id=event.case_id,
+            triage_hash=triage_hash,
+            existing_triage_hash=existing_diagnosis.triage_hash,
+            diagnosis_hash=existing_diagnosis.diagnosis_hash,
         )
         return
 
