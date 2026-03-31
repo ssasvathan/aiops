@@ -44,7 +44,11 @@ from aiops_triage_pipeline.storage.casefile_io import (
 from aiops_triage_pipeline.storage.client import ObjectStoreClientProtocol, PutIfAbsentResult
 
 
-def _sample_casefile() -> CaseFileTriageV1:
+def _sample_casefile(
+    *,
+    final_action: Action = Action.TICKET,
+    gate_reason_codes: tuple[str, ...] = ("PASS", "PASS", "PASS"),
+) -> CaseFileTriageV1:
     gate_input = GateInputV1(
         env=Environment.PROD,
         cluster_id="cluster-a",
@@ -69,10 +73,10 @@ def _sample_casefile() -> CaseFileTriageV1:
         case_id="case-prod-cluster-a-orders-volume-drop",
     )
     action_decision = ActionDecisionV1(
-        final_action=Action.TICKET,
+        final_action=final_action,
         env_cap_applied=False,
         gate_rule_ids=("AG0", "AG1", "AG2"),
-        gate_reason_codes=("PASS", "PASS", "PASS"),
+        gate_reason_codes=gate_reason_codes,
         action_fingerprint=gate_input.action_fingerprint,
         postmortem_required=False,
     )
@@ -330,6 +334,71 @@ def test_outbox_worker_recovers_ready_records_and_publishes_after_restart() -> N
         assert publisher.calls == 1
         assert publisher.excerpts
         assert "password" not in publisher.excerpts[0].evidence_status_map
+
+
+@pytest.mark.integration
+def test_outbox_worker_publishes_observe_cases_and_transitions_ready_to_sent() -> None:
+    casefile = _sample_casefile(
+        final_action=Action.OBSERVE,
+        gate_reason_codes=("INSUFFICIENT_HISTORY", "NOT_SUSTAINED", "AG4_CAP"),
+    )
+    object_store = _InMemoryObjectStoreClient()
+    publisher = _RecordingCaseEventsPublisher()
+    ready_casefile = persist_casefile_and_prepare_outbox_ready(
+        casefile=casefile,
+        object_store_client=object_store,
+    )
+    object_store.store[ready_casefile.object_path] = serialize_casefile_triage(casefile)
+
+    with PostgresContainer("postgres:16") as postgres:
+        connection_url = postgres.get_connection_url().replace(
+            "postgresql+psycopg2://",
+            "postgresql+psycopg://",
+        )
+        if connection_url.startswith("postgresql://"):
+            connection_url = connection_url.replace("postgresql://", "postgresql+psycopg://")
+        engine = create_engine(connection_url)
+        create_outbox_table(engine)
+        repository = OutboxSqlRepository(engine=engine)
+        build_outbox_ready_record(
+            confirmed_casefile=ready_casefile,
+            outbox_repository=repository,
+        )
+
+        worker = OutboxPublisherWorker(
+            outbox_repository=repository,
+            object_store_client=object_store,
+            publisher=publisher,
+            denylist=_denylist_for_tests(),
+            policy=_policy_with_max_retry(max_retry_attempts=3),
+            app_env="local",
+        )
+        logger = _RecordingLogger()
+        worker._logger = logger  # noqa: SLF001
+
+        run_time = datetime(2026, 3, 6, 12, 0, tzinfo=UTC)
+        result = worker.run_once(now=run_time)
+
+        sent = repository.get_by_case_id(casefile.case_id)
+        assert result.sent_count == 1
+        assert sent is not None
+        assert sent.status == "SENT"
+        assert sent.delivery_attempts == 1
+        assert publisher.calls == 1
+
+        publish_success_event = next(
+            (
+                event
+                for event in logger.events
+                if event[2].get("event_type") == "outbox.publish_succeeded"
+            ),
+            None,
+        )
+        assert publish_success_event is not None
+        assert publish_success_event[2]["final_action"] == "OBSERVE"
+        assert publish_success_event[2]["anomaly_family"] == "VOLUME_DROP"
+        assert publish_success_event[2]["env"] == "prod"
+        assert publish_success_event[2]["topic"] == "orders"
 
 
 @pytest.mark.integration

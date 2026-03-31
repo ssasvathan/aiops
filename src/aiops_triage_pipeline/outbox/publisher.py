@@ -57,6 +57,10 @@ class CaseEventsPublishEvidenceV1(BaseModel, frozen=True):
     case_id: str
     casefile_object_path: str
     triage_hash: str
+    env: str
+    topic: str
+    anomaly_family: str
+    final_action: str
     published_at: AwareDatetime
     event_count: int = 2
     boundary_id: str = _TRIAGE_EXCERPT_PUBLISH_BOUNDARY_ID
@@ -140,6 +144,10 @@ def publish_case_events_after_invariant_a(
         case_id=outbox_record.case_id,
         casefile_object_path=outbox_record.casefile_object_path,
         triage_hash=outbox_record.triage_hash,
+        env=case_header_event.env.value,
+        topic=case_header_event.topic,
+        anomaly_family=case_header_event.anomaly_family,
+        final_action=case_header_event.final_action.value,
         published_at=resolved_published_at,
         removed_field_count=sanitization_result.removed_field_count,
     )

@@ -10,6 +10,7 @@ import pytest
 
 from aiops_triage_pipeline import __main__
 from aiops_triage_pipeline.__main__ import _HotPathCoordinationState
+from aiops_triage_pipeline.contracts.enums import Action
 from aiops_triage_pipeline.coordination.protocol import CycleLockStatus
 from aiops_triage_pipeline.errors.exceptions import IntegrationError
 from aiops_triage_pipeline.models.anomaly import AnomalyFinding
@@ -559,12 +560,16 @@ def test_peak_history_retention_skips_over_cap_scopes_without_active_scope_churn
 # ---------------------------------------------------------------------------
 
 
-def _make_case_header_event(case_id: str = "case-main-test-001"):
+def _make_case_header_event(
+    case_id: str = "case-main-test-001",
+    *,
+    final_action: Action = Action.NOTIFY,
+):
     """Minimal valid CaseHeaderEventV1 for cold-path processing tests."""
     from datetime import UTC, datetime
 
     from aiops_triage_pipeline.contracts.case_header_event import CaseHeaderEventV1
-    from aiops_triage_pipeline.contracts.enums import Action, CriticalityTier, Environment
+    from aiops_triage_pipeline.contracts.enums import CriticalityTier, Environment
 
     return CaseHeaderEventV1(
         case_id=case_id,
@@ -574,7 +579,7 @@ def _make_case_header_event(case_id: str = "case-main-test-001"):
         topic="unit-test.events",
         anomaly_family="CONSUMER_LAG",
         criticality_tier=CriticalityTier.TIER_1,
-        final_action=Action.NOTIFY,
+        final_action=final_action,
         routing_key="OWN::Test::Team",
         evaluation_ts=datetime(2026, 3, 22, 18, 0, 0, tzinfo=UTC),
     )
@@ -682,6 +687,45 @@ class TestColdPathProcessEventWiring:
 
         assert run_probe.call_count == 1
         assert run_probe.call_args.kwargs["triage_hash"] == "b" * 64
+
+    def test_cold_path_process_event_invokes_diagnosis_for_observe_case_headers(
+        self, monkeypatch
+    ) -> None:
+        """OBSERVE actions still invoke cold-path diagnosis (all-case semantics)."""
+        from unittest.mock import MagicMock, patch
+
+        event = _make_case_header_event(
+            case_id="case-observe-cold-path-001",
+            final_action=Action.OBSERVE,
+        )
+        fake_store = MagicMock()
+        logger = MagicMock()
+        run_probe = AsyncMock(return_value=MagicMock())
+
+        with patch.object(
+            __main__,
+            "retrieve_case_context_with_hash",
+            return_value=SimpleNamespace(excerpt=MagicMock(), triage_hash="c" * 64),
+        ):
+            with patch.object(__main__, "build_evidence_summary", return_value="summary"):
+                with patch.object(__main__, "run_cold_path_diagnosis", run_probe):
+                    __main__._cold_path_process_event(
+                        event,
+                        logger,
+                        object_store_client=fake_store,
+                    )
+
+        assert run_probe.call_count == 1
+        start_log = next(
+            (
+                call
+                for call in logger.info.call_args_list
+                if call.args and call.args[0] == "cold_path_diagnosis_start"
+            ),
+            None,
+        )
+        assert start_log is not None
+        assert start_log.kwargs["final_action"] == "OBSERVE"
 
     def test_cold_path_process_event_logs_warning_on_retrieval_failure(
         self, monkeypatch
@@ -1223,6 +1267,82 @@ async def test_hot_path_scheduler_skips_casefile_pipeline_for_invalid_existing_t
         None,
     )
     assert case_error_log is None
+
+
+@pytest.mark.asyncio
+async def test_hot_path_scheduler_logs_outbox_audit_signal_for_observe_cases(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scope = ("harness", "cluster-a", "orders")
+    gate_input = SimpleNamespace(action_fingerprint="fp-observe")
+    decision = SimpleNamespace(
+        action_fingerprint="fp-observe",
+        final_action=Action.OBSERVE,
+        gate_reason_codes=("INSUFFICIENT_HISTORY", "NOT_SUSTAINED", "AG4_CAP"),
+    )
+    topology_loader = _patch_hot_path_case_processing_dependencies(
+        monkeypatch,
+        scope=scope,
+        gate_input=gate_input,
+        decision=decision,
+    )
+    monkeypatch.setattr(__main__, "get_existing_casefile_triage", MagicMock(return_value=None))
+    casefile = SimpleNamespace(case_id="case-observe-audit-001")
+    outbox_ready = SimpleNamespace(case_id="case-observe-audit-001")
+    assemble_stage = MagicMock(return_value=casefile)
+    persist_stage = MagicMock(return_value=outbox_ready)
+    dispatch_stage = MagicMock()
+    monkeypatch.setattr(__main__, "assemble_casefile_triage_stage", assemble_stage)
+    monkeypatch.setattr(__main__, "persist_casefile_and_prepare_outbox_ready", persist_stage)
+    monkeypatch.setattr(__main__, "dispatch_action", dispatch_stage)
+
+    outbox_repository = MagicMock()
+    logger = MagicMock()
+
+    with pytest.raises(asyncio.CancelledError):
+        await __main__._hot_path_scheduler_loop(
+            settings=_hot_path_settings_for_coordination_tests(lock_enabled=False),
+            logger=logger,
+            alert_evaluator=MagicMock(),
+            prometheus_client=MagicMock(),
+            metric_queries={},
+            anomaly_detection_policy=SimpleNamespace(schema_version="v1"),
+            peak_policy=MagicMock(),
+            rulebook_policy=MagicMock(),
+            redis_ttl_policy=MagicMock(),
+            prometheus_metrics_contract=MagicMock(),
+            denylist=MagicMock(),
+            redis_client=MagicMock(),
+            dedupe_store=MagicMock(),
+            object_store_client=MagicMock(),
+            outbox_repository=outbox_repository,
+            pd_client=MagicMock(),
+            slack_client=MagicMock(),
+            topology_loader=topology_loader,
+            cycle_lock=MagicMock(),
+            cycle_lock_owner_id="pod-a",
+            coordination_state=_HotPathCoordinationState(),
+        )
+
+    assemble_stage.assert_called_once()
+    persist_stage.assert_called_once()
+    outbox_repository.insert_pending_object.assert_called_once_with(confirmed_casefile=outbox_ready)
+    dispatch_stage.assert_called_once()
+    audit_log = next(
+        (
+            call
+            for call in logger.info.call_args_list
+            if call.args and call.args[0] == "hot_path_case_outbox_enqueued"
+        ),
+        None,
+    )
+    assert audit_log is not None
+    assert audit_log.kwargs["event_type"] == "hot_path.case_outbox_enqueued"
+    assert audit_log.kwargs["case_id"] == "case-observe-audit-001"
+    assert audit_log.kwargs["scope"] == scope
+    assert audit_log.kwargs["final_action"] == "OBSERVE"
+    assert audit_log.kwargs["includes_insufficient_history"] is True
+    assert audit_log.kwargs["includes_not_sustained"] is True
 
 
 @pytest.mark.asyncio

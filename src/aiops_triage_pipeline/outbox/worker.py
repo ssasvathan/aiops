@@ -154,6 +154,10 @@ class OutboxPublisherWorker:
                     case_id=record.case_id,
                     status=sent_record.status,
                     delivery_attempts=sent_record.delivery_attempts,
+                    env=evidence.env,
+                    topic=evidence.topic,
+                    anomaly_family=evidence.anomaly_family,
+                    final_action=evidence.final_action,
                     event_count=evidence.event_count,
                     published_at=evidence.published_at.isoformat(),
                 )

@@ -93,6 +93,15 @@ APP_ENV=local uv run python -m aiops_triage_pipeline --mode outbox-publisher --o
 APP_ENV=local uv run python -m aiops_triage_pipeline --mode casefile-lifecycle --once
 ```
 
+For end-to-end diagnosis output, run all three long-lived modes together:
+
+1. `hot-path` creates casefiles and enqueues outbox records.
+2. `outbox-publisher` publishes case header/excerpt events to Kafka.
+3. `cold-path` consumes case headers and writes diagnosis artifacts.
+
+`APP_ENV=local` and `APP_ENV=harness` can legitimately cap actions to `OBSERVE`; this does not
+block outbox publication or cold-path diagnosis.
+
 Runtime mode status:
 
 | Mode | Status | Notes |
@@ -217,3 +226,13 @@ uv run pytest -q tests/unit
 
 - If smoke tests fail immediately, ensure services are running: `docker compose ps`
 - If Python commands fail on env resolution, verify `APP_ENV` and the matching `config/.env.<APP_ENV>` file exists.
+
+### Harness Cases Show OBSERVE But No Cold-Path Summary
+
+Use this checklist before treating the behavior as suppression:
+
+1. Confirm all modes are running: `hot-path`, `outbox-publisher`, and `cold-path`.
+2. Check outbox backlog health logs for `ready_count`/`retry_count` growth in `outbox.backlog_health`.
+3. Look for `outbox.publish_succeeded` events for the case ID.
+4. Verify cold-path receives the case header (`cold_path.event_received`) and starts diagnosis
+   (`cold_path.diagnosis_start`).

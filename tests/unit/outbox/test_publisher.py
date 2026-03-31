@@ -44,7 +44,11 @@ from aiops_triage_pipeline.storage.casefile_io import (
 from aiops_triage_pipeline.storage.client import ObjectStoreClientProtocol, PutIfAbsentResult
 
 
-def _sample_casefile() -> CaseFileTriageV1:
+def _sample_casefile(
+    *,
+    final_action: Action = Action.TICKET,
+    gate_reason_codes: tuple[str, ...] = ("PASS", "PASS", "PASS"),
+) -> CaseFileTriageV1:
     gate_input = GateInputV1(
         env=Environment.PROD,
         cluster_id="cluster-a",
@@ -71,10 +75,10 @@ def _sample_casefile() -> CaseFileTriageV1:
         case_id="case-prod-cluster-a-orders-volume-drop",
     )
     action_decision = ActionDecisionV1(
-        final_action=Action.TICKET,
+        final_action=final_action,
         env_cap_applied=False,
         gate_rule_ids=("AG0", "AG1", "AG2"),
-        gate_reason_codes=("PASS", "PASS", "PASS"),
+        gate_reason_codes=gate_reason_codes,
         action_fingerprint=gate_input.action_fingerprint,
         postmortem_required=False,
     )
@@ -277,6 +281,31 @@ def test_publish_case_events_after_invariant_a_emits_header_and_excerpt() -> Non
     assert header_event.case_id == casefile.case_id
     assert excerpt_event.case_id == casefile.case_id
     assert excerpt_event.routing_key == casefile.topology_context.routing.routing_key
+
+
+def test_publish_case_events_after_invariant_a_keeps_observe_cases_publishable() -> None:
+    casefile = _sample_casefile(
+        final_action=Action.OBSERVE,
+        gate_reason_codes=("INSUFFICIENT_HISTORY", "NOT_SUSTAINED", "AG4_CAP"),
+    )
+    outbox_record = create_ready_outbox_record(confirmed_casefile=_ready_casefile(casefile))
+    object_store = _InMemoryObjectStoreClient()
+    object_store.store[outbox_record.casefile_object_path] = serialize_casefile_triage(casefile)
+    publisher = _RecordingCaseEventsPublisher()
+
+    evidence = publish_case_events_after_invariant_a(
+        outbox_record=outbox_record,
+        object_store_client=object_store,
+        publisher=publisher,
+        denylist=_denylist_for_tests(),
+    )
+
+    header_event, _ = publisher.published[0]
+    assert header_event.final_action == Action.OBSERVE
+    assert evidence.final_action == "OBSERVE"
+    assert evidence.env == "prod"
+    assert evidence.topic == "orders"
+    assert evidence.anomaly_family == "VOLUME_DROP"
 
 
 def test_publish_case_events_after_invariant_a_rejects_non_publishable_status() -> None:

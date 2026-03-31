@@ -860,6 +860,24 @@ async def _hot_path_scheduler_loop(
                             object_store_client=object_store_client,
                         )
                         outbox_repository.insert_pending_object(confirmed_casefile=outbox_ready)
+                        raw_gate_reason_codes = getattr(decision, "gate_reason_codes", ()) or ()
+                        gate_reason_codes = tuple(raw_gate_reason_codes)
+                        final_action = getattr(decision, "final_action", None)
+                        final_action_value = (
+                            final_action.value if hasattr(final_action, "value") else final_action
+                        )
+                        logger.info(
+                            "hot_path_case_outbox_enqueued",
+                            event_type="hot_path.case_outbox_enqueued",
+                            case_id=casefile.case_id,
+                            scope=scope,
+                            final_action=final_action_value,
+                            gate_reason_codes=gate_reason_codes,
+                            includes_insufficient_history=(
+                                "INSUFFICIENT_HISTORY" in gate_reason_codes
+                            ),
+                            includes_not_sustained=("NOT_SUSTAINED" in gate_reason_codes),
+                        )
                         dispatch_action(
                             case_id=casefile.case_id,
                             decision=decision,
@@ -1267,6 +1285,11 @@ async def _cold_path_process_event_async(
         event_type="cold_path.event_received",
         case_id=event.case_id,
         schema_version=event.schema_version,
+        env=event.env.value,
+        topic=event.topic,
+        anomaly_family=event.anomaly_family,
+        final_action=event.final_action.value,
+        criticality_tier=event.criticality_tier.value,
     )
 
     # Step (a): Reconstruct TriageExcerptV1 from persisted triage artifact
@@ -1307,6 +1330,17 @@ async def _cold_path_process_event_async(
     if llm_timeout_seconds <= 0:
         llm_timeout_seconds = 60.0
 
+    logger.info(
+        "cold_path_diagnosis_start",
+        event_type="cold_path.diagnosis_start",
+        case_id=event.case_id,
+        env=event.env.value,
+        topic=event.topic,
+        anomaly_family=event.anomaly_family,
+        final_action=event.final_action.value,
+        criticality_tier=event.criticality_tier.value,
+    )
+
     try:
         await run_cold_path_diagnosis(
             case_id=event.case_id,
@@ -1333,6 +1367,7 @@ async def _cold_path_process_event_async(
         "cold_path_diagnosis_invoked",
         event_type="cold_path.diagnosis_invoked",
         case_id=event.case_id,
+        final_action=event.final_action.value,
         evidence_summary_length=len(evidence_summary),
     )
 
