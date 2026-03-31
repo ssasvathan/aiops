@@ -1,13 +1,22 @@
-"""structlog configuration — structured JSON logging with correlation_id propagation.
+"""structlog configuration — structured logging with correlation_id propagation.
 
-This module configures structlog's processor pipeline for consistent JSON output
-across all pipeline components. Call configure_logging() at application startup.
+This module configures structlog's processor pipeline for consistent output
+across all pipeline components. Call configure_logging() ONCE at application startup.
+Calling it multiple times changes the pipeline for uncached loggers; loggers already
+cached via cache_logger_on_first_use=True retain the first pipeline until
+structlog.reset_defaults() is called.
+
+Two output formats are supported:
+- console (default): human-readable output via structlog.dev.ConsoleRenderer
+- json: structured JSON output for log aggregation (set LOG_FORMAT=json or pass
+  log_format="json" to configure_logging())
 
 Correlation ID (case_id) propagates through asyncio task-local context using
 Python's contextvars — asyncio.create_task() inherits the parent's context,
 so correlation_id set in the scheduler propagates to all case-processing coroutines.
 
 Required fields per NFR-O3: timestamp, correlation_id, component, event_type, severity
+JSON format uses 'severity' (NFR-O3 field rename); console format uses 'level' natively.
 """
 
 import logging
@@ -34,8 +43,8 @@ def _add_severity(
     return event_dict
 
 
-def configure_logging(log_level: str = "INFO") -> None:
-    """Configure structlog for structured JSON output with pod identity and correlation_id.
+def configure_logging(log_level: str = "INFO", log_format: str | None = None) -> None:
+    """Configure structlog with pod identity and correlation_id propagation.
 
     Call once at application startup before any pipeline operations begin.
     Raises ValueError for unrecognized log_level values. Note: loggers already cached
@@ -46,9 +55,24 @@ def configure_logging(log_level: str = "INFO") -> None:
     structlog context (FR57/NFR-A6). When these env vars are present, every subsequent
     log event carries the pod identity automatically via merge_contextvars.
 
-    Processor pipeline:
+    Format selection (in precedence order):
+    1. log_format argument if provided
+    2. LOG_FORMAT environment variable
+    3. "console" default (human-readable output for local development)
+    Set LOG_FORMAT=json (or pass log_format="json") for production/log-aggregation use.
+
+    Console processor pipeline (default):
     1. merge_contextvars — injects asyncio task-local fields (correlation_id, pod_name,
        pod_namespace)
+    2. filter_by_level — drops events below configured level (stdlib-backed)
+    3. add_log_level — adds 'level' field
+    4. TimeStamper — adds ISO 8601 UTC 'timestamp' field
+    5. StackInfoRenderer — formats stack_info if present
+    6. format_exc_info — renders ``exc_info=True`` traceback into text
+    7. ConsoleRenderer — renders human-readable colored output
+
+    JSON processor pipeline (log_format="json" or LOG_FORMAT=json):
+    1. merge_contextvars — injects asyncio task-local fields
     2. filter_by_level — drops events below configured level (stdlib-backed)
     3. add_log_level — adds 'level' field
     4. _add_severity — renames 'level' → 'severity', uppercased (NFR-O3)
@@ -59,6 +83,10 @@ def configure_logging(log_level: str = "INFO") -> None:
 
     Args:
         log_level: Minimum log level: CRITICAL, DEBUG, ERROR, INFO, WARNING. Default INFO.
+        log_format: Output format override. "json" → JSON pipeline. "console" → console
+            pipeline (suppresses LOG_FORMAT env var lookup). None → read LOG_FORMAT env
+            var, default "console". Unrecognized values emit a warning and fall back to
+            console.
 
     Raises:
         ValueError: If log_level is not a recognised stdlib logging level name.
@@ -78,8 +106,18 @@ def configure_logging(log_level: str = "INFO") -> None:
         handler.setFormatter(logging.Formatter("%(message)s"))
         root.addHandler(handler)
 
-    structlog.configure(
-        processors=[
+    fmt = (log_format or os.getenv("LOG_FORMAT", "console")).lower()
+
+    if fmt not in {"json", "console"}:
+        logging.warning(
+            "Unrecognized LOG_FORMAT value %r — falling back to console. "
+            "Valid values: json, console.",
+            fmt,
+        )
+        fmt = "console"
+
+    if fmt == "json":
+        processors = [
             structlog.contextvars.merge_contextvars,
             structlog.stdlib.filter_by_level,
             structlog.stdlib.add_log_level,
@@ -88,7 +126,20 @@ def configure_logging(log_level: str = "INFO") -> None:
             structlog.processors.StackInfoRenderer(),
             structlog.processors.format_exc_info,
             structlog.processors.JSONRenderer(),
-        ],
+        ]
+    else:
+        processors = [
+            structlog.contextvars.merge_contextvars,
+            structlog.stdlib.filter_by_level,
+            structlog.stdlib.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso", utc=True),
+            structlog.processors.StackInfoRenderer(),
+            structlog.processors.format_exc_info,
+            structlog.dev.ConsoleRenderer(colors=sys.stderr.isatty()),
+        ]
+
+    structlog.configure(
+        processors=processors,
         logger_factory=structlog.stdlib.LoggerFactory(),
         wrapper_class=structlog.stdlib.BoundLogger,
         context_class=dict,

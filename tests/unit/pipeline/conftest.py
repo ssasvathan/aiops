@@ -27,5 +27,5 @@ def log_stream():
     handler = logging.StreamHandler(stream)
     handler.setFormatter(logging.Formatter("%(message)s"))
     root.addHandler(handler)
-    configure_logging("INFO")
+    configure_logging("INFO", log_format="json")
     return stream

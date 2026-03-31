@@ -31,5 +31,18 @@ def log_stream():
     handler = logging.StreamHandler(stream)
     handler.setFormatter(logging.Formatter("%(message)s"))
     root.addHandler(handler)
-    configure_logging("INFO")
+    configure_logging("INFO", log_format="json")
+    return stream
+
+
+@pytest.fixture
+def log_stream_console():
+    """Configure logging with console format for test output inspection."""
+    stream = io.StringIO()
+    root = logging.getLogger()
+    root.handlers.clear()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    root.addHandler(handler)
+    configure_logging("INFO", log_format="console")
     return stream

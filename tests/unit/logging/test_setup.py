@@ -1,7 +1,9 @@
 import asyncio
 import io
 import json
+import logging
 
+import pytest
 import structlog
 
 from aiops_triage_pipeline.logging.setup import (
@@ -84,14 +86,14 @@ def test_correlation_id_cleared_after_clear(log_stream):
 
 def test_get_correlation_id_returns_bound_value():
     """get_correlation_id() returns the currently bound correlation_id."""
-    configure_logging("INFO")
+    configure_logging("INFO", log_format="json")
     bind_correlation_id("test-correlation-abc")
     assert get_correlation_id() == "test-correlation-abc"
 
 
 def test_get_correlation_id_returns_none_when_not_bound():
     """get_correlation_id() returns None when no correlation_id is bound."""
-    configure_logging("INFO")
+    configure_logging("INFO", log_format="json")
     assert get_correlation_id() is None
 
 
@@ -137,7 +139,7 @@ def test_exc_info_renders_exception_traceback(log_stream):
 
 async def test_async_context_propagation():
     """correlation_id bound in parent propagates to child tasks via asyncio.create_task()."""
-    configure_logging("INFO")
+    configure_logging("INFO", log_format="json")
     bind_correlation_id("case-async-propagation-test")
 
     async def child_coroutine() -> str | None:
@@ -176,3 +178,70 @@ def test_configure_logging_does_not_bind_pod_name_when_env_var_absent(monkeypatc
     configure_logging()
     assert "pod_name" not in structlog.contextvars.get_contextvars()
     structlog.contextvars.clear_contextvars()
+
+
+def test_console_output_is_not_json(log_stream_console):
+    """Console renderer produces non-JSON, human-readable output."""
+    get_logger("test").info("test_event")
+    lines = [line for line in log_stream_console.getvalue().strip().split("\n") if line.strip()]
+    assert lines, f"Expected log output, got: {log_stream_console.getvalue()!r}"
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(lines[-1])
+
+
+def test_console_output_contains_event(log_stream_console):
+    """Console renderer output includes the event message string."""
+    get_logger("test").info("my_console_event")
+    assert "my_console_event" in log_stream_console.getvalue()
+
+
+def test_console_output_contains_component(log_stream_console):
+    """Console renderer output includes the component field value."""
+    get_logger("pipeline.scheduler").info("test_event")
+    assert "pipeline.scheduler" in log_stream_console.getvalue()
+
+
+def test_console_output_contains_correlation_id(log_stream_console):
+    """Console renderer output includes correlation_id when bound (AC 7)."""
+    bind_correlation_id("case-123")
+    get_logger("test").info("test_event")
+    assert "case-123" in log_stream_console.getvalue()
+
+
+def test_log_format_env_var_json_selects_json_renderer(monkeypatch):
+    """LOG_FORMAT=json env var causes configure_logging() to use JSON renderer."""
+    monkeypatch.setenv("LOG_FORMAT", "json")
+    stream = io.StringIO()
+    root = logging.getLogger()
+    root.handlers.clear()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    root.addHandler(handler)
+    configure_logging("INFO")  # no explicit log_format — reads from env
+    get_logger("test").info("json_via_env_var")
+    lines = [line for line in stream.getvalue().strip().split("\n") if line.strip()]
+    assert lines
+    data = json.loads(lines[-1])
+    assert data["event"] == "json_via_env_var"
+
+
+def test_log_format_env_var_invalid_falls_back_to_console(monkeypatch):
+    """Unrecognized LOG_FORMAT value silently falls back to console renderer."""
+    monkeypatch.setenv("LOG_FORMAT", "invalid_value")
+    stream = io.StringIO()
+    root = logging.getLogger()
+    root.handlers.clear()
+    handler = logging.StreamHandler(stream)
+    handler.setFormatter(logging.Formatter("%(message)s"))
+    root.addHandler(handler)
+    configure_logging("INFO")  # reads LOG_FORMAT=invalid_value from env
+    get_logger("test").info("fallback_event")
+    output = stream.getvalue()
+    assert "fallback_event" in output
+    non_warning_lines = [
+        line for line in output.strip().split("\n")
+        if line.strip() and "Unrecognized LOG_FORMAT" not in line
+    ]
+    assert non_warning_lines
+    with pytest.raises(json.JSONDecodeError):
+        json.loads(non_warning_lines[-1])
