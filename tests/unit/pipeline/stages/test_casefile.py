@@ -2,12 +2,20 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
 import pytest
 
 from aiops_triage_pipeline.contracts.action_decision import ActionDecisionV1
 from aiops_triage_pipeline.contracts.diagnosis_report import DiagnosisReportV1, EvidencePack
-from aiops_triage_pipeline.contracts.enums import Action, DiagnosisConfidence
+from aiops_triage_pipeline.contracts.enums import (
+    Action,
+    CriticalityTier,
+    DiagnosisConfidence,
+    Environment,
+    EvidenceStatus,
+)
+from aiops_triage_pipeline.contracts.gate_input import Finding, GateInputV1
 from aiops_triage_pipeline.contracts.peak_policy import PeakPolicyV1, PeakThresholdPolicy
 from aiops_triage_pipeline.contracts.prometheus_metrics import (
     MetricDefinition,
@@ -24,7 +32,11 @@ from aiops_triage_pipeline.contracts.rulebook import (
     RulebookV1,
 )
 from aiops_triage_pipeline.denylist.loader import DenylistV1
-from aiops_triage_pipeline.errors.exceptions import CriticalDependencyError, InvariantViolation
+from aiops_triage_pipeline.errors.exceptions import (
+    CriticalDependencyError,
+    IntegrationError,
+    InvariantViolation,
+)
 from aiops_triage_pipeline.models.case_file import (
     DIAGNOSIS_HASH_PLACEHOLDER,
     LABELS_HASH_PLACEHOLDER,
@@ -37,6 +49,8 @@ from aiops_triage_pipeline.models.case_file import (
 from aiops_triage_pipeline.outbox.schema import OutboxReadyCasefileV1
 from aiops_triage_pipeline.pipeline.stages.casefile import (
     assemble_casefile_triage_stage,
+    derive_case_id,
+    get_existing_casefile_triage,
     load_casefile_diagnosis_stage_if_present,
     load_casefile_labels_stage_if_present,
     load_casefile_linkage_stage_if_present,
@@ -51,7 +65,10 @@ from aiops_triage_pipeline.pipeline.stages.gating import (
     collect_gate_inputs_by_scope,
     evaluate_rulebook_gates,
 )
-from aiops_triage_pipeline.pipeline.stages.peak import collect_peak_stage_output, load_rulebook_policy
+from aiops_triage_pipeline.pipeline.stages.peak import (
+    collect_peak_stage_output,
+    load_rulebook_policy,
+)
 from aiops_triage_pipeline.pipeline.stages.topology import collect_topology_stage_output
 from aiops_triage_pipeline.registry.loader import load_topology_registry
 from aiops_triage_pipeline.storage.casefile_io import (
@@ -62,6 +79,7 @@ from aiops_triage_pipeline.storage.casefile_io import (
     compute_casefile_linkage_hash,
     compute_casefile_triage_hash,
     has_valid_casefile_triage_hash,
+    serialize_casefile_triage,
 )
 from aiops_triage_pipeline.storage.client import ObjectStoreClientProtocol, PutIfAbsentResult
 
@@ -276,6 +294,38 @@ def _build_scope_inputs(tmp_path: Path):
     )
 
     return scope, evidence_output, peak_output, topology_output, gate_input, action_decision
+
+
+def _build_harness_gate_input(
+    *,
+    topic: str,
+    anomaly_family: Literal["CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY"],
+    action_fingerprint: str,
+    consumer_group: str | None = None,
+) -> GateInputV1:
+    return GateInputV1(
+        env=Environment.HARNESS,
+        cluster_id="harness-cluster",
+        stream_id="harness_validation",
+        topic=topic,
+        topic_role="SOURCE_TOPIC",
+        anomaly_family=anomaly_family,
+        criticality_tier=CriticalityTier.TIER_1,
+        proposed_action=Action.OBSERVE,
+        diagnosis_confidence=0.78,
+        sustained=True,
+        findings=(
+            Finding(
+                finding_id="f-1",
+                name=anomaly_family,
+                is_anomalous=True,
+                evidence_required=("topic_messages_in_per_sec",),
+            ),
+        ),
+        evidence_status_map={"topic_messages_in_per_sec": EvidenceStatus.PRESENT},
+        action_fingerprint=action_fingerprint,
+        consumer_group=consumer_group,
+    )
 
 
 def _sample_diagnosis_casefile(*, case_id: str, triage_hash: str) -> CaseFileDiagnosisV1:
@@ -580,8 +630,11 @@ def test_assemble_casefile_triage_stage_persists_scoring_pipeline_confidence_end
     assert assembled.gate_input.diagnosis_confidence > 0.0, (
         "Casefile must preserve non-zero diagnosis_confidence from the scoring pipeline (AC 1)"
     )
-    assert assembled.gate_input.diagnosis_confidence == pytest.approx(gate_input.diagnosis_confidence), (
-        "Casefile gate_input.diagnosis_confidence must exactly match the value from the scoring pipeline"
+    assert assembled.gate_input.diagnosis_confidence == pytest.approx(
+        gate_input.diagnosis_confidence
+    ), (
+        "Casefile gate_input.diagnosis_confidence must exactly match the value from "
+        "the scoring pipeline"
     )
 
 
@@ -1512,3 +1565,247 @@ def test_assemble_casefile_stamps_topology_registry_version(
     )
 
     assert assembled.policy_versions.topology_registry_version == "3"
+
+
+class _CasefileLookupFakeObjectStoreClient(ObjectStoreClientProtocol):
+    def __init__(
+        self,
+        *,
+        payloads_by_key: dict[str, bytes] | None = None,
+        get_error: Exception | None = None,
+    ) -> None:
+        self._payloads_by_key = dict(payloads_by_key or {})
+        self._get_error = get_error
+
+    def put_if_absent(
+        self,
+        *,
+        key: str,
+        body: bytes,
+        content_type: str,
+        checksum_sha256: str | None = None,
+        metadata: dict[str, str] | None = None,
+    ) -> PutIfAbsentResult:
+        del body, content_type, checksum_sha256, metadata
+        if key in self._payloads_by_key:
+            return PutIfAbsentResult.EXISTS
+        return PutIfAbsentResult.CREATED
+
+    def get_object_bytes(self, *, key: str) -> bytes:
+        if self._get_error is not None:
+            raise self._get_error
+        if key not in self._payloads_by_key:
+            raise KeyError(key)
+        return self._payloads_by_key[key]
+
+
+def test_derive_case_id_is_deterministic_for_harness_fingerprints() -> None:
+    gate_input_with_consumer_group = _build_harness_gate_input(
+        topic="harness-lag-topic",
+        anomaly_family="CONSUMER_LAG",
+        action_fingerprint=(
+            "harness/harness-cluster/harness_validation/SOURCE_TOPIC/"
+            "harness-lag-topic/CONSUMER_LAG/TIER_1/group:harness-consumer"
+        ),
+        consumer_group="harness-consumer",
+    )
+    gate_input_without_consumer_group = _build_harness_gate_input(
+        topic="harness-proxy-topic",
+        anomaly_family="THROUGHPUT_CONSTRAINED_PROXY",
+        action_fingerprint=(
+            "harness/harness-cluster/harness_validation/SOURCE_TOPIC/"
+            "harness-proxy-topic/THROUGHPUT_CONSTRAINED_PROXY/TIER_1"
+        ),
+    )
+
+    assert derive_case_id(gate_input=gate_input_with_consumer_group) == (
+        "case-harness-harness-cluster-harness-lag-topic-3961489c3af3"
+    )
+    assert derive_case_id(gate_input=gate_input_with_consumer_group) == (
+        "case-harness-harness-cluster-harness-lag-topic-3961489c3af3"
+    )
+    assert derive_case_id(gate_input=gate_input_without_consumer_group) == (
+        "case-harness-harness-cluster-harness-proxy-topic-d12ef3b3956b"
+    )
+
+
+def test_get_existing_casefile_triage_returns_none_when_missing(tmp_path: Path) -> None:
+    (
+        scope,
+        evidence_output,
+        peak_output,
+        topology_output,
+        gate_input,
+        action_decision,
+    ) = _build_scope_inputs(tmp_path)
+    del scope, evidence_output, peak_output, topology_output, action_decision
+    object_store_client = _CasefileLookupFakeObjectStoreClient()
+
+    existing = get_existing_casefile_triage(
+        gate_input=gate_input,
+        object_store_client=object_store_client,
+    )
+
+    assert existing is None
+
+
+def test_get_existing_casefile_triage_returns_valid_casefile_when_present(tmp_path: Path) -> None:
+    (
+        scope,
+        evidence_output,
+        peak_output,
+        topology_output,
+        gate_input,
+        action_decision,
+    ) = _build_scope_inputs(tmp_path)
+    casefile = assemble_casefile_triage_stage(
+        scope=scope,
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        topology_output=topology_output,
+        gate_input=gate_input,
+        action_decision=action_decision,
+        rulebook_policy=_rulebook_policy_for_tests(),
+        peak_policy=_peak_policy_for_tests(),
+        prometheus_metrics_contract=_prometheus_contract_for_tests(),
+        denylist=_denylist_for_tests(),
+        diagnosis_policy_version="v1",
+        triage_timestamp=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
+    )
+    lookup_case_id = gate_input.case_id or derive_case_id(gate_input=gate_input)
+    object_key = build_casefile_triage_object_key(lookup_case_id)
+    object_store_client = _CasefileLookupFakeObjectStoreClient(
+        payloads_by_key={object_key: serialize_casefile_triage(casefile)}
+    )
+
+    existing = get_existing_casefile_triage(
+        gate_input=gate_input,
+        object_store_client=object_store_client,
+    )
+
+    assert existing is not None
+    assert existing.case_id == casefile.case_id
+    assert existing.triage_hash == casefile.triage_hash
+
+
+def test_get_existing_casefile_triage_prefers_explicit_gate_input_case_id(tmp_path: Path) -> None:
+    (
+        scope,
+        evidence_output,
+        peak_output,
+        topology_output,
+        gate_input,
+        action_decision,
+    ) = _build_scope_inputs(tmp_path)
+    explicit_case_id = "case-explicit-id-from-gate-input"
+    gate_input = gate_input.model_copy(update={"case_id": explicit_case_id})
+    casefile = assemble_casefile_triage_stage(
+        scope=scope,
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        topology_output=topology_output,
+        gate_input=gate_input,
+        action_decision=action_decision,
+        rulebook_policy=_rulebook_policy_for_tests(),
+        peak_policy=_peak_policy_for_tests(),
+        prometheus_metrics_contract=_prometheus_contract_for_tests(),
+        denylist=_denylist_for_tests(),
+        diagnosis_policy_version="v1",
+        triage_timestamp=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
+        case_id=explicit_case_id,
+    )
+    object_key = build_casefile_triage_object_key(explicit_case_id)
+    object_store_client = _CasefileLookupFakeObjectStoreClient(
+        payloads_by_key={object_key: serialize_casefile_triage(casefile)}
+    )
+
+    existing = get_existing_casefile_triage(
+        gate_input=gate_input,
+        object_store_client=object_store_client,
+    )
+
+    assert existing is not None
+    assert existing.case_id == explicit_case_id
+    assert explicit_case_id != derive_case_id(gate_input=gate_input)
+
+
+def test_get_existing_casefile_triage_propagates_integration_error(tmp_path: Path) -> None:
+    (
+        scope,
+        evidence_output,
+        peak_output,
+        topology_output,
+        gate_input,
+        action_decision,
+    ) = _build_scope_inputs(tmp_path)
+    del scope, evidence_output, peak_output, topology_output, action_decision
+    object_store_client = _CasefileLookupFakeObjectStoreClient(
+        get_error=IntegrationError("read failed")
+    )
+
+    with pytest.raises(IntegrationError, match="read failed"):
+        get_existing_casefile_triage(
+            gate_input=gate_input,
+            object_store_client=object_store_client,
+        )
+
+
+def test_get_existing_casefile_triage_propagates_critical_dependency_error(tmp_path: Path) -> None:
+    (
+        scope,
+        evidence_output,
+        peak_output,
+        topology_output,
+        gate_input,
+        action_decision,
+    ) = _build_scope_inputs(tmp_path)
+    del scope, evidence_output, peak_output, topology_output, action_decision
+    object_store_client = _CasefileLookupFakeObjectStoreClient(
+        get_error=CriticalDependencyError("object storage unavailable")
+    )
+
+    with pytest.raises(CriticalDependencyError, match="object storage unavailable"):
+        get_existing_casefile_triage(
+            gate_input=gate_input,
+            object_store_client=object_store_client,
+        )
+
+
+def test_get_existing_casefile_triage_propagates_value_error_for_tampered_payload(
+    tmp_path: Path,
+) -> None:
+    (
+        scope,
+        evidence_output,
+        peak_output,
+        topology_output,
+        gate_input,
+        action_decision,
+    ) = _build_scope_inputs(tmp_path)
+    casefile = assemble_casefile_triage_stage(
+        scope=scope,
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        topology_output=topology_output,
+        gate_input=gate_input,
+        action_decision=action_decision,
+        rulebook_policy=_rulebook_policy_for_tests(),
+        peak_policy=_peak_policy_for_tests(),
+        prometheus_metrics_contract=_prometheus_contract_for_tests(),
+        denylist=_denylist_for_tests(),
+        diagnosis_policy_version="v1",
+        triage_timestamp=datetime(2026, 3, 4, 12, 0, tzinfo=UTC),
+    )
+    tampered_hash = ("0" if casefile.triage_hash[0] != "0" else "1") + casefile.triage_hash[1:]
+    tampered = casefile.model_copy(update={"triage_hash": tampered_hash})
+    lookup_case_id = gate_input.case_id or derive_case_id(gate_input=gate_input)
+    object_key = build_casefile_triage_object_key(lookup_case_id)
+    object_store_client = _CasefileLookupFakeObjectStoreClient(
+        payloads_by_key={object_key: serialize_casefile_triage(tampered)}
+    )
+
+    with pytest.raises(ValueError, match="triage_hash does not match canonical"):
+        get_existing_casefile_triage(
+            gate_input=gate_input,
+            object_store_client=object_store_client,
+        )

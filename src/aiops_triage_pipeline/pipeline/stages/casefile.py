@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import UTC, datetime
-from typing import Any, Mapping
+from typing import Any, Mapping, cast
 
 from aiops_triage_pipeline.contracts.action_decision import ActionDecisionV1
 from aiops_triage_pipeline.contracts.gate_input import GateInputV1
@@ -120,7 +120,7 @@ def assemble_casefile_triage_stage(
         anomaly_detection_policy_version=anomaly_detection_policy_version,
         topology_registry_version=topology_registry_version,
     )
-    resolved_case_id = case_id or gate_input.case_id or _derive_case_id(gate_input=gate_input)
+    resolved_case_id = case_id or gate_input.case_id or derive_case_id(gate_input=gate_input)
 
     casefile = CaseFileTriageV1(
         case_id=resolved_case_id,
@@ -230,7 +230,7 @@ def _resolve_scope_mapping(
     return None
 
 
-def _derive_case_id(*, gate_input: GateInputV1) -> str:
+def derive_case_id(*, gate_input: GateInputV1) -> str:
     digest_prefix = hashlib.sha256(gate_input.action_fingerprint.encode("utf-8")).hexdigest()[:12]
     return (
         f"case-{gate_input.env.value}-{gate_input.cluster_id}-"
@@ -309,6 +309,27 @@ def persist_casefile_and_prepare_outbox_ready(
         raise IntegrationError(
             "failed to construct outbox-ready payload from confirmed casefile persistence"
         ) from exc
+
+
+def get_existing_casefile_triage(
+    *,
+    gate_input: GateInputV1,
+    object_store_client: ObjectStoreClientProtocol,
+) -> CaseFileTriageV1 | None:
+    """Return the existing triage artifact for this gate_input, or None if absent.
+
+    Uses the same case_id precedence as assemble_casefile_triage_stage. Lets
+    IntegrationError and CriticalDependencyError propagate to the caller.
+    """
+    case_id = gate_input.case_id or derive_case_id(gate_input=gate_input)
+    result = read_casefile_stage_json_or_none(
+        object_store_client=object_store_client,
+        case_id=case_id,
+        stage="triage",
+    )
+    if result is None:
+        return None
+    return cast(CaseFileTriageV1, result)
 
 
 def persist_casefile_diagnosis_stage(

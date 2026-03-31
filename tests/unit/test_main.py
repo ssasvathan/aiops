@@ -11,6 +11,7 @@ import pytest
 from aiops_triage_pipeline import __main__
 from aiops_triage_pipeline.__main__ import _HotPathCoordinationState
 from aiops_triage_pipeline.coordination.protocol import CycleLockStatus
+from aiops_triage_pipeline.errors.exceptions import IntegrationError
 from aiops_triage_pipeline.models.anomaly import AnomalyFinding
 
 
@@ -785,6 +786,92 @@ def _hot_path_settings_for_coordination_tests(*, lock_enabled: bool) -> SimpleNa
     )
 
 
+def _patch_hot_path_case_processing_dependencies(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    scope: tuple[str, str, str],
+    gate_input: object,
+    decision: object,
+) -> MagicMock:
+    tick = SimpleNamespace(
+        expected_boundary=datetime(2026, 3, 23, 12, 0, tzinfo=UTC),
+        drift_seconds=0,
+        missed_intervals=0,
+    )
+    monkeypatch.setattr(__main__, "evaluate_scheduler_tick", lambda **_: tick)
+    monkeypatch.setattr(
+        __main__,
+        "next_interval_boundary",
+        lambda *_args, **_kwargs: datetime.now(UTC),
+    )
+    monkeypatch.setattr(
+        __main__,
+        "emit_redis_degraded_mode_events",
+        AsyncMock(return_value=()),
+    )
+    monkeypatch.setattr(
+        __main__.asyncio,
+        "sleep",
+        AsyncMock(side_effect=asyncio.CancelledError()),
+    )
+    registry = MagicMock()
+    registry.update = AsyncMock()
+    monkeypatch.setattr(__main__, "get_health_registry", lambda: registry)
+    mock_server = MagicMock()
+    mock_server.serve_forever = AsyncMock()
+    monkeypatch.setattr(
+        "aiops_triage_pipeline.__main__.start_health_server",
+        AsyncMock(return_value=mock_server),
+    )
+
+    topology_loader = MagicMock()
+    topology_loader.get_snapshot.return_value = SimpleNamespace(
+        metadata=SimpleNamespace(input_version=2)
+    )
+    monkeypatch.setattr(
+        __main__,
+        "run_evidence_stage_cycle",
+        AsyncMock(
+            return_value=SimpleNamespace(
+                rows=(),
+                anomaly_result=SimpleNamespace(findings=()),
+                evidence_status_map_by_scope={},
+            )
+        ),
+    )
+    monkeypatch.setattr(__main__, "load_sustained_window_states", lambda **_: {})
+    monkeypatch.setattr(__main__, "load_peak_profiles", lambda **_: {})
+    monkeypatch.setattr(
+        __main__,
+        "run_peak_stage_cycle",
+        lambda **_: SimpleNamespace(
+            sustained_by_key={},
+            profiles_by_scope={},
+        ),
+    )
+    monkeypatch.setattr(__main__, "persist_sustained_window_states", MagicMock())
+    monkeypatch.setattr(__main__, "persist_peak_profiles", MagicMock())
+    monkeypatch.setattr(
+        __main__,
+        "run_topology_stage_cycle",
+        lambda **_: SimpleNamespace(
+            context_by_scope={scope: object()},
+            routing_by_scope={scope: object()},
+        ),
+    )
+    monkeypatch.setattr(
+        __main__,
+        "run_gate_input_stage_cycle",
+        lambda **_: {scope: (gate_input,)},
+    )
+    monkeypatch.setattr(
+        __main__,
+        "run_gate_decision_stage_cycle",
+        lambda **_: {scope: (decision,)},
+    )
+    return topology_loader
+
+
 @pytest.mark.asyncio
 async def test_hot_path_scheduler_skips_stage_execution_when_cycle_lock_yielded(
     monkeypatch: pytest.MonkeyPatch,
@@ -986,6 +1073,145 @@ async def test_hot_path_scheduler_does_not_attempt_lock_when_feature_flag_disabl
         )
 
     cycle_lock.acquire.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_hot_path_scheduler_skips_casefile_pipeline_when_existing_triage_found(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scope = ("prod", "cluster-a", "orders")
+    gate_input = SimpleNamespace(action_fingerprint="fp-existing")
+    decision = SimpleNamespace(action_fingerprint="fp-existing")
+    topology_loader = _patch_hot_path_case_processing_dependencies(
+        monkeypatch,
+        scope=scope,
+        gate_input=gate_input,
+        decision=decision,
+    )
+    existing_lookup = MagicMock(return_value=SimpleNamespace(case_id="case-existing"))
+    assemble_stage = MagicMock()
+    persist_stage = MagicMock()
+    dispatch_stage = MagicMock()
+    monkeypatch.setattr(__main__, "get_existing_casefile_triage", existing_lookup)
+    monkeypatch.setattr(__main__, "assemble_casefile_triage_stage", assemble_stage)
+    monkeypatch.setattr(__main__, "persist_casefile_and_prepare_outbox_ready", persist_stage)
+    monkeypatch.setattr(__main__, "dispatch_action", dispatch_stage)
+
+    outbox_repository = MagicMock()
+    logger = MagicMock()
+
+    with pytest.raises(asyncio.CancelledError):
+        await __main__._hot_path_scheduler_loop(
+            settings=_hot_path_settings_for_coordination_tests(lock_enabled=False),
+            logger=logger,
+            alert_evaluator=MagicMock(),
+            prometheus_client=MagicMock(),
+            metric_queries={},
+            anomaly_detection_policy=SimpleNamespace(schema_version="v1"),
+            peak_policy=MagicMock(),
+            rulebook_policy=MagicMock(),
+            redis_ttl_policy=MagicMock(),
+            prometheus_metrics_contract=MagicMock(),
+            denylist=MagicMock(),
+            redis_client=MagicMock(),
+            dedupe_store=MagicMock(),
+            object_store_client=MagicMock(),
+            outbox_repository=outbox_repository,
+            pd_client=MagicMock(),
+            slack_client=MagicMock(),
+            topology_loader=topology_loader,
+            cycle_lock=MagicMock(),
+            cycle_lock_owner_id="pod-a",
+            coordination_state=_HotPathCoordinationState(),
+        )
+
+    existing_lookup.assert_called_once()
+    assemble_stage.assert_not_called()
+    persist_stage.assert_not_called()
+    outbox_repository.insert_pending_object.assert_not_called()
+    dispatch_stage.assert_not_called()
+    skip_log = next(
+        (
+            call
+            for call in logger.info.call_args_list
+            if call.args and call.args[0] == "casefile_triage_already_exists"
+        ),
+        None,
+    )
+    assert skip_log is not None
+    assert skip_log.kwargs["event_type"] == "casefile.triage_already_exists"
+    assert skip_log.kwargs["case_id"] == "case-existing"
+    assert skip_log.kwargs["scope"] == scope
+
+
+@pytest.mark.asyncio
+async def test_hot_path_scheduler_logs_case_error_when_lookup_raises_integration_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scope = ("prod", "cluster-a", "orders")
+    gate_input = SimpleNamespace(action_fingerprint="fp-error")
+    decision = SimpleNamespace(action_fingerprint="fp-error")
+    topology_loader = _patch_hot_path_case_processing_dependencies(
+        monkeypatch,
+        scope=scope,
+        gate_input=gate_input,
+        decision=decision,
+    )
+    monkeypatch.setattr(
+        __main__,
+        "get_existing_casefile_triage",
+        MagicMock(side_effect=IntegrationError("minio read failed")),
+    )
+    assemble_stage = MagicMock()
+    persist_stage = MagicMock()
+    dispatch_stage = MagicMock()
+    monkeypatch.setattr(__main__, "assemble_casefile_triage_stage", assemble_stage)
+    monkeypatch.setattr(__main__, "persist_casefile_and_prepare_outbox_ready", persist_stage)
+    monkeypatch.setattr(__main__, "dispatch_action", dispatch_stage)
+
+    logger = MagicMock()
+
+    with pytest.raises(asyncio.CancelledError):
+        await __main__._hot_path_scheduler_loop(
+            settings=_hot_path_settings_for_coordination_tests(lock_enabled=False),
+            logger=logger,
+            alert_evaluator=MagicMock(),
+            prometheus_client=MagicMock(),
+            metric_queries={},
+            anomaly_detection_policy=SimpleNamespace(schema_version="v1"),
+            peak_policy=MagicMock(),
+            rulebook_policy=MagicMock(),
+            redis_ttl_policy=MagicMock(),
+            prometheus_metrics_contract=MagicMock(),
+            denylist=MagicMock(),
+            redis_client=MagicMock(),
+            dedupe_store=MagicMock(),
+            object_store_client=MagicMock(),
+            outbox_repository=MagicMock(),
+            pd_client=MagicMock(),
+            slack_client=MagicMock(),
+            topology_loader=topology_loader,
+            cycle_lock=MagicMock(),
+            cycle_lock_owner_id="pod-a",
+            coordination_state=_HotPathCoordinationState(),
+        )
+
+    assemble_stage.assert_not_called()
+    persist_stage.assert_not_called()
+    dispatch_stage.assert_not_called()
+    case_error_log = next(
+        (
+            call
+            for call in logger.error.call_args_list
+            if call.args and call.args[0] == "hot_path_case_processing_failed"
+        ),
+        None,
+    )
+    assert case_error_log is not None
+    assert case_error_log.kwargs["event_type"] == "hot_path.case_error"
+    assert case_error_log.kwargs["scope"] == scope
+    assert case_error_log.kwargs["action_fingerprint"] == "fp-error"
+    assert case_error_log.kwargs["exc_info"] is True
 
 
 def _hot_path_settings_for_shard_tests(*, shard_enabled: bool) -> SimpleNamespace:

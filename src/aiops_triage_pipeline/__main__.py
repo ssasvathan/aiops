@@ -95,6 +95,7 @@ from aiops_triage_pipeline.pipeline.scheduler import (
 )
 from aiops_triage_pipeline.pipeline.stages.casefile import (
     assemble_casefile_triage_stage,
+    get_existing_casefile_triage,
     persist_casefile_and_prepare_outbox_ready,
 )
 from aiops_triage_pipeline.pipeline.stages.dispatch import dispatch_action
@@ -812,6 +813,18 @@ async def _hot_path_scheduler_loop(
                         )
                         continue
                     try:
+                        existing_casefile = get_existing_casefile_triage(
+                            gate_input=gate_input,
+                            object_store_client=object_store_client,
+                        )
+                        if existing_casefile is not None:
+                            logger.info(
+                                "casefile_triage_already_exists",
+                                event_type="casefile.triage_already_exists",
+                                case_id=existing_casefile.case_id,
+                                scope=scope,
+                            )
+                            continue
                         casefile = assemble_casefile_triage_stage(
                             scope=scope,
                             evidence_output=evidence_output,

@@ -235,7 +235,8 @@ def test_p0_lease_expiry_allows_safe_handoff_to_recovery_pod() -> None:
     )
 
     assert _normalize_status(first) == "acquired"
-    assert _normalize_status(second) in {"yielded", "acquired"}  # Allows optimistic renewal implementations.
+    # Allows optimistic renewal implementations.
+    assert _normalize_status(second) in {"yielded", "acquired"}
     assert _normalize_status(third) == "acquired"
 
 

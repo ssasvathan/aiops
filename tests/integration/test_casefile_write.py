@@ -30,6 +30,7 @@ from aiops_triage_pipeline.models.case_file import (
     CaseFileTriageV1,
 )
 from aiops_triage_pipeline.pipeline.stages.casefile import (
+    get_existing_casefile_triage,
     load_casefile_diagnosis_stage_if_present,
     persist_casefile_and_prepare_outbox_ready,
     persist_casefile_diagnosis_stage,
@@ -264,7 +265,12 @@ def test_casefile_exists_before_outbox_ready_payload(
 ) -> None:
     s3_client, object_store_client = minio_object_store
     casefile = _sample_casefile()
+    existing_before_write = get_existing_casefile_triage(
+        gate_input=casefile.gate_input,
+        object_store_client=object_store_client,
+    )
 
+    assert existing_before_write is None
     ready_payload = persist_casefile_and_prepare_outbox_ready(
         casefile=casefile,
         object_store_client=object_store_client,
@@ -322,6 +328,36 @@ def test_retry_after_transient_failure_remains_idempotent(
     assert ready_payload.case_id == casefile.case_id
     assert ready_payload.triage_hash == casefile.triage_hash
     assert retry_result.write_result == "idempotent"
+
+
+@pytest.mark.integration
+def test_existing_triage_guard_preserves_existing_payload_without_rewrite(
+    minio_object_store: tuple[BaseClient, S3ObjectStoreClient],
+) -> None:
+    s3_client, object_store_client = minio_object_store
+    casefile = _sample_casefile()
+
+    persisted = persist_casefile_triage_write_once(
+        object_store_client=object_store_client,
+        casefile=casefile,
+    )
+    original_payload = s3_client.get_object(Bucket=_MINIO_BUCKET, Key=persisted.object_path)[
+        "Body"
+    ].read()
+
+    existing_casefile = get_existing_casefile_triage(
+        gate_input=casefile.gate_input,
+        object_store_client=object_store_client,
+    )
+
+    assert existing_casefile is not None
+    assert existing_casefile.case_id == casefile.case_id
+    assert existing_casefile.triage_hash == casefile.triage_hash
+
+    reloaded_payload = s3_client.get_object(Bucket=_MINIO_BUCKET, Key=persisted.object_path)[
+        "Body"
+    ].read()
+    assert reloaded_payload == original_payload
 
 
 @pytest.mark.integration

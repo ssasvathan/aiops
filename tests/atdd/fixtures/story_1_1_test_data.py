@@ -11,7 +11,10 @@ from aiops_triage_pipeline.models.evidence import EvidenceStageOutput
 from aiops_triage_pipeline.models.peak import PeakStageOutput, SustainedStatus
 from aiops_triage_pipeline.pipeline.stages.evidence import collect_evidence_stage_output
 from aiops_triage_pipeline.pipeline.stages.gating import GateInputContext
-from aiops_triage_pipeline.pipeline.stages.peak import collect_peak_stage_output, load_rulebook_policy
+from aiops_triage_pipeline.pipeline.stages.peak import (
+    collect_peak_stage_output,
+    load_rulebook_policy,
+)
 
 GateScope = tuple[str, ...]
 _TOPIC_SCOPE: tuple[str, str, str] = ("prod", "cluster-a", "orders")

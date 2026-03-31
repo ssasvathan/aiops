@@ -2,6 +2,7 @@
 
 from aiops_triage_pipeline.pipeline.stages.casefile import (
     assemble_casefile_triage_stage,
+    get_existing_casefile_triage,
     load_casefile_diagnosis_stage_if_present,
     load_casefile_labels_stage_if_present,
     load_casefile_linkage_stage_if_present,
@@ -43,6 +44,7 @@ from aiops_triage_pipeline.pipeline.stages.topology import (
 
 __all__ = [
     "assemble_casefile_triage_stage",
+    "get_existing_casefile_triage",
     "persist_casefile_diagnosis_stage",
     "persist_casefile_linkage_stage",
     "persist_casefile_labels_stage",
