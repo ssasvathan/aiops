@@ -1,16 +1,19 @@
 """LLMClient — stub, failure-injection, and LIVE mode for cold-path LLM invocation.
 
-LIVE mode uses a structured prompt (built by diagnosis/graph.py) and parses
-the response as a schema-validated DiagnosisReportV1 via model_validate().
+LIVE mode uses LiteLLM to call the configured model (direct provider or gateway proxy)
+and parses the response as a schema-validated DiagnosisReportV1 via model_validate().
 """
 
-from enum import Enum
+import json
 
 from aiops_triage_pipeline.config.settings import IntegrationMode
 from aiops_triage_pipeline.contracts.diagnosis_report import DiagnosisReportV1, EvidencePack
 from aiops_triage_pipeline.contracts.enums import DiagnosisConfidence
 from aiops_triage_pipeline.contracts.triage_excerpt import TriageExcerptV1
 from aiops_triage_pipeline.logging.setup import get_logger
+
+
+from enum import Enum
 
 
 class LLMFailureMode(str, Enum):
@@ -34,9 +37,13 @@ class LLMClient:
     """LLM client with stub, failure-injection, and LIVE mode support.
 
     In MOCK or LOG mode, returns a deterministic fallback DiagnosisReportV1 with no
-    external network calls. LIVE mode makes an HTTP POST to LLM_BASE_URL/diagnose
-    with a structured prompt and parses the response as schema-validated
-    DiagnosisReportV1. OFF mode raises ValueError.
+    external network calls. LIVE mode uses LiteLLM to call the configured model
+    (direct Anthropic/OpenAI or via LiteLLM gateway proxy) and parses the response
+    as schema-validated DiagnosisReportV1. OFF mode raises ValueError.
+
+    LiteLLM routing:
+      - LLM_BASE_URL=None, LLM_API_KEY=sk-ant-...  → direct Anthropic API
+      - LLM_BASE_URL=http://gateway, LLM_API_KEY=token → LiteLLM gateway (OpenAI-compatible)
     """
 
     def __init__(
@@ -45,11 +52,13 @@ class LLMClient:
         failure_mode: LLMFailureMode = LLMFailureMode.NONE,
         base_url: str | None = None,
         api_key: str | None = None,
+        model: str = "claude-sonnet-4-6",
     ) -> None:
         self._mode = mode
         self._failure_mode = failure_mode
         self._base_url = base_url
         self._api_key = api_key
+        self._model = model
         self._logger = get_logger(__name__)
 
     async def invoke(
@@ -63,8 +72,8 @@ class LLMClient:
         """Invoke the LLM client.
 
         MOCK/LOG: returns deterministic stub report with no network I/O.
-        LIVE: makes HTTP POST to LLM_BASE_URL/diagnose with structured prompt and
-              parses response as schema-validated DiagnosisReportV1.
+        LIVE: calls the configured model via LiteLLM and parses response as
+              schema-validated DiagnosisReportV1.
         OFF: raises ValueError.
 
         Args:
@@ -77,44 +86,47 @@ class LLMClient:
             DiagnosisReportV1.
 
         Raises:
-            ValueError: If mode is OFF, LIVE mode without LLM_BASE_URL, or LIVE mode
-                without prompt provided.
+            ValueError: If mode is OFF, or LIVE mode without prompt provided.
         """
         if self._mode == IntegrationMode.OFF:
             raise ValueError("INTEGRATION_MODE_LLM=OFF is not a valid LLM operation mode")
 
         if self._mode == IntegrationMode.LIVE:
-            if not self._base_url:
-                raise ValueError(
-                    "INTEGRATION_MODE_LLM=LIVE requires LLM_BASE_URL to be configured"
-                )
             if prompt is None:
                 raise ValueError(
                     "LIVE mode requires prompt to be provided by the caller (diagnosis/graph.py)"
                 )
-            import httpx  # Lazy import — only needed in LIVE mode
+            import litellm  # Lazy import — only needed in LIVE mode
 
-            body = {
-                "case_id": case_id,
-                "prompt": prompt,
+            kwargs: dict = {
+                "model": self._model,
+                "messages": [{"role": "user", "content": prompt}],
             }
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                headers = {"Content-Type": "application/json"}
-                if self._api_key:
-                    headers["Authorization"] = f"Bearer {self._api_key}"
-                response = await client.post(
-                    f"{self._base_url}/diagnose",
-                    json=body,
-                    headers=headers,
-                )
-                response.raise_for_status()
-                response_data = response.json()
+            if self._base_url:
+                kwargs["base_url"] = self._base_url
+            if self._api_key:
+                kwargs["api_key"] = self._api_key
+
+            response = await litellm.acompletion(**kwargs)
+            content = response.choices[0].message.content
+            # Strip markdown code fences (e.g. ```json ... ```) that some models
+            # wrap around JSON output despite the prompt requesting raw JSON.
+            stripped = content.strip()
+            if stripped.startswith("```"):
+                lines = stripped.splitlines()
+                # Drop opening fence line (e.g. "```json" or "```")
+                lines = lines[1:]
+                # Drop closing fence line if present
+                if lines and lines[-1].strip() == "```":
+                    lines = lines[:-1]
+                stripped = "\n".join(lines)
+            response_data = json.loads(stripped)
             report = DiagnosisReportV1.model_validate({**response_data, "case_id": case_id})
             self._logger.info(
                 "llm_invoke_live",
                 mode=self._mode.value,
                 case_id=case_id,
-                status_code=response.status_code,
+                model=self._model,
                 verdict=report.verdict,
             )
             return report

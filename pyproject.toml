@@ -16,6 +16,7 @@ dependencies = [
     "opentelemetry-sdk==1.39.1",
     "opentelemetry-exporter-otlp==1.39.1",
     "httpx==0.28.1",
+    "litellm>=1.57,<2",
     "langgraph==1.0.9",
     "pydantic-settings~=2.13.1",
     "psycopg[c]==3.3.3",

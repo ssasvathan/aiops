@@ -24,6 +24,7 @@ build/
 .env.prod
 config/.env.uat
 config/.env.prod
+config/.env.docker
 
 # IDE / editor
 .idea/

@@ -1079,6 +1079,7 @@ def _run_cold_path() -> None:
         mode=llm_mode,
         base_url=getattr(settings, "LLM_BASE_URL", None),
         api_key=getattr(settings, "LLM_API_KEY", None),
+        model=getattr(settings, "LLM_MODEL", "claude-sonnet-4-6"),
     )
     denylist = load_denylist(_DENYLIST_PATH)
     llm_timeout_seconds = float(getattr(settings, "LLM_TIMEOUT_SECONDS", 60.0))

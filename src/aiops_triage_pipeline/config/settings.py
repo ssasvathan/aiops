@@ -88,8 +88,9 @@ class Settings(BaseSettings):
     INTEGRATION_MODE_LLM: IntegrationMode = IntegrationMode.LOG
 
     # LLM endpoint (required for LIVE mode)
-    LLM_BASE_URL: str | None = None  # Bank-sanctioned LLM endpoint base URL (LIVE mode)
-    LLM_API_KEY: str | None = None  # Bearer auth token for LLM endpoint (optional in LIVE mode)
+    LLM_MODEL: str = "claude-sonnet-4-6"  # LiteLLM model string (e.g. claude-sonnet-4-6, anthropic/claude-sonnet-4-6)
+    LLM_BASE_URL: str | None = None  # LiteLLM gateway base URL — None routes direct to provider
+    LLM_API_KEY: str | None = None  # API key: Anthropic key for direct, gateway token for proxy
     OUTBOX_PUBLISHER_POLL_INTERVAL_SECONDS: float = 5.0
     OUTBOX_PUBLISHER_BATCH_SIZE: int = 100
     CASEFILE_LIFECYCLE_POLL_INTERVAL_SECONDS: float = 3600.0
@@ -329,6 +330,7 @@ class Settings(BaseSettings):
             INTEGRATION_MODE_SLACK=self.INTEGRATION_MODE_SLACK.value,
             INTEGRATION_MODE_SN=self.INTEGRATION_MODE_SN.value,
             INTEGRATION_MODE_LLM=self.INTEGRATION_MODE_LLM.value,
+            LLM_MODEL=self.LLM_MODEL,
             LLM_BASE_URL=self.LLM_BASE_URL or "[NOT SET]",
             LLM_API_KEY="[CONFIGURED]" if self.LLM_API_KEY else "[NOT SET]",
             OUTBOX_PUBLISHER_POLL_INTERVAL_SECONDS=self.OUTBOX_PUBLISHER_POLL_INTERVAL_SECONDS,
