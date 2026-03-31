@@ -1145,6 +1145,166 @@ async def test_hot_path_scheduler_skips_casefile_pipeline_when_existing_triage_f
 
 
 @pytest.mark.asyncio
+async def test_hot_path_scheduler_skips_casefile_pipeline_for_invalid_existing_triage_value_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scope = ("prod", "cluster-a", "orders")
+    gate_input = SimpleNamespace(action_fingerprint="fp-invalid-triage")
+    decision = SimpleNamespace(action_fingerprint="fp-invalid-triage")
+    topology_loader = _patch_hot_path_case_processing_dependencies(
+        monkeypatch,
+        scope=scope,
+        gate_input=gate_input,
+        decision=decision,
+    )
+    monkeypatch.setattr(
+        __main__,
+        "get_existing_casefile_triage",
+        MagicMock(side_effect=ValueError(__main__._CASEFILE_TRIAGE_HASH_MISMATCH_ERROR)),
+    )
+    assemble_stage = MagicMock()
+    persist_stage = MagicMock()
+    dispatch_stage = MagicMock()
+    monkeypatch.setattr(__main__, "assemble_casefile_triage_stage", assemble_stage)
+    monkeypatch.setattr(__main__, "persist_casefile_and_prepare_outbox_ready", persist_stage)
+    monkeypatch.setattr(__main__, "dispatch_action", dispatch_stage)
+
+    outbox_repository = MagicMock()
+    logger = MagicMock()
+
+    with pytest.raises(asyncio.CancelledError):
+        await __main__._hot_path_scheduler_loop(
+            settings=_hot_path_settings_for_coordination_tests(lock_enabled=False),
+            logger=logger,
+            alert_evaluator=MagicMock(),
+            prometheus_client=MagicMock(),
+            metric_queries={},
+            anomaly_detection_policy=SimpleNamespace(schema_version="v1"),
+            peak_policy=MagicMock(),
+            rulebook_policy=MagicMock(),
+            redis_ttl_policy=MagicMock(),
+            prometheus_metrics_contract=MagicMock(),
+            denylist=MagicMock(),
+            redis_client=MagicMock(),
+            dedupe_store=MagicMock(),
+            object_store_client=MagicMock(),
+            outbox_repository=outbox_repository,
+            pd_client=MagicMock(),
+            slack_client=MagicMock(),
+            topology_loader=topology_loader,
+            cycle_lock=MagicMock(),
+            cycle_lock_owner_id="pod-a",
+            coordination_state=_HotPathCoordinationState(),
+        )
+
+    assemble_stage.assert_not_called()
+    persist_stage.assert_not_called()
+    outbox_repository.insert_pending_object.assert_not_called()
+    dispatch_stage.assert_not_called()
+    invalid_triage_log = next(
+        (
+            call
+            for call in logger.warning.call_args_list
+            if call.args and call.args[0] == "hot_path_existing_casefile_triage_invalid"
+        ),
+        None,
+    )
+    assert invalid_triage_log is not None
+    assert invalid_triage_log.kwargs["event_type"] == "casefile.invalid_existing_triage"
+    assert invalid_triage_log.kwargs["scope"] == scope
+    assert invalid_triage_log.kwargs["action_fingerprint"] == "fp-invalid-triage"
+    assert __main__._CASEFILE_TRIAGE_HASH_MISMATCH_ERROR in invalid_triage_log.kwargs["error"]
+    case_error_log = next(
+        (
+            call
+            for call in logger.error.call_args_list
+            if call.args and call.args[0] == "hot_path_case_processing_failed"
+        ),
+        None,
+    )
+    assert case_error_log is None
+
+
+@pytest.mark.asyncio
+async def test_hot_path_scheduler_logs_case_error_for_non_targeted_lookup_value_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scope = ("prod", "cluster-a", "orders")
+    gate_input = SimpleNamespace(action_fingerprint="fp-non-targeted-value-error")
+    decision = SimpleNamespace(action_fingerprint="fp-non-targeted-value-error")
+    topology_loader = _patch_hot_path_case_processing_dependencies(
+        monkeypatch,
+        scope=scope,
+        gate_input=gate_input,
+        decision=decision,
+    )
+    monkeypatch.setattr(
+        __main__,
+        "get_existing_casefile_triage",
+        MagicMock(side_effect=ValueError("unexpected lookup value error")),
+    )
+    assemble_stage = MagicMock()
+    persist_stage = MagicMock()
+    dispatch_stage = MagicMock()
+    monkeypatch.setattr(__main__, "assemble_casefile_triage_stage", assemble_stage)
+    monkeypatch.setattr(__main__, "persist_casefile_and_prepare_outbox_ready", persist_stage)
+    monkeypatch.setattr(__main__, "dispatch_action", dispatch_stage)
+
+    logger = MagicMock()
+
+    with pytest.raises(asyncio.CancelledError):
+        await __main__._hot_path_scheduler_loop(
+            settings=_hot_path_settings_for_coordination_tests(lock_enabled=False),
+            logger=logger,
+            alert_evaluator=MagicMock(),
+            prometheus_client=MagicMock(),
+            metric_queries={},
+            anomaly_detection_policy=SimpleNamespace(schema_version="v1"),
+            peak_policy=MagicMock(),
+            rulebook_policy=MagicMock(),
+            redis_ttl_policy=MagicMock(),
+            prometheus_metrics_contract=MagicMock(),
+            denylist=MagicMock(),
+            redis_client=MagicMock(),
+            dedupe_store=MagicMock(),
+            object_store_client=MagicMock(),
+            outbox_repository=MagicMock(),
+            pd_client=MagicMock(),
+            slack_client=MagicMock(),
+            topology_loader=topology_loader,
+            cycle_lock=MagicMock(),
+            cycle_lock_owner_id="pod-a",
+            coordination_state=_HotPathCoordinationState(),
+        )
+
+    assemble_stage.assert_not_called()
+    persist_stage.assert_not_called()
+    dispatch_stage.assert_not_called()
+    invalid_triage_log = next(
+        (
+            call
+            for call in logger.warning.call_args_list
+            if call.args and call.args[0] == "hot_path_existing_casefile_triage_invalid"
+        ),
+        None,
+    )
+    assert invalid_triage_log is None
+    case_error_log = next(
+        (
+            call
+            for call in logger.error.call_args_list
+            if call.args and call.args[0] == "hot_path_case_processing_failed"
+        ),
+        None,
+    )
+    assert case_error_log is not None
+    assert case_error_log.kwargs["event_type"] == "hot_path.case_error"
+    assert case_error_log.kwargs["scope"] == scope
+    assert case_error_log.kwargs["action_fingerprint"] == "fp-non-targeted-value-error"
+    assert case_error_log.kwargs["exc_info"] is True
+
+
+@pytest.mark.asyncio
 async def test_hot_path_scheduler_logs_case_error_when_lookup_raises_integration_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

@@ -129,6 +129,9 @@ _DENYLIST_PATH = Path(__file__).resolve().parents[2] / "config/denylist.yaml"
 _OPERATIONAL_ALERT_POLICY_PATH = (
     Path(__file__).resolve().parents[2] / "config/policies/operational-alert-policy-v1.yaml"
 )
+_CASEFILE_TRIAGE_HASH_MISMATCH_ERROR = (
+    "triage_hash does not match canonical serialized payload bytes"
+)
 
 
 class _PeakHistoryRetention:
@@ -813,10 +816,22 @@ async def _hot_path_scheduler_loop(
                         )
                         continue
                     try:
-                        existing_casefile = get_existing_casefile_triage(
-                            gate_input=gate_input,
-                            object_store_client=object_store_client,
-                        )
+                        try:
+                            existing_casefile = get_existing_casefile_triage(
+                                gate_input=gate_input,
+                                object_store_client=object_store_client,
+                            )
+                        except ValueError as exc:
+                            if _CASEFILE_TRIAGE_HASH_MISMATCH_ERROR not in str(exc):
+                                raise
+                            logger.warning(
+                                "hot_path_existing_casefile_triage_invalid",
+                                event_type="casefile.invalid_existing_triage",
+                                scope=scope,
+                                action_fingerprint=decision.action_fingerprint,
+                                error=str(exc),
+                            )
+                            continue
                         if existing_casefile is not None:
                             logger.info(
                                 "casefile_triage_already_exists",
