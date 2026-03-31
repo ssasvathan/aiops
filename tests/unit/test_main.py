@@ -1426,6 +1426,7 @@ async def test_hot_path_scheduler_logs_outbox_audit_signal_for_observe_cases(
     assemble_stage.assert_called_once()
     persist_stage.assert_called_once()
     outbox_repository.insert_pending_object.assert_called_once_with(confirmed_casefile=outbox_ready)
+    outbox_repository.transition_to_ready.assert_called_once_with(case_id=outbox_ready.case_id)
     dispatch_stage.assert_called_once()
     audit_log = next(
         (

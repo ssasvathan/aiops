@@ -202,6 +202,42 @@ services:
         condition: service_completed_successfully
     restart: "no"
 
+  # Dedicated outbox publisher worker:
+  # reads READY/RETRY rows from Postgres outbox and publishes Kafka events.
+  outbox-publisher:
+    build: .
+    env_file: config/.env.docker
+    command: ["--mode", "outbox-publisher"]
+    depends_on:
+      kafka:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
+  # Dedicated cold-path worker:
+  # consumes case-header events and writes diagnosis.json artifacts.
+  cold-path:
+    build: .
+    env_file: config/.env.docker
+    command: ["--mode", "cold-path"]
+    depends_on:
+      kafka:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+      minio-init:
+        condition: service_completed_successfully
+    restart: unless-stopped
+
 volumes:
   zookeeper-data:
   zookeeper-log:

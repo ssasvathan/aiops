@@ -101,6 +101,7 @@ from aiops_triage_pipeline.pipeline.stages.casefile import (
     persist_casefile_and_prepare_outbox_ready,
 )
 from aiops_triage_pipeline.pipeline.stages.dispatch import dispatch_action
+from aiops_triage_pipeline.pipeline.stages.outbox import build_outbox_ready_record
 from aiops_triage_pipeline.pipeline.stages.peak import (
     build_sustained_identity_keys,
     build_sustained_window_state_by_key,
@@ -886,7 +887,10 @@ async def _hot_path_scheduler_loop(
                             casefile=casefile,
                             object_store_client=object_store_client,
                         )
-                        outbox_repository.insert_pending_object(confirmed_casefile=outbox_ready)
+                        build_outbox_ready_record(
+                            confirmed_casefile=outbox_ready,
+                            outbox_repository=outbox_repository,
+                        )
                         raw_gate_reason_codes = getattr(decision, "gate_reason_codes", ()) or ()
                         gate_reason_codes = tuple(raw_gate_reason_codes)
                         final_action = getattr(decision, "final_action", None)

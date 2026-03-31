@@ -27,7 +27,9 @@ This starts:
 - MinIO
 - Prometheus
 - Harness
-- App container
+- App container (`hot-path`)
+- Outbox publisher container (`outbox-publisher`)
+- Cold-path container (`cold-path`)
 
 `app` startup now performs a harness-state sweep before entering hot-path mode:
 
@@ -98,11 +100,13 @@ APP_ENV=local uv run python -m aiops_triage_pipeline --mode outbox-publisher --o
 APP_ENV=local uv run python -m aiops_triage_pipeline --mode casefile-lifecycle --once
 ```
 
-For end-to-end diagnosis output, run all three long-lived modes together:
+For end-to-end diagnosis output, all three long-lived modes must be running together:
 
 1. `hot-path` creates casefiles and enqueues outbox records.
 2. `outbox-publisher` publishes case header/excerpt events to Kafka.
 3. `cold-path` consumes case headers and writes diagnosis artifacts.
+
+`docker compose up -d --build` starts all three as dedicated services by default.
 
 `APP_ENV=local` and `APP_ENV=harness` can legitimately cap actions to `OBSERVE`; this does not
 block outbox publication or cold-path diagnosis.
