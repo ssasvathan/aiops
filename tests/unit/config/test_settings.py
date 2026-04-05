@@ -942,3 +942,137 @@ def test_shard_lease_ttl_rejects_value_greater_than_or_equal_to_scheduler_interv
                 "HOT_PATH_SCHEDULER_INTERVAL_SECONDS": 300,
             }
         )
+
+
+# ---------------------------------------------------------------------------
+# Backfill settings validators (F4, F5, F8)
+# ---------------------------------------------------------------------------
+
+
+def _backfill_base_kwargs() -> dict:
+    """Base kwargs with valid backfill settings for local env."""
+    return {
+        **_base_settings_kwargs(),
+        "APP_ENV": "local",
+        "BASELINE_BACKFILL_LOOKBACK_DAYS": 30,
+        "BASELINE_BACKFILL_TIMEOUT_SECONDS": 60,
+        "BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS": 270,
+        "HOT_PATH_SCHEDULER_INTERVAL_SECONDS": 300,
+    }
+
+
+def test_backfill_timeout_rejects_per_metric_timeout_greater_than_total() -> None:
+    """F4: BASELINE_BACKFILL_TIMEOUT_SECONDS must be <= BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS."""
+    with pytest.raises(
+        (ValueError, ValidationError), match="BASELINE_BACKFILL_TIMEOUT_SECONDS"
+    ):
+        Settings(
+            **{
+                **_backfill_base_kwargs(),
+                "BASELINE_BACKFILL_TIMEOUT_SECONDS": 300,
+                "BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS": 270,
+            }
+        )
+
+
+def test_backfill_timeout_accepts_per_metric_timeout_equal_to_total() -> None:
+    """F4: per-metric timeout equal to total timeout is acceptable."""
+    settings = Settings(
+        **{
+            **_backfill_base_kwargs(),
+            "BASELINE_BACKFILL_TIMEOUT_SECONDS": 270,
+            "BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS": 270,
+        }
+    )
+    assert settings.BASELINE_BACKFILL_TIMEOUT_SECONDS == 270
+
+
+def test_backfill_total_timeout_rejects_value_gte_scheduler_interval() -> None:
+    """F8: BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS must be < HOT_PATH_SCHEDULER_INTERVAL_SECONDS."""
+    with pytest.raises(
+        (ValueError, ValidationError), match="HOT_PATH_SCHEDULER_INTERVAL_SECONDS"
+    ):
+        Settings(
+            **{
+                **_backfill_base_kwargs(),
+                "BASELINE_BACKFILL_TIMEOUT_SECONDS": 60,
+                "BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS": 300,
+                "HOT_PATH_SCHEDULER_INTERVAL_SECONDS": 300,
+            }
+        )
+
+
+def test_backfill_total_timeout_accepts_value_less_than_scheduler_interval() -> None:
+    """F8: total timeout strictly less than scheduler interval is valid."""
+    settings = Settings(
+        **{
+            **_backfill_base_kwargs(),
+            "BASELINE_BACKFILL_TIMEOUT_SECONDS": 60,
+            "BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS": 270,
+            "HOT_PATH_SCHEDULER_INTERVAL_SECONDS": 300,
+        }
+    )
+    assert settings.BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS == 270
+
+
+def test_peak_depth_rejects_new_default_8640_for_dev() -> None:
+    """F5: STAGE2_PEAK_HISTORY_MAX_DEPTH=8640 (new default) is rejected for APP_ENV=dev."""
+    with pytest.raises(
+        (ValueError, ValidationError), match="STAGE2_PEAK_HISTORY_MAX_DEPTH"
+    ):
+        Settings(
+            **{
+                **_base_settings_kwargs(),
+                "APP_ENV": "dev",
+                "STAGE2_PEAK_HISTORY_MAX_DEPTH": 8640,
+            }
+        )
+
+
+def test_peak_depth_rejects_new_default_8640_for_uat() -> None:
+    """F5: STAGE2_PEAK_HISTORY_MAX_DEPTH=8640 (new default) is rejected for APP_ENV=uat."""
+    with pytest.raises(
+        (ValueError, ValidationError), match="STAGE2_PEAK_HISTORY_MAX_DEPTH"
+    ):
+        Settings(
+            **{
+                **_base_settings_kwargs(),
+                "APP_ENV": "uat",
+                "STAGE2_PEAK_HISTORY_MAX_DEPTH": 8640,
+                "SHARD_LEASE_TTL_SECONDS": 294,
+            }
+        )
+
+
+def test_peak_depth_accepts_8640_for_prod() -> None:
+    """F5: STAGE2_PEAK_HISTORY_MAX_DEPTH=8640 is the correct value for prod."""
+    get_settings.cache_clear()
+    try:
+        settings = Settings(
+            **{
+                **_base_settings_kwargs(),
+                "APP_ENV": "prod",
+                "STAGE2_PEAK_HISTORY_MAX_DEPTH": 8640,
+                "SHARD_LEASE_TTL_SECONDS": 270,
+                "INTEGRATION_MODE_LLM": "LIVE",
+                "INTEGRATION_MODE_PD": "LIVE",
+                "INTEGRATION_MODE_SLACK": "LIVE",
+                "INTEGRATION_MODE_SN": "LIVE",
+            }
+        )
+        assert settings.STAGE2_PEAK_HISTORY_MAX_DEPTH == 8640
+    finally:
+        get_settings.cache_clear()
+
+
+def test_peak_depth_accepts_8640_for_local_and_harness() -> None:
+    """F5: STAGE2_PEAK_HISTORY_MAX_DEPTH=8640 is accepted in local/harness (no constraint)."""
+    for env in ("local", "harness"):
+        settings = Settings(
+            **{
+                **_base_settings_kwargs(),
+                "APP_ENV": env,
+                "STAGE2_PEAK_HISTORY_MAX_DEPTH": 8640,
+            }
+        )
+        assert settings.STAGE2_PEAK_HISTORY_MAX_DEPTH == 8640

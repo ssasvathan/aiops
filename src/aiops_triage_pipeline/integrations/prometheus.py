@@ -24,6 +24,18 @@ class PrometheusClientProtocol(Protocol):
         """Query an instant vector and return normalized sample records."""
         ...
 
+    def query_range(
+        self,
+        metric_name: str,
+        start: datetime,
+        end: datetime,
+        step_seconds: int,
+        *,
+        timeout: int = 60,
+    ) -> list[dict[str, object]]:
+        """Query a range vector and return normalized matrix records."""
+        ...
+
 
 @dataclass(frozen=True)
 class MetricQueryDefinition:
@@ -66,6 +78,57 @@ class PrometheusHTTPClient:
                 continue  # skip NaN/Inf — preserve UNKNOWN semantics rather than propagating
             samples.append({"labels": metric_labels, "value": value_float})
         return samples
+
+    def query_range(
+        self,
+        metric_name: str,
+        start: datetime,
+        end: datetime,
+        step_seconds: int,
+        *,
+        timeout: int = 60,
+    ) -> list[dict[str, object]]:
+        """Query Prometheus /api/v1/query_range and return normalized matrix records.
+
+        Returns a list of records, each with:
+          - "labels": dict[str, str] of metric labels
+          - "values": list of (unix_timestamp, metric_value) tuples (NaN/Inf filtered)
+        """
+        params = urlencode({
+            "query": metric_name,
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "step": f"{step_seconds}s",
+        })
+        endpoint = f"{self.base_url}/api/v1/query_range?{params}"
+
+        with urlopen(endpoint, timeout=timeout) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+
+        if payload.get("status") != "success":
+            raise ValueError(f"Prometheus range query failed for {metric_name}: {payload}")
+
+        result_type = payload.get("data", {}).get("resultType")
+        if result_type != "matrix":
+            raise ValueError(
+                f"Expected matrix resultType, got {result_type!r} for {metric_name}"
+            )
+
+        records: list[dict[str, object]] = []
+        for item in payload.get("data", {}).get("result", []):
+            metric_labels = {k: str(v) for k, v in item.get("metric", {}).items()}
+            raw_values = item.get("values", [])
+            values: list[tuple[float, float]] = []
+            for ts_raw, val_raw in raw_values:
+                try:
+                    val_float = float(val_raw)
+                except (TypeError, ValueError):
+                    continue  # skip unparseable values — preserve UNKNOWN semantics
+                if not math.isfinite(val_float):
+                    continue  # skip NaN/Inf — preserve UNKNOWN semantics
+                values.append((float(ts_raw), val_float))
+            records.append({"labels": metric_labels, "values": values})
+        return records
 
 
 def load_prometheus_metrics_contract(

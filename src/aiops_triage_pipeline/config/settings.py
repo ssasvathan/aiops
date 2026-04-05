@@ -102,6 +102,11 @@ class Settings(BaseSettings):
     # Hot-path scheduler
     PROMETHEUS_URL: str = "http://localhost:9090"
     HOT_PATH_SCHEDULER_INTERVAL_SECONDS: int = 300
+    BASELINE_BACKFILL_LOOKBACK_DAYS: int = 30
+    BASELINE_BACKFILL_TIMEOUT_SECONDS: int = 60
+    # BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS must be < HOT_PATH_SCHEDULER_INTERVAL_SECONDS so
+    # that a slow Prometheus cannot block startup beyond one full scheduler interval.
+    BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS: int = 270  # default < 300 (interval)
     DISTRIBUTED_CYCLE_LOCK_ENABLED: bool = False
     CYCLE_LOCK_MARGIN_SECONDS: int = 60
 
@@ -116,7 +121,7 @@ class Settings(BaseSettings):
     STAGE2_SUSTAINED_PARALLEL_MIN_KEYS: int = 64
     STAGE2_SUSTAINED_PARALLEL_WORKERS: int = 4
     STAGE2_SUSTAINED_PARALLEL_CHUNK_SIZE: int = 32
-    STAGE2_PEAK_HISTORY_MAX_DEPTH: int = 12
+    STAGE2_PEAK_HISTORY_MAX_DEPTH: int = 8640
     STAGE2_PEAK_HISTORY_MAX_SCOPES: int = 2000
     STAGE2_PEAK_HISTORY_MAX_IDLE_CYCLES: int = 3
 
@@ -257,6 +262,26 @@ class Settings(BaseSettings):
             )
         if self.HOT_PATH_SCHEDULER_INTERVAL_SECONDS <= 0:
             raise ValueError("HOT_PATH_SCHEDULER_INTERVAL_SECONDS must be > 0")
+        if self.BASELINE_BACKFILL_LOOKBACK_DAYS <= 0:
+            raise ValueError("BASELINE_BACKFILL_LOOKBACK_DAYS must be > 0")
+        if self.BASELINE_BACKFILL_TIMEOUT_SECONDS <= 0:
+            raise ValueError("BASELINE_BACKFILL_TIMEOUT_SECONDS must be > 0")
+        if self.BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS <= 0:
+            raise ValueError("BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS must be > 0")
+        if self.BASELINE_BACKFILL_TIMEOUT_SECONDS > self.BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS:
+            raise ValueError(
+                "BASELINE_BACKFILL_TIMEOUT_SECONDS must be <= "
+                "BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS "
+                f"(got timeout={self.BASELINE_BACKFILL_TIMEOUT_SECONDS}, "
+                f"total={self.BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS})"
+            )
+        if self.BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS >= self.HOT_PATH_SCHEDULER_INTERVAL_SECONDS:
+            raise ValueError(
+                "BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS must be < "
+                "HOT_PATH_SCHEDULER_INTERVAL_SECONDS "
+                f"(got total={self.BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS}, "
+                f"interval={self.HOT_PATH_SCHEDULER_INTERVAL_SECONDS})"
+            )
         if self.CYCLE_LOCK_MARGIN_SECONDS <= 0:
             raise ValueError("CYCLE_LOCK_MARGIN_SECONDS must be > 0")
         self.TOPOLOGY_REGISTRY_PATH = self.TOPOLOGY_REGISTRY_PATH.strip()
@@ -298,7 +323,12 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_peak_depth_not_default_for_named_envs(self) -> "Settings":
-        """Reject legacy peak-history fallback depth for dev/uat/prod environments."""
+        """Reject implicit peak-history depths for named environments.
+
+        Rejects the old default 12 (legacy guard) and the new code default 8640 in
+        dev/uat, where env-file templates configure smaller environment-specific values
+        (dev=2016, uat=4320). prod accepts 8640 as the intended value.
+        """
         if (
             self.APP_ENV in (AppEnv.dev, AppEnv.uat, AppEnv.prod)
             and self.STAGE2_PEAK_HISTORY_MAX_DEPTH == 12
@@ -306,6 +336,15 @@ class Settings(BaseSettings):
             raise ValueError(
                 "STAGE2_PEAK_HISTORY_MAX_DEPTH must be explicitly set for "
                 f"APP_ENV={self.APP_ENV.value}; refusing legacy default 12"
+            )
+        if (
+            self.APP_ENV in (AppEnv.dev, AppEnv.uat)
+            and self.STAGE2_PEAK_HISTORY_MAX_DEPTH == 8640
+        ):
+            raise ValueError(
+                "STAGE2_PEAK_HISTORY_MAX_DEPTH must be explicitly set for "
+                f"APP_ENV={self.APP_ENV.value}; refusing implicit default 8640 "
+                "(configure per env-file: dev=2016, uat=4320)"
             )
         return self
 
@@ -341,6 +380,9 @@ class Settings(BaseSettings):
             CASEFILE_RETENTION_GOVERNANCE_APPROVAL=self.CASEFILE_RETENTION_GOVERNANCE_APPROVAL,
             PROMETHEUS_URL=self.PROMETHEUS_URL,
             HOT_PATH_SCHEDULER_INTERVAL_SECONDS=self.HOT_PATH_SCHEDULER_INTERVAL_SECONDS,
+            BASELINE_BACKFILL_LOOKBACK_DAYS=self.BASELINE_BACKFILL_LOOKBACK_DAYS,
+            BASELINE_BACKFILL_TIMEOUT_SECONDS=self.BASELINE_BACKFILL_TIMEOUT_SECONDS,
+            BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS=self.BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS,
             DISTRIBUTED_CYCLE_LOCK_ENABLED=self.DISTRIBUTED_CYCLE_LOCK_ENABLED,
             CYCLE_LOCK_MARGIN_SECONDS=self.CYCLE_LOCK_MARGIN_SECONDS,
             SHARD_REGISTRY_ENABLED=self.SHARD_REGISTRY_ENABLED,

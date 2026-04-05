@@ -6,6 +6,7 @@ import os
 import threading
 import time
 from collections import deque
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Mapping
@@ -84,6 +85,7 @@ from aiops_triage_pipeline.models.health import HealthStatus
 from aiops_triage_pipeline.outbox.repository import OutboxSqlRepository
 from aiops_triage_pipeline.outbox.schema import create_outbox_table, outbox_table
 from aiops_triage_pipeline.outbox.worker import OutboxPublisherWorker
+from aiops_triage_pipeline.pipeline.baseline_backfill import backfill_baselines_from_prometheus
 from aiops_triage_pipeline.pipeline.baseline_store import load_metric_baselines
 from aiops_triage_pipeline.pipeline.scheduler import (
     emit_redis_degraded_mode_events,
@@ -231,6 +233,36 @@ class _PeakHistoryRetention:
             for scope in active_scopes
             if scope in self._history_by_scope and self._history_by_scope[scope]
         }
+
+    def seed(
+        self,
+        *,
+        history_by_scope: dict[tuple[str, str, str], Sequence[float]],
+    ) -> None:
+        """Bulk-load historical values into deques before the first scheduler cycle.
+
+        Must be called before any update() call. Raises RuntimeError if called after
+        the first update() to prevent stale-eviction of seeded scopes.
+        """
+        if self._cycle > 0:
+            raise RuntimeError("seed() must be called before first update()")
+        skipped = 0
+        for scope, values in history_by_scope.items():
+            if scope not in self._history_by_scope:
+                if len(self._history_by_scope) >= self._max_scopes:
+                    skipped += 1
+                    continue
+                self._history_by_scope[scope] = deque(maxlen=self._max_depth)
+            # extend auto-truncates to maxlen, keeping the most recent values
+            self._history_by_scope[scope].extend(values)
+            self._last_seen_cycle_by_scope[scope] = self._cycle
+        if skipped > 0 and self._logger is not None:
+            self._logger.warning(
+                "peak_history_seed_scope_cap_reached",
+                event_type="peak.history_seed_warning",
+                max_scopes=self._max_scopes,
+                skipped_scope_count=skipped,
+            )
 
     def _evict_oldest_scope(
         self,
@@ -540,6 +572,38 @@ async def _hot_path_scheduler_loop(
         coordination_info_fn=coordination_state.snapshot,
     )
     asyncio.create_task(_health_server.serve_forever(), name="health-server")
+
+    # Backfill peak history and Redis baseline cache from Prometheus range queries.
+    # asyncio.wait_for enforces the total budget; any unexpected exception is caught so
+    # the pipeline starts in degraded mode rather than crashing.
+    try:
+        await asyncio.wait_for(
+            backfill_baselines_from_prometheus(
+                prometheus_client=prometheus_client,
+                metric_queries=metric_queries,
+                redis_client=redis_client,
+                redis_ttl_policy=redis_ttl_policy,
+                peak_history_retention=peak_history_retention,
+                lookback_days=settings.BASELINE_BACKFILL_LOOKBACK_DAYS,
+                step_seconds=interval_seconds,
+                timeout_seconds=settings.BASELINE_BACKFILL_TIMEOUT_SECONDS,
+                total_timeout_seconds=settings.BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS,
+                logger=logger,
+            ),
+            timeout=settings.BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS,
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "baseline_backfill_wall_clock_timeout",
+            event_type="backfill.wall_clock_timeout",
+            total_timeout_seconds=settings.BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS,
+        )
+    except Exception:
+        logger.warning(
+            "baseline_backfill_unexpected_error",
+            event_type="backfill.unexpected_error",
+            exc_info=True,
+        )
 
     while True:
         evaluation_time = datetime.now(UTC)

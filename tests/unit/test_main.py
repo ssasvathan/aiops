@@ -655,6 +655,210 @@ def test_peak_history_retention_skips_over_cap_scopes_without_active_scope_churn
 
 
 # ---------------------------------------------------------------------------
+# _PeakHistoryRetention.seed() tests
+# ---------------------------------------------------------------------------
+
+
+def test_peak_history_retention_seed_populates_history() -> None:
+    retention = __main__._PeakHistoryRetention(max_depth=5, max_scopes=10, max_idle_cycles=3)
+    scope = ("prod", "cluster-a", "orders")
+
+    retention.seed(history_by_scope={scope: [10.0, 20.0, 30.0]})
+
+    result = retention.update(
+        scopes=[scope],
+        baseline_values_by_scope={scope: 40.0},
+    )
+    assert result[scope] == (10.0, 20.0, 30.0, 40.0)
+
+
+def test_peak_history_retention_seed_respects_max_depth() -> None:
+    retention = __main__._PeakHistoryRetention(max_depth=3, max_scopes=10, max_idle_cycles=3)
+    scope = ("prod", "cluster-a", "orders")
+
+    # Seed with 5 values, only 3 most recent should be retained
+    retention.seed(history_by_scope={scope: [1.0, 2.0, 3.0, 4.0, 5.0]})
+
+    result = retention.update(scopes=[scope], baseline_values_by_scope={})
+    assert result[scope] == (3.0, 4.0, 5.0)
+
+
+def test_peak_history_retention_seed_respects_max_scopes() -> None:
+    retention = __main__._PeakHistoryRetention(max_depth=5, max_scopes=2, max_idle_cycles=3)
+    scope_a = ("prod", "cluster-a", "a")
+    scope_b = ("prod", "cluster-a", "b")
+    scope_c = ("prod", "cluster-a", "c")  # beyond capacity
+
+    retention.seed(history_by_scope={
+        scope_a: [1.0],
+        scope_b: [2.0],
+        scope_c: [3.0],
+    })
+
+    assert scope_a in retention._history_by_scope
+    assert scope_b in retention._history_by_scope
+    assert scope_c not in retention._history_by_scope
+
+
+def test_peak_history_retention_seed_does_not_increment_cycle() -> None:
+    retention = __main__._PeakHistoryRetention(max_depth=5, max_scopes=10, max_idle_cycles=3)
+    scope = ("prod", "cluster-a", "orders")
+
+    retention.seed(history_by_scope={scope: [1.0, 2.0]})
+
+    assert retention._cycle == 0
+
+
+def test_peak_history_retention_seed_then_update_appends() -> None:
+    retention = __main__._PeakHistoryRetention(max_depth=4, max_scopes=10, max_idle_cycles=3)
+    scope = ("prod", "cluster-a", "orders")
+
+    # Seed with 3 values, then update with 1 more — deque maxlen=4 accommodates all
+    retention.seed(history_by_scope={scope: [10.0, 20.0, 30.0]})
+    result = retention.update(scopes=[scope], baseline_values_by_scope={scope: 40.0})
+
+    assert result[scope] == (10.0, 20.0, 30.0, 40.0)
+
+
+def test_peak_history_retention_seed_then_update_truncates_oldest_seeded_values() -> None:
+    retention = __main__._PeakHistoryRetention(max_depth=3, max_scopes=10, max_idle_cycles=3)
+    scope = ("prod", "cluster-a", "orders")
+
+    # Seed fills deque (maxlen=3): [10, 20, 30]
+    retention.seed(history_by_scope={scope: [10.0, 20.0, 30.0]})
+    # update appends 40.0 → oldest (10.0) is evicted: [20, 30, 40]
+    result = retention.update(scopes=[scope], baseline_values_by_scope={scope: 40.0})
+
+    assert result[scope] == (20.0, 30.0, 40.0)
+
+
+def test_peak_history_retention_seed_raises_after_first_update() -> None:
+    retention = __main__._PeakHistoryRetention(max_depth=5, max_scopes=10, max_idle_cycles=3)
+    scope = ("prod", "cluster-a", "orders")
+
+    retention.update(scopes=[scope], baseline_values_by_scope={scope: 1.0})
+
+    with pytest.raises(RuntimeError, match="seed\\(\\) must be called before first update\\(\\)"):
+        retention.seed(history_by_scope={scope: [2.0, 3.0]})
+
+
+# ---------------------------------------------------------------------------
+# Task 9 — backfill wiring into _hot_path_scheduler_loop
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_hot_path_scheduler_loop_calls_backfill_before_first_cycle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """backfill_baselines_from_prometheus is called exactly once with correct params
+    during _hot_path_scheduler_loop initialization, before the first scheduler cycle."""
+    backfill_mock = AsyncMock()
+    monkeypatch.setattr(__main__, "backfill_baselines_from_prometheus", backfill_mock)
+
+    call_order: list[str] = []
+
+    async def fake_backfill(**kwargs):
+        call_order.append("backfill")
+
+    backfill_mock.side_effect = fake_backfill
+
+    tick = SimpleNamespace(
+        expected_boundary=datetime(2026, 4, 1, 12, 0, tzinfo=UTC),
+        drift_seconds=0,
+        missed_intervals=0,
+    )
+    monkeypatch.setattr(__main__, "evaluate_scheduler_tick", lambda **_: tick)
+    monkeypatch.setattr(
+        __main__,
+        "next_interval_boundary",
+        lambda *_a, **_kw: datetime.now(UTC),
+    )
+    monkeypatch.setattr(
+        __main__,
+        "emit_redis_degraded_mode_events",
+        AsyncMock(return_value=()),
+    )
+
+    def fake_evidence_stage(**_):
+        call_order.append("cycle")
+        raise asyncio.CancelledError()
+
+    monkeypatch.setattr(
+        __main__,
+        "run_evidence_stage_cycle",
+        AsyncMock(side_effect=fake_evidence_stage),
+    )
+    monkeypatch.setattr(__main__, "record_cycle_lock_acquired", MagicMock())
+    monkeypatch.setattr(__main__, "record_cycle_lock_yielded", MagicMock())
+    monkeypatch.setattr(__main__, "record_cycle_lock_fail_open", MagicMock())
+
+    registry = MagicMock()
+    registry.update = AsyncMock()
+    monkeypatch.setattr(__main__, "get_health_registry", lambda: registry)
+
+    cycle_lock = MagicMock()
+    cycle_lock.acquire.return_value = SimpleNamespace(
+        status=CycleLockStatus.acquired,
+        key="aiops:lock:cycle",
+        ttl_seconds=360,
+        holder_id="pod-a",
+    )
+
+    mock_server = MagicMock()
+    mock_server.serve_forever = AsyncMock()
+    monkeypatch.setattr(
+        "aiops_triage_pipeline.__main__.start_health_server",
+        AsyncMock(return_value=mock_server),
+    )
+
+    settings = _hot_path_settings_for_coordination_tests(lock_enabled=True)
+    redis_client = MagicMock()
+    redis_ttl_policy = MagicMock()
+    metric_queries = {"topic_messages_in_per_sec": MagicMock()}
+
+    with pytest.raises(asyncio.CancelledError):
+        await __main__._hot_path_scheduler_loop(
+            settings=settings,
+            logger=MagicMock(),
+            alert_evaluator=MagicMock(),
+            prometheus_client=MagicMock(),
+            metric_queries=metric_queries,
+            anomaly_detection_policy=MagicMock(),
+            peak_policy=MagicMock(),
+            rulebook_policy=MagicMock(),
+            redis_ttl_policy=redis_ttl_policy,
+            prometheus_metrics_contract=MagicMock(),
+            denylist=MagicMock(),
+            redis_client=redis_client,
+            dedupe_store=MagicMock(),
+            object_store_client=MagicMock(),
+            outbox_repository=MagicMock(),
+            pd_client=MagicMock(),
+            slack_client=MagicMock(),
+            topology_loader=MagicMock(),
+            cycle_lock=cycle_lock,
+            cycle_lock_owner_id="pod-a",
+            coordination_state=_HotPathCoordinationState(enabled=True),
+        )
+
+    # backfill was called exactly once
+    assert backfill_mock.call_count == 1
+    # backfill ran before the first cycle
+    assert call_order == ["backfill", "cycle"]
+
+    # Verify key parameters passed to backfill
+    kwargs = backfill_mock.call_args.kwargs
+    assert kwargs["lookback_days"] == settings.BASELINE_BACKFILL_LOOKBACK_DAYS
+    assert kwargs["step_seconds"] == settings.HOT_PATH_SCHEDULER_INTERVAL_SECONDS
+    assert kwargs["timeout_seconds"] == settings.BASELINE_BACKFILL_TIMEOUT_SECONDS
+    assert kwargs["total_timeout_seconds"] == settings.BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS
+    assert kwargs["metric_queries"] is metric_queries
+    assert kwargs["redis_client"] is redis_client
+    assert kwargs["redis_ttl_policy"] is redis_ttl_policy
+
+
+# ---------------------------------------------------------------------------
 # Story 3.2/3.3 — _cold_path_process_event() wiring regression tests
 # ---------------------------------------------------------------------------
 
@@ -963,6 +1167,9 @@ def _hot_path_settings_for_coordination_tests(*, lock_enabled: bool) -> SimpleNa
         SHARD_REGISTRY_ENABLED=False,
         HEALTH_SERVER_HOST="127.0.0.1",
         HEALTH_SERVER_PORT=0,
+        BASELINE_BACKFILL_LOOKBACK_DAYS=30,
+        BASELINE_BACKFILL_TIMEOUT_SECONDS=60,
+        BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS=270,
     )
 
 
@@ -1648,6 +1855,9 @@ def _hot_path_settings_for_shard_tests(*, shard_enabled: bool) -> SimpleNamespac
         SHARD_CHECKPOINT_TTL_SECONDS=660,
         HEALTH_SERVER_HOST="127.0.0.1",
         HEALTH_SERVER_PORT=0,
+        BASELINE_BACKFILL_LOOKBACK_DAYS=30,
+        BASELINE_BACKFILL_TIMEOUT_SECONDS=60,
+        BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS=270,
     )
 
 
