@@ -1094,7 +1094,7 @@ class TestColdPathProcessEventWiring:
     def test_cold_path_process_event_skips_diagnosis_when_stage_already_exists_for_triage_hash(
         self, monkeypatch
     ) -> None:
-        """Duplicate case headers should short-circuit when diagnosis.json already matches triage."""
+        """Duplicate case headers should short-circuit when diagnosis already matches triage."""
         from unittest.mock import MagicMock, patch
 
         event = _make_case_header_event(case_id="case-duplicate-diagnosis-001")

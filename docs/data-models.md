@@ -64,6 +64,14 @@ Source: `src/aiops_triage_pipeline/storage/casefile_io.py`, `models/case_file.py
 - Health status and degraded-mode events
 - CaseFile downstream context and stage payload models
 
+## Baseline Deviation
+
+Source: `src/aiops_triage_pipeline/baseline/`
+
+- Seasonal baseline Redis key schema: `aiops:seasonal_baseline:{scope}:{metric_key}:{dow}:{hour}` (value: JSON float list, max 12 items)
+- Time bucket index: `(dow, hour)` where `dow` = `datetime.weekday()` (Mon=0, Sun=6), `hour` = 0–23 (always UTC)
+- `BaselineDeviationContext` and `BaselineDeviationStageOutput` models — forthcoming (Story 1.2)
+
 ## Migration Strategy Signal
 
 - No Alembic/Flyway migration folder detected.

@@ -19,6 +19,9 @@
 | Health Registry | Observability | `health/registry.py` | Yes | Component health state tracking |
 | OTLP Metrics Bootstrap | Observability | `health/otlp.py` | Yes | Exporter setup and lifecycle |
 | Denylist Enforcement | Security | `denylist/enforcement.py` | Yes | Field-level outbound data suppression |
+| Baseline Constants | Configuration | `baseline/constants.py` | Yes | MAD_CONSISTENCY_CONSTANT, MAD_THRESHOLD, MIN_CORRELATED_DEVIATIONS, MIN_BUCKET_SAMPLES, MAX_BUCKET_VALUES |
+| Baseline Computation | Computation | `baseline/computation.py` | Yes | time_to_bucket() — sole UTC-normalized (dow, hour) bucket derivation function |
+| SeasonalBaselineClient | Storage | `baseline/client.py` | Yes | Placeholder — Redis I/O boundary for seasonal baseline read/write/seed/recompute (Story 1.2) |
 
 ## Domain Model Components
 

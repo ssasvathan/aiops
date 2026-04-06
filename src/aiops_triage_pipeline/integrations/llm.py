@@ -5,15 +5,13 @@ and parses the response as a schema-validated DiagnosisReportV1 via model_valida
 """
 
 import json
+from enum import Enum
 
 from aiops_triage_pipeline.config.settings import IntegrationMode
 from aiops_triage_pipeline.contracts.diagnosis_report import DiagnosisReportV1, EvidencePack
 from aiops_triage_pipeline.contracts.enums import DiagnosisConfidence
 from aiops_triage_pipeline.contracts.triage_excerpt import TriageExcerptV1
 from aiops_triage_pipeline.logging.setup import get_logger
-
-
-from enum import Enum
 
 
 class LLMFailureMode(str, Enum):

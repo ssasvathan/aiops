@@ -88,7 +88,8 @@ class Settings(BaseSettings):
     INTEGRATION_MODE_LLM: IntegrationMode = IntegrationMode.LOG
 
     # LLM endpoint (required for LIVE mode)
-    LLM_MODEL: str = "claude-sonnet-4-6"  # LiteLLM model string (e.g. claude-sonnet-4-6, anthropic/claude-sonnet-4-6)
+    # LiteLLM model string (e.g. claude-sonnet-4-6, anthropic/claude-sonnet-4-6)
+    LLM_MODEL: str = "claude-sonnet-4-6"
     LLM_BASE_URL: str | None = None  # LiteLLM gateway base URL — None routes direct to provider
     LLM_API_KEY: str | None = None  # API key: Anthropic key for direct, gateway token for proxy
     OUTBOX_PUBLISHER_POLL_INTERVAL_SECONDS: float = 5.0

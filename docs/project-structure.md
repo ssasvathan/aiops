@@ -9,6 +9,7 @@
 ## Top-Level Layout
 
 - `src/aiops_triage_pipeline/` - application code (pipeline, contracts, integrations, storage, health)
+  - `baseline/` - baseline deviation domain (constants, computation, client, models)
 - `tests/` - unit and integration suites
 - `config/` - environment and policy configuration
 - `harness/` - test/load harness and synthetic patterns
