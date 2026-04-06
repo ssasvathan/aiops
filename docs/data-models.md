@@ -71,7 +71,34 @@ Source: `src/aiops_triage_pipeline/baseline/`
 - Seasonal baseline Redis key schema: `aiops:seasonal_baseline:{scope}:{metric_key}:{dow}:{hour}` where `{scope}` = `"|".join(scope_tuple)` (e.g. `prod|kafka-prod-east|orders.completed`)
 - Time bucket index: `(dow, hour)` where `dow` = `datetime.weekday()` (Mon=0, Sun=6), `hour` = 0–23 (always UTC)
 - Value format: JSON-serialized `list[float]`, maximum `MAX_BUCKET_VALUES` (12) items; oldest value dropped when cap is exceeded
-- `BaselineDeviationContext` and `BaselineDeviationStageOutput` models — forthcoming (Story 2.2)
+
+### BaselineDeviationContext
+
+Source: `src/aiops_triage_pipeline/baseline/models.py`
+
+Frozen Pydantic model (P4) carrying per-metric deviation context for `BASELINE_DEVIATION` findings. Provides full offline replay context per NFR-A2.
+
+Fields:
+- `metric_key: str` — the Prometheus metric key being evaluated
+- `deviation_direction: Literal["HIGH", "LOW"]` — direction of the deviation
+- `deviation_magnitude: float` — modified z-score (signed; negative = LOW)
+- `baseline_value: float` — median of the historical time bucket
+- `current_value: float` — the observed value being evaluated
+- `time_bucket: tuple[int, int]` — `(dow, hour)` bucket, output of `time_to_bucket()`
+
+### BaselineDeviationStageOutput
+
+Source: `src/aiops_triage_pipeline/baseline/models.py`
+
+Frozen Pydantic model (P5) representing the output of the baseline deviation pipeline stage for one cycle.
+
+Fields:
+- `findings: tuple[AnomalyFinding, ...]` — emitted `BASELINE_DEVIATION` findings
+- `scopes_evaluated: int` — total scopes checked in this cycle
+- `deviations_detected: int` — number of deviations that produced findings
+- `deviations_suppressed_single_metric: int` — suppressed because only one metric deviated in scope
+- `deviations_suppressed_dedup: int` — suppressed due to deduplication
+- `evaluation_time: datetime` — timestamp of stage evaluation
 
 ## Migration Strategy Signal
 

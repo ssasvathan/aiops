@@ -31,6 +31,23 @@ Contract modules live in:
 | `ServiceNowLinkageContractV1` | `contracts/sn_linkage.py` |
 | `LocalDevContractV1` | `contracts/local_dev.py` |
 
+## AnomalyFinding Domain Model
+
+Source: `src/aiops_triage_pipeline/models/anomaly.py`
+
+`AnomalyFinding` is a frozen Pydantic domain model (not a contract) used within pipeline stages. The `anomaly_family` field accepts:
+
+| Value | Introduced |
+|---|---|
+| `CONSUMER_LAG` | Epic 1 |
+| `VOLUME_DROP` | Epic 1 |
+| `THROUGHPUT_CONSTRAINED_PROXY` | Epic 1 |
+| `BASELINE_DEVIATION` | Story 2.2 (additive, Procedure A) |
+
+The `BASELINE_DEVIATION` family carries an optional `baseline_context: BaselineDeviationContext | None` field with per-metric replay context (NFR-A2). Existing families default `baseline_context` to `None` — no breaking change.
+
+Note: `GateInputV1.anomaly_family` in `contracts/gate_input.py` is a separate Literal on the gate contract. It does not yet include `BASELINE_DEVIATION` — that additive change is deferred to Story 2.4 pipeline integration.
+
 ## Shared Enum Surface
 
 Common enumerations are defined in `contracts/enums.py` and reused across contracts and pipeline logic.

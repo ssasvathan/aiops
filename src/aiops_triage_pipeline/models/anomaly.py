@@ -1,14 +1,21 @@
 """Anomaly detection models for Stage 1 evidence analysis."""
 
+from __future__ import annotations
+
 from collections import defaultdict
 from types import MappingProxyType
-from typing import Literal, Mapping
+from typing import TYPE_CHECKING, Literal, Mapping
 
 from pydantic import BaseModel, Field, field_serializer, model_validator
 
 from aiops_triage_pipeline.contracts.enums import EvidenceStatus
 
-AnomalyFamily = Literal["CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY"]
+if TYPE_CHECKING:
+    from aiops_triage_pipeline.baseline.models import BaselineDeviationContext
+
+AnomalyFamily = Literal[
+    "CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY", "BASELINE_DEVIATION"
+]
 AnomalySeverity = Literal["LOW", "MEDIUM", "HIGH"]
 _ALLOWED_AG2_NON_PRESENT_STATUSES: frozenset[EvidenceStatus] = frozenset(
     {
@@ -32,6 +39,7 @@ class AnomalyFinding(BaseModel, frozen=True):
         default_factory=dict
     )
     is_primary: bool | None = None
+    baseline_context: BaselineDeviationContext | None = None
 
     @model_validator(mode="after")
     def _validate_and_freeze_allowed_non_present_statuses(self) -> "AnomalyFinding":
