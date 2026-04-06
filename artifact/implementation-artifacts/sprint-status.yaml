@@ -63,7 +63,7 @@ development_status:
   epic-3-retrospective: done
 
   # Epic 4: Operational Observability & Health
-  epic-4: in-progress
+  epic-4: done
   4-1-otlp-counters-and-histograms: done
   4-2-structured-logging-and-health-registration: done
-  epic-4-retrospective: optional
+  epic-4-retrospective: done
