@@ -5,7 +5,7 @@ import asyncio
 import os
 import threading
 import time
-from collections import deque
+from collections import defaultdict, deque
 from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
@@ -16,6 +16,8 @@ import structlog
 from sqlalchemy import create_engine, delete
 
 from aiops_triage_pipeline.baseline.client import SeasonalBaselineClient
+from aiops_triage_pipeline.baseline.computation import time_to_bucket
+from aiops_triage_pipeline.baseline.models import BaselineDeviationStageOutput
 from aiops_triage_pipeline.cache.dedupe import RedisActionDedupeStore
 from aiops_triage_pipeline.cache.evidence_window import (
     load_sustained_window_states,
@@ -36,6 +38,7 @@ from aiops_triage_pipeline.config.settings import (
 from aiops_triage_pipeline.contracts.anomaly_detection_policy import AnomalyDetectionPolicyV1
 from aiops_triage_pipeline.contracts.case_header_event import CaseHeaderEventV1
 from aiops_triage_pipeline.contracts.casefile_retention_policy import CasefileRetentionPolicyV1
+from aiops_triage_pipeline.contracts.gate_input import Finding
 from aiops_triage_pipeline.contracts.outbox_policy import OutboxPolicyV1
 from aiops_triage_pipeline.coordination import RedisCycleLock
 from aiops_triage_pipeline.coordination.protocol import CycleLockProtocol, CycleLockStatus
@@ -81,7 +84,7 @@ from aiops_triage_pipeline.integrations.prometheus import (
 )
 from aiops_triage_pipeline.integrations.slack import SlackClient, SlackIntegrationMode
 from aiops_triage_pipeline.logging.setup import configure_logging, get_logger
-from aiops_triage_pipeline.models.evidence import EvidenceRow
+from aiops_triage_pipeline.models.evidence import EvidenceRow, EvidenceStageOutput
 from aiops_triage_pipeline.models.health import HealthStatus
 from aiops_triage_pipeline.outbox.repository import OutboxSqlRepository
 from aiops_triage_pipeline.outbox.schema import create_outbox_table, outbox_table
@@ -92,12 +95,14 @@ from aiops_triage_pipeline.pipeline.scheduler import (
     emit_redis_degraded_mode_events,
     evaluate_scheduler_tick,
     next_interval_boundary,
+    run_baseline_deviation_stage_cycle,
     run_evidence_stage_cycle,
     run_gate_decision_stage_cycle,
     run_gate_input_stage_cycle,
     run_peak_stage_cycle,
     run_topology_stage_cycle,
 )
+from aiops_triage_pipeline.pipeline.stages.anomaly import _to_gate_finding
 from aiops_triage_pipeline.pipeline.stages.casefile import (
     assemble_casefile_triage_stage,
     get_existing_casefile_triage,
@@ -643,6 +648,70 @@ def _run_hot_path() -> None:
     )
 
 
+def _merge_baseline_deviation_findings(
+    *,
+    evidence_output: EvidenceStageOutput,
+    baseline_deviation_output: BaselineDeviationStageOutput,
+) -> EvidenceStageOutput:
+    """Inject BASELINE_DEVIATION gate findings into evidence output for topology/gating.
+
+    Returns a new EvidenceStageOutput with gate_findings_by_scope extended to include
+    BASELINE_DEVIATION findings. This allows downstream topology and gating stages to
+    process baseline deviation findings without modification (FR18, FR19).
+    """
+    merged: dict[tuple[str, ...], tuple[Finding, ...]] = dict(
+        evidence_output.gate_findings_by_scope
+    )
+    for finding in baseline_deviation_output.findings:
+        scope = finding.scope
+        gate_finding = _to_gate_finding(finding)
+        existing = merged.get(scope, ())
+        merged[scope] = existing + (gate_finding,)
+    return EvidenceStageOutput(
+        rows=evidence_output.rows,
+        anomaly_result=evidence_output.anomaly_result,
+        gate_findings_by_scope=merged,
+        evidence_status_map_by_scope=evidence_output.evidence_status_map_by_scope,
+        telemetry_degraded_active=evidence_output.telemetry_degraded_active,
+        telemetry_degraded_events=evidence_output.telemetry_degraded_events,
+        max_safe_action=evidence_output.max_safe_action,
+    )
+
+
+def _update_baseline_buckets(
+    *,
+    evidence_output: EvidenceStageOutput,
+    baseline_client: SeasonalBaselineClient,
+    evaluation_time: datetime,
+    logger: structlog.BoundLogger,
+) -> None:
+    """Write current cycle observations into seasonal baseline buckets (FR3).
+
+    Called after detection so baseline reads during detection see the pre-cycle
+    historical values (read-then-write ordering).
+    """
+    dow, hour = time_to_bucket(evaluation_time)
+    # Aggregate: max per scope/metric (consistent with stage aggregation)
+    metrics_by_scope: dict[tuple[str, ...], dict[str, float]] = defaultdict(dict)
+    for row in evidence_output.rows:
+        existing = metrics_by_scope[row.scope].get(row.metric_key)
+        metrics_by_scope[row.scope][row.metric_key] = (
+            max(existing, row.value) if existing is not None else row.value
+        )
+    for scope, metrics in metrics_by_scope.items():
+        for metric_key, value in metrics.items():
+            try:
+                baseline_client.update_bucket(scope, metric_key, dow, hour, value)
+            except Exception as exc:
+                logger.warning(
+                    "baseline_deviation_bucket_update_failed",
+                    event_type="baseline_deviation.bucket_update_failed",
+                    scope=scope,
+                    metric_key=metric_key,
+                    error=str(exc),
+                )
+
+
 async def _hot_path_scheduler_loop(
     *,
     settings: Settings,
@@ -995,6 +1064,36 @@ async def _hot_path_scheduler_loop(
                 redis_ttl_policy=redis_ttl_policy,
             )
             previous_sustained_identity_keys = set(peak_output.sustained_by_key.keys())
+            # ── Baseline deviation stage (Story 2.4) ──────────────────────────────
+            if settings.BASELINE_DEVIATION_STAGE_ENABLED:
+                baseline_deviation_output = run_baseline_deviation_stage_cycle(
+                    evidence_output=evidence_output,
+                    peak_output=peak_output,
+                    baseline_client=seasonal_baseline_client,
+                    evaluation_time=evaluation_time,
+                    alert_evaluator=alert_evaluator,
+                )
+                if baseline_deviation_output.findings:
+                    evidence_output = _merge_baseline_deviation_findings(
+                        evidence_output=evidence_output,
+                        baseline_deviation_output=baseline_deviation_output,
+                    )
+                _update_baseline_buckets(
+                    evidence_output=evidence_output,
+                    baseline_client=seasonal_baseline_client,
+                    evaluation_time=evaluation_time,
+                    logger=logger,
+                )
+            else:
+                baseline_deviation_output = BaselineDeviationStageOutput(
+                    findings=(),
+                    scopes_evaluated=0,
+                    deviations_detected=0,
+                    deviations_suppressed_single_metric=0,
+                    deviations_suppressed_dedup=0,
+                    evaluation_time=evaluation_time,
+                )
+            # ──────────────────────────────────────────────────────────────────────
             topology_output = run_topology_stage_cycle(
                 evidence_output=evidence_output,
                 snapshot=snapshot,

@@ -26,6 +26,8 @@ from testcontainers.core.container import DockerContainer
 from testcontainers.kafka import KafkaContainer
 from testcontainers.postgres import PostgresContainer
 
+from aiops_triage_pipeline.__main__ import _merge_baseline_deviation_findings
+from aiops_triage_pipeline.baseline.client import SeasonalBaselineClient
 from aiops_triage_pipeline.cache.dedupe import RedisActionDedupeStore
 from aiops_triage_pipeline.config.settings import load_policy_yaml
 from aiops_triage_pipeline.contracts.case_header_event import CaseHeaderEventV1
@@ -43,6 +45,7 @@ from aiops_triage_pipeline.outbox.repository import OutboxSqlRepository
 from aiops_triage_pipeline.outbox.schema import create_outbox_table
 from aiops_triage_pipeline.outbox.worker import OutboxPublisherWorker
 from aiops_triage_pipeline.pipeline.scheduler import (
+    run_baseline_deviation_stage_cycle,
     run_gate_decision_stage_cycle,
     run_gate_input_stage_cycle,
     run_peak_stage_cycle,
@@ -763,3 +766,125 @@ def test_action_decision_determinism(
     assert decision_first.env_cap_applied is False
     assert decision_first.postmortem_required is False
     assert decision_first.gate_rule_ids == ("AG0", "AG1", "AG2", "AG3", "AG4", "AG5", "AG6")
+
+
+@pytest.mark.integration
+def test_baseline_deviation_finding_flows_end_to_end(
+    topology_snapshot,
+    rulebook_policy,
+    peak_policy,
+    redis_client,
+) -> None:
+    """AC 8: BASELINE_DEVIATION finding flows from detection through topology and gating.
+
+    Seeds a Redis-backed SeasonalBaselineClient with historical baseline values that
+    will produce MAD deviations for two metrics. Verifies the full path:
+      evidence → baseline_deviation → merge → topology → gate-input → gate-decision
+
+    The test uses real Redis (testcontainers) and real policy files.
+    """
+    # ── Seed Redis with historical baseline values ────────────────────────────
+    baseline_client = SeasonalBaselineClient(redis_client)
+    scope = _E2E_SCOPE  # ("prod", "cluster-a", "e2e-orders-topic")
+    eval_time = datetime(2026, 4, 5, 14, 0, tzinfo=UTC)  # Sunday 14:00 UTC → dow=6, hour=14
+
+    # Historical values: stable near 100.0 → current of 0.5 will produce large z-score
+    stable_values = [100.0, 102.0, 98.0, 101.0, 99.5]  # ≥ MIN_BUCKET_SAMPLES=3
+    for metric_key in ("topic_messages_in_per_sec", "total_produce_requests_per_sec"):
+        baseline_client.seed_from_history(
+            scope=scope,
+            metric_key=metric_key,
+            time_series=[(eval_time, v) for v in stable_values],
+        )
+
+    # ── Build evidence output with deviating current values ──────────────────
+    # Use dedicated samples that deviate from the seeded baseline (100.0) but do NOT
+    # trigger hand-coded detectors (VOLUME_DROP requires min ≤ 1.0; these use value=50.0).
+    # Both metrics at 50.0 produce z-score ≈ -74 vs baseline of 100.0 → LOW deviation.
+    labels = {"env": "prod", "cluster_name": "cluster-a", "topic": "e2e-orders-topic"}
+    baseline_deviation_only_samples = {
+        "topic_messages_in_per_sec": [{"labels": labels, "value": 50.0}],
+        "total_produce_requests_per_sec": [{"labels": labels, "value": 50.0}],
+        "consumer_group_lag": [],
+    }
+    evidence_output = collect_evidence_stage_output(baseline_deviation_only_samples)
+
+    peak_output = run_peak_stage_cycle(
+        evidence_output=evidence_output,
+        historical_windows_by_scope={},
+        evaluation_time=eval_time,
+        peak_policy=peak_policy,
+        rulebook_policy=rulebook_policy,
+    )
+
+    # ── Run baseline deviation stage ──────────────────────────────────────────
+    baseline_deviation_output = run_baseline_deviation_stage_cycle(
+        evidence_output=evidence_output,
+        peak_output=peak_output,
+        baseline_client=baseline_client,
+        evaluation_time=eval_time,
+    )
+
+    # Verify findings were produced (at least one BASELINE_DEVIATION finding)
+    assert len(baseline_deviation_output.findings) >= 1, (
+        "Expected at least one BASELINE_DEVIATION finding from seeded baseline data"
+    )
+    assert all(
+        f.anomaly_family == "BASELINE_DEVIATION"
+        for f in baseline_deviation_output.findings
+    )
+
+    # ── Merge findings into evidence output ───────────────────────────────────
+    merged_evidence_output = _merge_baseline_deviation_findings(
+        evidence_output=evidence_output,
+        baseline_deviation_output=baseline_deviation_output,
+    )
+    assert scope in merged_evidence_output.gate_findings_by_scope
+    baseline_findings = [
+        f
+        for f in merged_evidence_output.gate_findings_by_scope[scope]
+        if f.name == "baseline_deviation"
+    ]
+    assert len(baseline_findings) >= 1, (
+        "BASELINE_DEVIATION gate finding must be present after merge"
+    )
+
+    # ── Topology stage passes through unchanged ────────────────────────────────
+    topology_output = run_topology_stage_cycle(
+        evidence_output=merged_evidence_output,
+        snapshot=topology_snapshot,
+    )
+    # Topology stage completes without error; scope must be resolvable
+    assert topology_output is not None
+
+    # ── Gate-input assembly includes BASELINE_DEVIATION scope ─────────────────
+    gate_inputs_by_scope = run_gate_input_stage_cycle(
+        evidence_output=merged_evidence_output,
+        peak_output=peak_output,
+        context_by_scope=topology_output.context_by_scope,
+    )
+    assert scope in gate_inputs_by_scope, (
+        "Gate inputs must be assembled for the BASELINE_DEVIATION scope"
+    )
+    bd_gate_inputs = [
+        gi for gi in gate_inputs_by_scope[scope]
+        if gi.anomaly_family == "BASELINE_DEVIATION"
+    ]
+    assert len(bd_gate_inputs) >= 1, "At least one BASELINE_DEVIATION gate input expected"
+
+    # ── Gate decision produces ActionDecisionV1 ────────────────────────────────
+    decisions_by_scope = run_gate_decision_stage_cycle(
+        gate_inputs_by_scope=gate_inputs_by_scope,
+        rulebook_policy=rulebook_policy,
+    )
+    assert scope in decisions_by_scope
+    bd_decisions = decisions_by_scope[scope]
+    assert len(bd_decisions) >= 1, (
+        "At least one gate decision expected for BASELINE_DEVIATION scope"
+    )
+
+    # ── Outbox stage is a passthrough for BASELINE_DEVIATION (no schema changes) ──
+    # build_outbox_ready_record requires a confirmed_casefile (S3 + Postgres infra not
+    # available in this test). The full outbox path is covered by
+    # test_pipeline_cold_path_end_to_end. AC 8 is satisfied by verifying the gate
+    # decision was produced for the scope above.

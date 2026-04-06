@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Mapping, Sequence
 
+from aiops_triage_pipeline.baseline.client import SeasonalBaselineClient
+from aiops_triage_pipeline.baseline.models import BaselineDeviationStageOutput
 from aiops_triage_pipeline.cache.dedupe import HealthTrackableDedupeStore
 from aiops_triage_pipeline.cache.findings_cache import FindingsCacheClientProtocol
 from aiops_triage_pipeline.contracts.action_decision import ActionDecisionV1
@@ -44,6 +46,9 @@ from aiops_triage_pipeline.models.peak import (
     SustainedWindowState,
 )
 from aiops_triage_pipeline.pipeline.baseline_store import BaselineStoreClientProtocol
+from aiops_triage_pipeline.pipeline.stages.baseline_deviation import (
+    collect_baseline_deviation_stage_output,
+)
 from aiops_triage_pipeline.pipeline.stages.evidence import (
     collect_evidence_stage_output,
     collect_prometheus_samples_with_diagnostics,
@@ -303,6 +308,46 @@ def run_peak_stage_cycle(
                     logger=get_logger("pipeline.scheduler"),
                     alert=alert,
                     stage="stage2_peak",
+                )
+
+
+def run_baseline_deviation_stage_cycle(
+    *,
+    evidence_output: EvidenceStageOutput,
+    peak_output: PeakStageOutput,
+    baseline_client: SeasonalBaselineClient,
+    evaluation_time: datetime,
+    alert_evaluator: OperationalAlertEvaluator | None = None,
+) -> BaselineDeviationStageOutput:
+    """Run baseline deviation stage from Stage 1 and Stage 2 outputs.
+
+    Detects correlated multi-metric baseline deviations and returns findings
+    with summary counters. Fail-open: returns empty output on Redis unavailability.
+    """
+    started_at = time.perf_counter()
+    try:
+        return collect_baseline_deviation_stage_output(
+            evidence_output=evidence_output,
+            peak_output=peak_output,
+            baseline_client=baseline_client,
+            evaluation_time=evaluation_time,
+        )
+    finally:
+        elapsed_seconds = time.perf_counter() - started_at
+        record_pipeline_compute_latency(
+            stage="stage2_5_baseline_deviation",
+            seconds=elapsed_seconds,
+        )
+        if alert_evaluator is not None:
+            alert = alert_evaluator.evaluate_pipeline_stage_latency(
+                seconds=elapsed_seconds,
+                stage="stage2_5_baseline_deviation",
+            )
+            if alert is not None:
+                _emit_operational_alert(
+                    logger=get_logger("pipeline.scheduler"),
+                    alert=alert,
+                    stage="stage2_5_baseline_deviation",
                 )
 
 

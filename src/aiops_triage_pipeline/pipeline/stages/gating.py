@@ -21,6 +21,9 @@ from aiops_triage_pipeline.models.peak import PeakStageOutput
 from aiops_triage_pipeline.rule_engine import evaluate_gates
 
 GateScope = tuple[str, ...]
+_AnomalyFamily = Literal[
+    "CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY", "BASELINE_DEVIATION"
+]
 _EXPECTED_GATE_ORDER: tuple[str, ...] = ("AG0", "AG1", "AG2", "AG3", "AG4", "AG5", "AG6")
 _ACTION_PRIORITY: dict[Action, int] = {
     Action.OBSERVE: 0,
@@ -276,7 +279,7 @@ def enrich_gate_input_context_by_scope(
         evidence_status_map = dict(evidence_output.evidence_status_map_by_scope.get(scope, {}))
         peak_context = peak_output.peak_context_by_scope.get((env.value, cluster_id, topic))
         scored_by_anomaly_family: dict[
-            Literal["CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY"],
+            _AnomalyFamily,
             _ScoringResult,
         ] = {}
 
@@ -513,7 +516,7 @@ def _derive_scoring_result(
 def _derive_scoring_result_with_fallback(
     *,
     scope: GateScope,
-    anomaly_family: Literal["CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY"],
+    anomaly_family: _AnomalyFamily,
     evidence_status_map: Mapping[str, EvidenceStatus],
     is_sustained: bool | None,
     sustained_consecutive_buckets: int | None,
@@ -544,7 +547,7 @@ def _derive_scoring_result_with_fallback(
 def _resolve_context_scoring_result(
     *,
     context: GateInputContext,
-    anomaly_family: Literal["CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY"],
+    anomaly_family: _AnomalyFamily,
 ) -> _ScoringResult | None:
     decision_basis = context.decision_basis
     if decision_basis is not None:
@@ -707,7 +710,7 @@ def _to_action(value: Any) -> Action | None:
 def _select_primary_scoring_result(
     *,
     scored_by_anomaly_family: Mapping[
-        Literal["CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY"],
+        _AnomalyFamily,
         _ScoringResult,
     ],
 ) -> _ScoringResult:
@@ -1006,7 +1009,7 @@ def _resolve_context_for_scope(
 
 def _anomaly_family_from_gate_finding_name(
     finding_name: str,
-) -> Literal["CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY"]:
+) -> _AnomalyFamily:
     normalized = finding_name.strip().upper()
     if normalized == "CONSUMER_LAG":
         return "CONSUMER_LAG"
@@ -1014,6 +1017,8 @@ def _anomaly_family_from_gate_finding_name(
         return "VOLUME_DROP"
     if normalized == "THROUGHPUT_CONSTRAINED_PROXY":
         return "THROUGHPUT_CONSTRAINED_PROXY"
+    if normalized == "BASELINE_DEVIATION":
+        return "BASELINE_DEVIATION"
     raise ValueError(f"Unsupported finding name for anomaly family mapping: {finding_name!r}")
 
 
@@ -1034,7 +1039,7 @@ def _consumer_group_from_scope(scope: GateScope) -> str | None:
 def _sustained_identity_key(
     *,
     scope: GateScope,
-    anomaly_family: Literal["CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY"],
+    anomaly_family: _AnomalyFamily,
 ) -> tuple[str, str, str, str]:
     if len(scope) == 3:
         return (scope[0], scope[1], f"topic:{scope[2]}", anomaly_family)

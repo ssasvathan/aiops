@@ -1170,6 +1170,7 @@ def _hot_path_settings_for_coordination_tests(*, lock_enabled: bool) -> SimpleNa
         BASELINE_BACKFILL_LOOKBACK_DAYS=30,
         BASELINE_BACKFILL_TIMEOUT_SECONDS=60,
         BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS=270,
+        BASELINE_DEVIATION_STAGE_ENABLED=False,
     )
 
 

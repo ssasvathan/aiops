@@ -92,7 +92,9 @@ class GateInputV1(BaseModel, frozen=True):
     stream_id: str  # Logical end-to-end pipeline grouping key
     topic: str  # Topic that triggered the anomaly key
     topic_role: Literal["SOURCE_TOPIC", "SHARED_TOPIC", "SINK_TOPIC"]
-    anomaly_family: Literal["CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY"]
+    anomaly_family: Literal[
+        "CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY", "BASELINE_DEVIATION"
+    ]
     criticality_tier: CriticalityTier
     # Diagnosis inputs
     proposed_action: Action  # Diagnosis result before gates apply

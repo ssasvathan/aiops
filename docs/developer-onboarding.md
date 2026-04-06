@@ -61,7 +61,7 @@ flowchart LR
 
     subgraph Pipeline["Pipeline Stages (1–9)"]
         direction LR
-        S1[Evidence] --> S2[Peak] --> S3[Topology] --> S4[Gate Inputs] --> S5[Gate Decisions] --> S6[CaseFile + Outbox] --> S7[Dispatch]
+        S1[Evidence] --> S2[Peak] --> S2b[Baseline Deviation] --> S3[Topology] --> S4[Gate Inputs] --> S5[Gate Decisions] --> S6[CaseFile + Outbox] --> S7[Dispatch]
         S7 -.->|async cold path| S8[LLM Diagnosis]
         S8 -.-> S9[ServiceNow Linkage]
     end
@@ -99,7 +99,8 @@ starting the first cycle. If Prometheus is unavailable, it starts in degraded mo
 ```mermaid
 flowchart TD
     EV[Stage 1<br>Evidence] --> PK[Stage 2<br>Peak]
-    PK --> TP[Stage 3<br>Topology]
+    PK --> BD[Stage 2.5<br>Baseline Deviation]
+    BD --> TP[Stage 3<br>Topology]
     TP --> GI[Stage 4<br>Gate Inputs]
     GI --> GD[Stage 5<br>Gate Decisions]
     GD --> CF[Stage 6<br>CaseFile Assembly<br>+ Outbox Insert]
@@ -113,6 +114,7 @@ flowchart TD
 
     style EV fill:#fff3cd
     style PK fill:#fff3cd
+    style BD fill:#fff3cd
     style TP fill:#fff3cd
     style GI fill:#fff3cd
     style GD fill:#fff3cd
@@ -174,6 +176,34 @@ def collect_peak_stage_output(
     evaluation_time: datetime | None = None,
 ) -> PeakStageOutput:
 ```
+
+---
+
+**Stage 2.5 — Baseline Deviation**
+Detects correlated multi-metric baseline deviations using Modified Z-Score (MAD) analysis. Runs after Stage 2 so it can consume the peak context, and before Stage 3 so its findings merge into `EvidenceStageOutput.gate_findings_by_scope` before topology and gating.
+
+← `src/aiops_triage_pipeline/pipeline/stages/baseline_deviation.py`
+
+```python
+def collect_baseline_deviation_stage_output(
+    *,
+    evidence_output: EvidenceStageOutput,
+    peak_output: PeakStageOutput,
+    baseline_client: SeasonalBaselineClient,
+    evaluation_time: datetime,
+) -> BaselineDeviationStageOutput:
+```
+
+**Key behaviors:**
+- Reads historical buckets from Redis via `SeasonalBaselineClient.read_buckets_batch()` for the current `(dow, hour)`.
+- Skips scopes already covered by a hand-coded detector (FR14 dedup: `CONSUMER_LAG`, `VOLUME_DROP`, `THROUGHPUT_CONSTRAINED_PROXY`).
+- Applies correlation gate: at least `MIN_CORRELATED_DEVIATIONS=2` metrics must deviate for a finding to be emitted.
+- Emits `AnomalyFinding(anomaly_family="BASELINE_DEVIATION", ...)` for qualifying scopes.
+- Fail-open: returns empty `BaselineDeviationStageOutput` on Redis unavailability.
+
+**Feature flag:** `BASELINE_DEVIATION_STAGE_ENABLED` (default: `True`). Set to `False` to skip this stage entirely without affecting other stages (NFR-R5).
+
+**Incremental bucket updates (FR3):** After detection, `_update_baseline_buckets()` in `__main__.py` writes the current cycle's observations to Redis for future cycles. This preserves read-then-write ordering: detection reads the pre-cycle baselines, then writes the new observation.
 
 ---
 
