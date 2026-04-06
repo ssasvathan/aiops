@@ -1,0 +1,13 @@
+# Executive Summary
+
+aiOps currently detects Kafka anomalies through three hand-coded detectors (CONSUMER_LAG, VOLUME_DROP, THROUGHPUT_CONSTRAINED_PROXY) that encode specific causal domain knowledge. These detectors cover 3 of 9 metrics in the Prometheus metrics contract — the remaining 8 metrics have no baseline and no anomaly detection. This phase adds a generic, metric-agnostic baseline deviation layer that sits alongside the existing detectors as a safety net for unanticipated failure modes: any metric, any scope, any deviation pattern the hand-coded detectors weren't designed to catch.
+
+The approach uses MAD (Median Absolute Deviation) with 168 seasonality-aware time buckets (hour-of-day × day-of-week), seeded from 30-day Prometheus history via the cold-start backfill already under construction. A correlated deviation requirement (2+ metrics deviating for the same scope in the same cycle) suppresses single-metric noise. Findings enter the existing pipeline as `BASELINE_DEVIATION` with `severity=LOW`, `is_primary=False`, and `proposed_action=NOTIFY` — topology resolution, deterministic gating (AG0-AG6), case file persistence, and async LLM diagnosis all operate unchanged. The hand-coded detectors retain priority; baseline deviation only fills the gaps they don't cover.
+
+The baseline layer is signal-agnostic by design. The same abstraction that baselines Kafka metrics today can baseline RED metrics derived from Tempo traces and rate metrics from Loki logs tomorrow — scope shape changes, but the statistical engine, storage model, and pipeline integration remain identical.
+
+## What Makes This Special
+
+The two-layer detection architecture — specific hand-coded detectors for known failure modes plus a generic statistical safety net for unknown unknowns — mirrors the industry-validated Datadog Watchdog + Monitors pattern. But where vendor platforms suffer from noise (industry data shows only 7.5% of SREs find vendor anomaly detection valuable, with 53% false positive rates), this system is conservative by design: MAD resists outlier corruption with only 4-5 data points per time bucket, the correlated deviation requirement eliminates single-metric false positives, and the NOTIFY cap ensures generic findings never escalate beyond advisory. The graduation pipeline concept — where recurring LLM hypotheses surface as candidate hand-coded detector rules — means the system evolves its own detection capability over time without manual rule authoring.
+
+Zero-code monitoring: when a new metric is added to the Prometheus metrics contract YAML, it automatically receives baselines, anomaly detection, and topology-enriched findings on the next backfill cycle. No detector code, no threshold tuning, no deployment.
