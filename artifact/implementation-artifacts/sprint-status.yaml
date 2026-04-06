@@ -57,8 +57,8 @@ development_status:
   epic-2-retrospective: done
 
   # Epic 3: LLM-Powered Diagnosis
-  epic-3: backlog
-  3-1-baseline-deviation-llm-diagnosis-prompt-and-processing: backlog
+  epic-3: in-progress
+  3-1-baseline-deviation-llm-diagnosis-prompt-and-processing: done
   3-2-deterministic-fallback-diagnosis: backlog
   epic-3-retrospective: optional
 

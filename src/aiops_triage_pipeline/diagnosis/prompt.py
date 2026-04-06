@@ -1,5 +1,6 @@
 """LLM diagnosis prompt builder — constructs structured prompt from triage context."""
 
+from aiops_triage_pipeline.baseline.computation import time_to_bucket
 from aiops_triage_pipeline.contracts.triage_excerpt import TriageExcerptV1
 
 _SYSTEM_INSTRUCTION = """
@@ -29,6 +30,13 @@ FAULT-DOMAIN HINTS:
 - CONSUMER_LAG often maps to CONSUMER_GROUP, DOWNSTREAM_DEPENDENCY, or BROKER_PRESSURE.
 - VOLUME_DROP often maps to UPSTREAM_PRODUCER, ROUTING_MISCONFIGURATION, or SOURCE_OUTAGE.
 - THROUGHPUT_CONSTRAINED_PROXY often maps to BROKER_CAPACITY, THROTTLING_POLICY, or NETWORK_PATH.
+- BASELINE_DEVIATION often maps to UPSTREAM_PRODUCER, BROKER_PRESSURE, or SEASONAL_ANOMALY.
+
+BASELINE DEVIATION DIAGNOSIS FRAMING:
+When anomaly_family is BASELINE_DEVIATION, frame the verdict as a hypothesis.
+Use language expressing uncertainty: "BASELINE_DEVIATION_CORRELATED_LIKELY",
+"POSSIBLE_UPSTREAM_PRESSURE", or similar POSSIBLE/LIKELY/SUSPECTED prefix patterns.
+The evidence_pack.facts must cite which deviation metrics and directions were observed.
 
 DIAGNOSISREPORTV1 JSON SCHEMA:
 {
@@ -48,6 +56,35 @@ DIAGNOSISREPORTV1 JSON SCHEMA:
   "triage_hash": null
 }
 """.strip()
+
+_BASELINE_DEVIATION_FEW_SHOT = """
+FEW-SHOT EXAMPLE (BASELINE_DEVIATION):
+Input pattern:
+  anomaly_family=BASELINE_DEVIATION
+  topic_role=SHARED_TOPIC
+  routing_key=OWN::Streaming::Metrics
+  findings include BASELINE_DEV:consumer_lag.offset:HIGH and BASELINE_DEV:producer_rate:LOW
+Expected output pattern (hypothesis framing required):
+  verdict="BASELINE_DEVIATION_CORRELATED_LIKELY"
+  fault_domain="UPSTREAM_PRODUCER"
+  confidence="MEDIUM"
+  evidence_pack.facts cites which BASELINE_DEVIATION metrics deviated HIGH or LOW
+  gaps include any UNKNOWN evidence that limits confidence
+"""
+
+_CONSUMER_LAG_FEW_SHOT = """
+FEW-SHOT EXAMPLE (deterministic, single canonical reference):
+Input pattern:
+  anomaly_family=CONSUMER_LAG
+  topic_role=SHARED_TOPIC
+  routing_key=OWN::Streaming::Payments
+  findings include primary lag growth with PRESENT lag evidence and UNKNOWN throughput evidence
+Expected output pattern:
+  verdict="CONSUMER_LAG_LIKELY"
+  fault_domain="CONSUMER_GROUP"
+  confidence="MEDIUM"
+  evidence_pack.matched_rules includes relevant finding_id values only
+  gaps include UNKNOWN evidence that blocks HIGH confidence"""
 
 
 def build_llm_prompt(triage_excerpt: TriageExcerptV1, evidence_summary: str) -> str:
@@ -74,6 +111,42 @@ def build_llm_prompt(triage_excerpt: TriageExcerptV1, evidence_summary: str) -> 
         for f in triage_excerpt.findings
     )
 
+    # Build BASELINE_DEVIATION context block if applicable
+    baseline_deviation_block = ""
+    if triage_excerpt.anomaly_family == "BASELINE_DEVIATION":
+        dow, hour = time_to_bucket(triage_excerpt.triage_timestamp)
+        _dow_names = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
+        dow_name = _dow_names[dow]
+        deviating_metrics: list[str] = []
+        for finding in triage_excerpt.findings:
+            for rc in finding.reason_codes:
+                if rc.startswith("BASELINE_DEV:"):
+                    remainder = rc.removeprefix("BASELINE_DEV:")
+                    parts = remainder.rsplit(":", 1)
+                    if len(parts) != 2:  # noqa: PLR2004 — guard malformed reason_codes
+                        continue  # skip unparseable entries; never crash the cold-path
+                    metric_key, direction = parts
+                    deviating_metrics.append(f"  - metric_key={metric_key}; direction={direction}")
+        metrics_text = (
+            "\n".join(deviating_metrics)
+            if deviating_metrics
+            else "  (no deviating metrics encoded in reason_codes)"
+        )
+        baseline_deviation_block = f"""
+
+BASELINE DEVIATION CONTEXT:
+  Seasonal time bucket: {dow_name} hour={hour} (dow={dow}, hour={hour})
+  The following metrics deviated from their seasonal baseline:
+{metrics_text}
+
+  Hypothesis framing: Frame the verdict as a possible interpretation of the correlated deviations.
+  Use LIKELY, POSSIBLE, or SUSPECTED prefixes — do NOT assert a definitive root cause."""
+
+    if triage_excerpt.anomaly_family == "BASELINE_DEVIATION":
+        few_shot_block = _BASELINE_DEVIATION_FEW_SHOT
+    else:
+        few_shot_block = _CONSUMER_LAG_FEW_SHOT
+
     case_context = f"""
 CASE CONTEXT:
   case_id: {triage_excerpt.case_id}
@@ -92,23 +165,11 @@ EVIDENCE STATUS MAP (UNKNOWN = missing data — do NOT assume zero):
 {evidence_lines if evidence_lines else "  (no evidence entries)"}
 
 FINDINGS:
-{findings_lines if findings_lines else "  (no findings)"}
+{findings_lines if findings_lines else "  (no findings)"}{baseline_deviation_block}
 
 EVIDENCE SUMMARY:
 {evidence_summary}
-
-FEW-SHOT EXAMPLE (deterministic, single canonical reference):
-Input pattern:
-  anomaly_family=CONSUMER_LAG
-  topic_role=SHARED_TOPIC
-  routing_key=OWN::Streaming::Payments
-  findings include primary lag growth with PRESENT lag evidence and UNKNOWN throughput evidence
-Expected output pattern:
-  verdict="CONSUMER_LAG_LIKELY"
-  fault_domain="CONSUMER_GROUP"
-  confidence="MEDIUM"
-  evidence_pack.matched_rules includes relevant finding_id values only
-  gaps include UNKNOWN evidence that blocks HIGH confidence
+{few_shot_block}
 """.strip()
 
     return f"{_SYSTEM_INSTRUCTION}\n\n{case_context}"

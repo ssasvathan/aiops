@@ -124,3 +124,123 @@ def test_build_llm_prompt_contains_routing_context_and_guidance_blocks() -> None
     assert "fault-domain hints" in lower_result
     assert "confidence calibration guidance" in lower_result
     assert "few-shot example" in lower_result
+
+
+# ---------------------------------------------------------------------------
+# BASELINE_DEVIATION helpers
+# ---------------------------------------------------------------------------
+
+
+def _make_baseline_deviation_excerpt(case_id: str = "case-bd-001") -> TriageExcerptV1:
+    """TriageExcerptV1 with anomaly_family=BASELINE_DEVIATION and reason_codes encoding deviations.
+
+    Findings use gate_input.Finding (not AnomalyFinding) as per TriageExcerptV1.findings contract.
+    Deviation details are encoded in reason_codes: 'BASELINE_DEV:{metric_key}:{direction}'.
+    """
+    return TriageExcerptV1(
+        case_id=case_id,
+        env=Environment.PROD,
+        cluster_id="cluster-b",
+        stream_id="stream-bd",
+        topic="metrics.baseline",
+        anomaly_family="BASELINE_DEVIATION",
+        topic_role="SHARED_TOPIC",
+        criticality_tier=CriticalityTier.TIER_1,
+        routing_key="OWN::Streaming::Metrics",
+        sustained=True,
+        evidence_status_map={
+            "baseline_history": EvidenceStatus.PRESENT,
+            "current_window": EvidenceStatus.PRESENT,
+        },
+        findings=(
+            Finding(
+                finding_id="BD-001",
+                name="baseline_deviation_correlated",
+                is_anomalous=True,
+                severity="LOW",
+                is_primary=False,
+                evidence_required=("baseline_history", "current_window"),
+                reason_codes=(
+                    "BASELINE_DEV:consumer_lag.offset:HIGH",
+                    "BASELINE_DEV:producer_rate:LOW",
+                ),
+            ),
+        ),
+        triage_timestamp=datetime(2026, 4, 5, 8, 0, 0, tzinfo=timezone.utc),
+    )
+
+
+# ---------------------------------------------------------------------------
+# BASELINE_DEVIATION tests (AC5 — Story 3.1)
+# ---------------------------------------------------------------------------
+
+
+def test_build_llm_prompt_baseline_deviation_includes_deviation_context() -> None:
+    """Prompt built from a BASELINE_DEVIATION excerpt includes metric names and directions.
+
+    AC5: test_build_llm_prompt_baseline_deviation_includes_deviation_context — verifies
+    that the prompt contains deviating metric names extracted from reason_codes, and
+    includes the seasonal time bucket (dow, hour) context per AC2/FR26.
+    Expects a 'BASELINE DEVIATION CONTEXT' section with 'consumer_lag.offset' and 'producer_rate'.
+    """
+    excerpt = _make_baseline_deviation_excerpt()
+    result = build_llm_prompt(excerpt, "Baseline deviation evidence summary.")
+    assert "BASELINE DEVIATION CONTEXT" in result
+    assert "consumer_lag.offset" in result
+    assert "producer_rate" in result
+    assert "HIGH" in result
+    assert "LOW" in result
+    # AC2/FR26: time bucket (dow, hour) as human-readable seasonal context
+    # triage_timestamp=2026-04-05 08:00 UTC → Sunday (dow=6), hour=8
+    assert "dow=" in result
+    assert "hour=" in result
+
+
+def test_build_llm_prompt_baseline_deviation_hypothesis_framing() -> None:
+    """Prompt instructs the LLM to frame output as a hypothesis ('possible interpretation').
+
+    AC5: test_build_llm_prompt_baseline_deviation_hypothesis_framing — verifies that the
+    BASELINE_DEVIATION prompt contains hypothesis framing language such as
+    'possible interpretation', 'LIKELY', or 'HYPOTHESIS'.
+    """
+    excerpt = _make_baseline_deviation_excerpt()
+    result = build_llm_prompt(excerpt, "summary")
+    lower_result = result.lower()
+    assert any(
+        phrase in lower_result
+        for phrase in ("possible interpretation", "likely", "hypothesis", "suspected")
+    ), (
+        "Prompt must contain hypothesis framing language "
+        "('possible interpretation', 'LIKELY', 'HYPOTHESIS', or 'SUSPECTED')"
+    )
+
+
+def test_build_llm_prompt_baseline_deviation_topology_context() -> None:
+    """Prompt for BASELINE_DEVIATION includes topic_role and routing_key.
+
+    AC5: test_build_llm_prompt_baseline_deviation_topology_context — verifies topology
+    context renders correctly for BASELINE_DEVIATION cases (topic_role and routing_key).
+    """
+    excerpt = _make_baseline_deviation_excerpt()
+    result = build_llm_prompt(excerpt, "summary")
+    assert "topic_role" in result
+    assert excerpt.topic_role in result
+    assert "routing_key" in result
+    assert excerpt.routing_key in result
+
+
+def test_build_llm_prompt_baseline_deviation_few_shot_example() -> None:
+    """Prompt for BASELINE_DEVIATION includes a BASELINE_DEVIATION-specific few-shot example.
+
+    AC5: test_build_llm_prompt_baseline_deviation_few_shot_example — verifies that a
+    BASELINE_DEVIATION example appears in the prompt (alongside or replacing the
+    CONSUMER_LAG example).
+    """
+    excerpt = _make_baseline_deviation_excerpt()
+    result = build_llm_prompt(excerpt, "summary")
+    assert "BASELINE_DEVIATION" in result
+    # The few-shot example must mention BASELINE_DEVIATION in an example context
+    assert result.count("BASELINE_DEVIATION") >= 2, (
+        "Prompt must contain BASELINE_DEVIATION at least twice: once in case context "
+        "and once in a few-shot example"
+    )

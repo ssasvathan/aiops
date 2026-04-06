@@ -15,7 +15,9 @@ class TriageExcerptV1(BaseModel, frozen=True):
     cluster_id: str
     stream_id: str
     topic: str
-    anomaly_family: Literal["CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY"]
+    anomaly_family: Literal[
+        "CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY", "BASELINE_DEVIATION"
+    ]
     topic_role: Literal["SOURCE_TOPIC", "SHARED_TOPIC", "SINK_TOPIC"]
     criticality_tier: CriticalityTier
     routing_key: str  # Team routing key
