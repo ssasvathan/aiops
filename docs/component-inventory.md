@@ -22,6 +22,7 @@
 | Baseline Constants | Configuration | `baseline/constants.py` | Yes | MAD_CONSISTENCY_CONSTANT, MAD_THRESHOLD, MIN_CORRELATED_DEVIATIONS, MIN_BUCKET_SAMPLES, MAX_BUCKET_VALUES |
 | Baseline Computation | Computation | `baseline/computation.py` | Yes | time_to_bucket() — sole UTC-normalized (dow, hour) bucket derivation function |
 | SeasonalBaselineClient | Storage | `baseline/client.py` | Yes | Placeholder — Redis I/O boundary for seasonal baseline read/write/seed/recompute (Story 1.2) |
+| Baseline Deviation Stage | Pipeline | `pipeline/stages/baseline_deviation.py` | No | Correlated multi-metric baseline deviation detection with MAD z-score; emits BASELINE_DEVIATION findings; HealthRegistry key: `baseline_deviation` |
 
 ## Domain Model Components
 

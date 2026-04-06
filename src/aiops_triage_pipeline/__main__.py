@@ -1084,6 +1084,18 @@ async def _hot_path_scheduler_loop(
                     evaluation_time=evaluation_time,
                     logger=logger,
                 )
+                # FR32: HealthRegistry update — async-safe (inside _hot_path_scheduler_loop)
+                _bd_registry = get_health_registry()
+                if (
+                    baseline_deviation_output.scopes_evaluated == 0
+                    and len(evidence_output.rows) > 0
+                ):
+                    # Fail-open: had rows but evaluated 0 scopes → Redis error path
+                    await _bd_registry.update(
+                        "baseline_deviation", HealthStatus.DEGRADED, reason="redis_unavailable"
+                    )
+                else:
+                    await _bd_registry.update("baseline_deviation", HealthStatus.HEALTHY)
             else:
                 baseline_deviation_output = BaselineDeviationStageOutput(
                     findings=(),

@@ -95,7 +95,9 @@ def collect_baseline_deviation_stage_output(
                     "baseline_deviation_suppressed_dedup",
                     event_type="baseline_deviation.suppressed_dedup",
                     scope=scope,
+                    metric=sorted(metrics_by_scope[scope].keys()),
                     reason="HAND_CODED_DETECTOR_FIRED",
+                    cycle_timestamp=evaluation_time.isoformat(),
                 )
                 deviations_suppressed_dedup += 1
                 baseline_metrics.record_suppressed_dedup()
@@ -255,6 +257,7 @@ def _evaluate_scope(
             scope=scope,
             metric_key=first_key,
             reason="SINGLE_METRIC_BELOW_THRESHOLD",
+            cycle_timestamp=evaluation_time.isoformat(),
         )
         return (None, deviation_count, True)
 

@@ -1,8 +1,4 @@
-"""Unit tests for pipeline/stages/baseline_deviation.py — Story 2.3 (TDD RED PHASE).
-
-These tests are written against the EXPECTED behaviour of
-collect_baseline_deviation_stage_output() before the implementation exists.
-They will fail with ImportError until baseline_deviation.py is created.
+"""Unit tests for pipeline/stages/baseline_deviation.py — Stories 2.3, 4.1, 4.2.
 
 Test coverage:
   - Correlated finding emission (>= MIN_CORRELATED_DEVIATIONS)
@@ -20,6 +16,8 @@ Test coverage:
   - Stage output counters accuracy
   - reason_codes contain all deviating metrics
   - MAD returns None when bucket is too sparse → metric skipped
+  - OTLP counter and histogram instrumentation (Story 4.1)
+  - Structured log event emission for all 6 P6 stage-level events (Story 4.2)
 """
 
 import io
@@ -257,6 +255,7 @@ def test_single_metric_suppressed_log_event(debug_log_stream: io.StringIO) -> No
     assert "scope" in event
     assert "metric_key" in event
     assert event.get("reason") == "SINGLE_METRIC_BELOW_THRESHOLD"
+    assert "cycle_timestamp" in event, "cycle_timestamp field required by NFR-A3"
 
 
 # ---------------------------------------------------------------------------
@@ -747,6 +746,8 @@ def test_dedup_suppression_log_event(log_stream) -> None:
     ]
     assert len(dedup_events) >= 1
     assert "scope" in dedup_events[0]
+    assert "metric" in dedup_events[0], "metric field required by NFR-A3"
+    assert "cycle_timestamp" in dedup_events[0], "cycle_timestamp field required by NFR-A3"
 
 
 # ---------------------------------------------------------------------------
@@ -1110,3 +1111,259 @@ def test_deviations_detected_no_op_when_zero_deviations(monkeypatch) -> None:
 
     # No deviations → record_deviations_detected(0) → guard returns early → no add() call
     assert instrument.calls == []
+
+
+# ---------------------------------------------------------------------------
+# Story 4.2: Structured Log Events — stage_started, stage_completed,
+# finding_emitted, all-prefix audit (AC 1, 2, 3, 7)
+#
+# These tests verify the 3 remaining stage-level log events not yet covered
+# by existing tests (single_metric_suppressed, redis_unavailable, dedup are
+# already covered above). All 4 tests should be GREEN — the implementation
+# exists in baseline_deviation.py from Story 2.3.
+# ---------------------------------------------------------------------------
+
+
+def test_stage_started_log_event_emitted(log_stream: io.StringIO) -> None:
+    """[4.2-UNIT-001][P1] baseline_deviation_stage_started log event emitted at stage entry.
+
+    Given: stage runs with one scope producing two deviating metrics
+    When:  collect_baseline_deviation_stage_output() is called
+    Then:  a baseline_deviation_stage_started event is emitted at INFO level
+    And:   the event contains the scopes_count field with value > 0
+    """
+    scope = ("prod", "kafka-prod", "stage-started-topic")
+    rows = [
+        _make_deviating_row(scope, "consumer_group_lag"),
+        _make_deviating_row(scope, "topic_messages_in_per_sec"),
+    ]
+    evidence_output = _make_evidence_output(rows)
+    mock_client = _make_mock_client()
+
+    collect_baseline_deviation_stage_output(
+        evidence_output=evidence_output,
+        peak_output=_make_peak_output(),
+        baseline_client=mock_client,
+        evaluation_time=FIXED_EVAL_TIME,
+    )
+
+    log_lines = [
+        json.loads(line)
+        for line in log_stream.getvalue().splitlines()
+        if line.strip()
+    ]
+    started_events = [
+        ev for ev in log_lines
+        if ev.get("event") == "baseline_deviation_stage_started"
+    ]
+    assert len(started_events) >= 1, (
+        "Expected at least one baseline_deviation_stage_started event"
+    )
+    event = started_events[0]
+    assert "scopes_count" in event, "scopes_count field must be present on stage_started event"
+    assert event["scopes_count"] > 0, "scopes_count must be > 0 when rows are provided"
+
+
+def test_stage_completed_log_event_emitted(log_stream: io.StringIO) -> None:
+    """[4.2-UNIT-002][P1] baseline_deviation_stage_completed log event emitted at stage exit.
+
+    Given: stage runs with one scope producing a correlated finding
+    When:  collect_baseline_deviation_stage_output() completes successfully
+    Then:  a baseline_deviation_stage_completed event is emitted at INFO level
+    And:   the event contains scopes_evaluated and findings_emitted fields
+    """
+    scope = ("prod", "kafka-prod", "stage-completed-topic")
+    rows = [
+        _make_deviating_row(scope, "consumer_group_lag"),
+        _make_deviating_row(scope, "topic_messages_in_per_sec"),
+    ]
+    evidence_output = _make_evidence_output(rows)
+    mock_client = _make_mock_client()
+
+    collect_baseline_deviation_stage_output(
+        evidence_output=evidence_output,
+        peak_output=_make_peak_output(),
+        baseline_client=mock_client,
+        evaluation_time=FIXED_EVAL_TIME,
+    )
+
+    log_lines = [
+        json.loads(line)
+        for line in log_stream.getvalue().splitlines()
+        if line.strip()
+    ]
+    completed_events = [
+        ev for ev in log_lines
+        if ev.get("event") == "baseline_deviation_stage_completed"
+    ]
+    assert len(completed_events) >= 1, (
+        "Expected at least one baseline_deviation_stage_completed event"
+    )
+    event = completed_events[0]
+    assert "scopes_evaluated" in event, "scopes_evaluated field must be present"
+    assert "findings_emitted" in event, "findings_emitted field must be present"
+    assert event["scopes_evaluated"] >= 1, "scopes_evaluated must be >= 1"
+    assert event["findings_emitted"] >= 0, "findings_emitted must be >= 0"
+
+
+def test_finding_emitted_log_event(log_stream: io.StringIO) -> None:
+    """[4.2-UNIT-003][P1] baseline_deviation_finding_emitted emitted per correlated finding.
+
+    Given: stage runs with one scope emitting a correlated finding (>= MIN_CORRELATED_DEVIATIONS)
+    When:  collect_baseline_deviation_stage_output() emits the finding
+    Then:  a baseline_deviation_finding_emitted event is emitted at INFO level
+    And:   the event contains scope and finding_id fields
+    """
+    scope = ("prod", "kafka-prod", "finding-emitted-topic")
+    rows = [
+        _make_deviating_row(scope, "consumer_group_lag"),
+        _make_deviating_row(scope, "topic_messages_in_per_sec"),
+    ]
+    evidence_output = _make_evidence_output(rows)
+    mock_client = _make_mock_client()
+
+    result = collect_baseline_deviation_stage_output(
+        evidence_output=evidence_output,
+        peak_output=_make_peak_output(),
+        baseline_client=mock_client,
+        evaluation_time=FIXED_EVAL_TIME,
+    )
+
+    # Confirm finding was emitted so log event should exist
+    assert len(result.findings) == 1, "Precondition: finding must be emitted"
+
+    log_lines = [
+        json.loads(line)
+        for line in log_stream.getvalue().splitlines()
+        if line.strip()
+    ]
+    finding_events = [
+        ev for ev in log_lines
+        if ev.get("event") == "baseline_deviation_finding_emitted"
+    ]
+    assert len(finding_events) >= 1, (
+        "Expected at least one baseline_deviation_finding_emitted event"
+    )
+    event = finding_events[0]
+    assert "scope" in event, "scope field must be present on finding_emitted event"
+    assert "finding_id" in event, "finding_id field must be present on finding_emitted event"
+    assert event["finding_id"] == result.findings[0].finding_id, (
+        "finding_id in log event must match the emitted finding's finding_id"
+    )
+
+
+def test_all_p6_log_event_names_use_correct_prefix(
+    log_stream: io.StringIO,
+    debug_log_stream: io.StringIO,
+) -> None:
+    """[4.2-UNIT-007][P2] All stage-level P6 log events use the baseline_deviation_ prefix.
+
+    Given: stage runs in scenarios that trigger each of the 6 stage-level log events
+    When:  all log output is collected across INFO and DEBUG levels
+    Then:  every event name starts with 'baseline_deviation_'
+    And:   the 6 required event names are all present
+
+    Events covered:
+      - baseline_deviation_stage_started
+      - baseline_deviation_stage_completed
+      - baseline_deviation_finding_emitted
+      - baseline_deviation_suppressed_single_metric  (DEBUG)
+      - baseline_deviation_suppressed_dedup
+      - baseline_deviation_redis_unavailable
+    """
+    # Scenario A: normal scope with correlated finding → stage_started, stage_completed,
+    #             finding_emitted
+    scope_corr = ("prod", "kafka-prod", "prefix-audit-corr")
+    rows_corr = [
+        _make_deviating_row(scope_corr, "consumer_group_lag"),
+        _make_deviating_row(scope_corr, "topic_messages_in_per_sec"),
+    ]
+    evidence_corr = _make_evidence_output(rows_corr)
+    collect_baseline_deviation_stage_output(
+        evidence_output=evidence_corr,
+        peak_output=_make_peak_output(),
+        baseline_client=_make_mock_client(),
+        evaluation_time=FIXED_EVAL_TIME,
+    )
+
+    # Scenario B: single-metric deviation → suppressed_single_metric (DEBUG)
+    scope_single = ("prod", "kafka-prod", "prefix-audit-single")
+    rows_single = [_make_deviating_row(scope_single, "consumer_group_lag")]
+    evidence_single = _make_evidence_output(rows_single)
+    collect_baseline_deviation_stage_output(
+        evidence_output=evidence_single,
+        peak_output=_make_peak_output(),
+        baseline_client=_make_mock_client({"consumer_group_lag": _STABLE_HISTORY}),
+        evaluation_time=FIXED_EVAL_TIME,
+    )
+
+    # Scenario C: hand-coded dedup → suppressed_dedup
+    scope_dedup = ("prod", "kafka-prod", "prefix-audit-dedup")
+    hand_coded = _make_hand_coded_finding(scope_dedup, "CONSUMER_LAG")
+    rows_dedup = [
+        _make_deviating_row(scope_dedup, "consumer_group_lag"),
+        _make_deviating_row(scope_dedup, "topic_messages_in_per_sec"),
+    ]
+    evidence_dedup = _make_evidence_output(rows_dedup, findings=(hand_coded,))
+    collect_baseline_deviation_stage_output(
+        evidence_output=evidence_dedup,
+        peak_output=_make_peak_output(),
+        baseline_client=_make_mock_client(),
+        evaluation_time=FIXED_EVAL_TIME,
+    )
+
+    # Scenario D: Redis unavailable → redis_unavailable
+    mock_fail = MagicMock(spec=SeasonalBaselineClient)
+    mock_fail.read_buckets_batch.side_effect = ConnectionError("Redis down")
+    scope_redis = ("prod", "kafka-prod", "prefix-audit-redis")
+    evidence_redis = _make_evidence_output(
+        [_make_deviating_row(scope_redis, "consumer_group_lag")]
+    )
+    collect_baseline_deviation_stage_output(
+        evidence_output=evidence_redis,
+        peak_output=_make_peak_output(),
+        baseline_client=mock_fail,
+        evaluation_time=FIXED_EVAL_TIME,
+    )
+
+    # Collect all events from both streams.
+    # Note: debug_log_stream fixture clears handlers set by log_stream and re-adds its own
+    # at DEBUG level, so in practice all log output flows through debug_log_stream when both
+    # fixtures are active. We check both streams for correctness and forward-compatibility.
+    all_log_lines: list[dict] = []
+    for stream in (log_stream, debug_log_stream):
+        for line in stream.getvalue().splitlines():
+            line = line.strip()
+            if line and line.startswith("{"):
+                try:
+                    all_log_lines.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+
+    # Filter to baseline_deviation stage events only (exclude OTLP/structlog internals)
+    stage_events = [
+        ev for ev in all_log_lines
+        if ev.get("event", "").startswith("baseline_deviation_")
+    ]
+
+    # Verify all events use correct prefix
+    for ev in stage_events:
+        assert ev["event"].startswith("baseline_deviation_"), (
+            f"Event '{ev['event']}' does not use baseline_deviation_ prefix"
+        )
+
+    # Verify the 6 required stage-level events are present
+    event_names = {ev["event"] for ev in stage_events}
+    required_events = {
+        "baseline_deviation_stage_started",
+        "baseline_deviation_stage_completed",
+        "baseline_deviation_finding_emitted",
+        "baseline_deviation_suppressed_single_metric",
+        "baseline_deviation_suppressed_dedup",
+        "baseline_deviation_redis_unavailable",
+    }
+    for required in required_events:
+        assert required in event_names, (
+            f"Required P6 event '{required}' not found in log output. "
+            f"Found events: {sorted(event_names)}"
+        )

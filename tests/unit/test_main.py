@@ -1859,6 +1859,7 @@ def _hot_path_settings_for_shard_tests(*, shard_enabled: bool) -> SimpleNamespac
         BASELINE_BACKFILL_LOOKBACK_DAYS=30,
         BASELINE_BACKFILL_TIMEOUT_SECONDS=60,
         BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS=270,
+        BASELINE_DEVIATION_STAGE_ENABLED=False,
     )
 
 
@@ -1999,3 +2000,387 @@ async def test_hot_path_scheduler_wires_shard_lease_ttl_from_settings(
 
     for call in shard_coordinator.acquire_lease.call_args_list:
         assert call.kwargs["lease_ttl_seconds"] == 211
+
+
+# ---------------------------------------------------------------------------
+# Story 4.2: HealthRegistry wiring for baseline_deviation stage (AC 6, FR32)
+#
+# These tests verify that _hot_path_scheduler_loop() updates the HealthRegistry
+# after run_baseline_deviation_stage_cycle() completes. The wiring is NOT yet
+# implemented in __main__.py — all 3 tests are in the TDD RED phase and will
+# FAIL until the HealthRegistry await calls are added at the call site.
+#
+# Pattern follows existing test at line ~796:
+#   registry = MagicMock(); registry.update = AsyncMock()
+#   monkeypatch.setattr(__main__, "get_health_registry", lambda: registry)
+#
+# For assertions we use a real HealthRegistry() instance so .get() returns
+# actual HealthStatus values (MagicMock would not store real state).
+# ---------------------------------------------------------------------------
+
+
+def _hot_path_settings_with_baseline_enabled(*, lock_enabled: bool = False) -> SimpleNamespace:
+    """Settings with BASELINE_DEVIATION_STAGE_ENABLED=True for HealthRegistry tests."""
+    base = _hot_path_settings_for_coordination_tests(lock_enabled=lock_enabled)
+    base.BASELINE_DEVIATION_STAGE_ENABLED = True
+    return base
+
+
+def _patch_baseline_deviation_loop_dependencies(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    baseline_deviation_output: object,
+    evidence_rows: tuple = (),
+) -> None:
+    """Patch all _hot_path_scheduler_loop dependencies to allow a single cycle then cancel.
+
+    The loop runs one cycle: backfill → tick → evidence → peak → baseline_deviation.
+    After baseline_deviation, asyncio.sleep is patched to raise CancelledError so
+    the loop terminates cleanly after the HealthRegistry update code runs.
+    """
+    tick = SimpleNamespace(
+        expected_boundary=datetime(2026, 4, 5, 12, 0, tzinfo=UTC),
+        drift_seconds=0,
+        missed_intervals=0,
+    )
+    monkeypatch.setattr(__main__, "evaluate_scheduler_tick", lambda **_: tick)
+    monkeypatch.setattr(
+        __main__,
+        "next_interval_boundary",
+        lambda *_a, **_kw: datetime(2026, 4, 5, 12, 0, tzinfo=UTC),
+    )
+    monkeypatch.setattr(
+        __main__,
+        "emit_redis_degraded_mode_events",
+        AsyncMock(return_value=()),
+    )
+    monkeypatch.setattr(
+        __main__,
+        "backfill_baselines_from_prometheus",
+        AsyncMock(return_value=None),
+    )
+
+    # Evidence stage returns rows as configured (controls redis-unavailable detection)
+    evidence_output = SimpleNamespace(
+        rows=evidence_rows,
+        anomaly_result=SimpleNamespace(findings=()),
+        gate_findings_by_scope={},
+        evidence_status_map_by_scope={},
+    )
+    monkeypatch.setattr(
+        __main__,
+        "run_evidence_stage_cycle",
+        AsyncMock(return_value=evidence_output),
+    )
+
+    # Peak stage — minimal stub
+    monkeypatch.setattr(
+        __main__,
+        "run_peak_stage_cycle",
+        lambda **_: SimpleNamespace(
+            sustained_by_key={},
+            profiles_by_scope={},
+            classifications_by_scope={},
+            peak_context_by_scope={},
+            evidence_status_map_by_scope={},
+        ),
+    )
+    monkeypatch.setattr(__main__, "persist_sustained_window_states", lambda **_: None)
+    monkeypatch.setattr(__main__, "persist_peak_profiles", lambda **_: None)
+    monkeypatch.setattr(__main__, "load_sustained_window_states", lambda **_: {})
+    monkeypatch.setattr(__main__, "load_peak_profiles", lambda **_: {})
+    monkeypatch.setattr(__main__, "build_sustained_identity_keys", lambda *_a, **_kw: ())
+    monkeypatch.setattr(__main__, "build_sustained_window_state_by_key", lambda _: {})
+    monkeypatch.setattr(__main__, "_load_peak_baseline_windows", lambda **_: {})
+
+    # Baseline deviation stage returns the pre-configured output
+    monkeypatch.setattr(
+        __main__,
+        "run_baseline_deviation_stage_cycle",
+        lambda **_: baseline_deviation_output,
+    )
+    monkeypatch.setattr(__main__, "_update_baseline_buckets", lambda **_: None)
+    monkeypatch.setattr(__main__, "_merge_baseline_deviation_findings", lambda **_: evidence_output)
+
+    # Topology/gate/dispatch — stubs so the loop doesn't crash
+    monkeypatch.setattr(
+        __main__,
+        "run_topology_stage_cycle",
+        lambda **_: SimpleNamespace(context_by_scope={}, routing_by_scope={}),
+    )
+    monkeypatch.setattr(__main__, "run_gate_input_stage_cycle", lambda **_: {})
+    monkeypatch.setattr(__main__, "run_gate_decision_stage_cycle", lambda **_: {})
+
+    # Sleep raises CancelledError — terminates the loop after one cycle
+    monkeypatch.setattr(
+        __main__.asyncio,
+        "sleep",
+        AsyncMock(side_effect=asyncio.CancelledError()),
+    )
+
+    # Lock — acquired mode (no coordination interference)
+    monkeypatch.setattr(__main__, "record_cycle_lock_acquired", MagicMock())
+    monkeypatch.setattr(__main__, "record_cycle_lock_yielded", MagicMock())
+    monkeypatch.setattr(__main__, "record_cycle_lock_fail_open", MagicMock())
+
+    # Health server
+    mock_server = MagicMock()
+    mock_server.serve_forever = AsyncMock()
+    monkeypatch.setattr(
+        "aiops_triage_pipeline.__main__.start_health_server",
+        AsyncMock(return_value=mock_server),
+    )
+
+
+@pytest.mark.asyncio
+async def test_health_registry_healthy_registered_after_successful_cycle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[4.2-UNIT-004][P0] HealthRegistry updated HEALTHY after successful baseline deviation cycle.
+
+    Given: baseline deviation stage runs successfully (scopes_evaluated > 0)
+    When:  _hot_path_scheduler_loop() completes one cycle
+    Then:  registry.get("baseline_deviation") == HealthStatus.HEALTHY
+    """
+    from aiops_triage_pipeline.health.registry import HealthRegistry
+    from aiops_triage_pipeline.models.health import HealthStatus
+
+    # Use a real HealthRegistry so .get() returns actual HealthStatus values
+    registry = HealthRegistry()
+    monkeypatch.setattr(__main__, "get_health_registry", lambda: registry)
+
+    # Successful baseline deviation output: scopes_evaluated=1, no Redis error
+    from aiops_triage_pipeline.models.evidence import EvidenceRow  # noqa: PLC0415
+
+    successful_output = SimpleNamespace(
+        findings=(),
+        scopes_evaluated=1,
+        deviations_detected=0,
+        deviations_suppressed_single_metric=0,
+        deviations_suppressed_dedup=0,
+        evaluation_time=datetime(2026, 4, 5, 12, 0, tzinfo=UTC),
+    )
+
+    # evidence_rows non-empty so the redis-unavailable check is meaningful
+    evidence_rows = (
+        EvidenceRow(
+            metric_key="consumer_group_lag",
+            value=100.0,
+            labels={},
+            scope=("prod", "kafka-prod", "test-topic"),
+        ),
+    )
+
+    _patch_baseline_deviation_loop_dependencies(
+        monkeypatch,
+        baseline_deviation_output=successful_output,
+        evidence_rows=evidence_rows,
+    )
+
+    cycle_lock = MagicMock()
+    cycle_lock.acquire.return_value = SimpleNamespace(
+        status=CycleLockStatus.acquired,
+        key="aiops:lock:cycle",
+        ttl_seconds=360,
+        holder_id="pod-a",
+    )
+
+    settings = _hot_path_settings_with_baseline_enabled(lock_enabled=True)
+
+    with pytest.raises(asyncio.CancelledError):
+        await __main__._hot_path_scheduler_loop(
+            settings=settings,
+            logger=MagicMock(),
+            alert_evaluator=MagicMock(),
+            prometheus_client=MagicMock(),
+            metric_queries={},
+            anomaly_detection_policy=MagicMock(),
+            peak_policy=MagicMock(),
+            rulebook_policy=MagicMock(),
+            redis_ttl_policy=MagicMock(),
+            prometheus_metrics_contract=MagicMock(),
+            denylist=MagicMock(),
+            redis_client=MagicMock(),
+            dedupe_store=MagicMock(),
+            object_store_client=MagicMock(),
+            outbox_repository=MagicMock(),
+            pd_client=MagicMock(),
+            slack_client=MagicMock(),
+            topology_loader=MagicMock(),
+            cycle_lock=cycle_lock,
+            cycle_lock_owner_id="pod-a",
+            coordination_state=_HotPathCoordinationState(enabled=True),
+        )
+
+    assert registry.get("baseline_deviation") == HealthStatus.HEALTHY, (
+        "Expected HealthStatus.HEALTHY after successful baseline deviation cycle (FR32)."
+    )
+
+
+@pytest.mark.asyncio
+async def test_health_registry_degraded_on_redis_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[4.2-UNIT-005][P0] HealthRegistry updated DEGRADED when Redis unavailable (fail-open).
+
+    Given: baseline deviation stage returns scopes_evaluated=0 (Redis failure / fail-open)
+    And:   evidence_output.rows is non-empty (rows existed but Redis couldn't serve them)
+    When:  _hot_path_scheduler_loop() completes one cycle
+    Then:  registry.get("baseline_deviation") == HealthStatus.DEGRADED
+    """
+    from aiops_triage_pipeline.health.registry import HealthRegistry
+    from aiops_triage_pipeline.models.health import HealthStatus
+
+    registry = HealthRegistry()
+    monkeypatch.setattr(__main__, "get_health_registry", lambda: registry)
+
+    # Fail-open output: Redis unavailable → scopes_evaluated=0, no findings
+    from aiops_triage_pipeline.models.evidence import EvidenceRow  # noqa: PLC0415
+
+    redis_fail_output = SimpleNamespace(
+        findings=(),
+        scopes_evaluated=0,  # fail-open: Redis returned early
+        deviations_detected=0,
+        deviations_suppressed_single_metric=0,
+        deviations_suppressed_dedup=0,
+        evaluation_time=datetime(2026, 4, 5, 12, 0, tzinfo=UTC),
+    )
+
+    # evidence_rows must be non-empty so the degraded check fires:
+    # scopes_evaluated==0 AND len(evidence_output.rows) > 0 → DEGRADED
+    evidence_rows = (
+        EvidenceRow(
+            metric_key="consumer_group_lag",
+            value=5000.0,
+            labels={},
+            scope=("prod", "kafka-prod", "redis-fail-topic"),
+        ),
+    )
+
+    _patch_baseline_deviation_loop_dependencies(
+        monkeypatch,
+        baseline_deviation_output=redis_fail_output,
+        evidence_rows=evidence_rows,
+    )
+
+    cycle_lock = MagicMock()
+    cycle_lock.acquire.return_value = SimpleNamespace(
+        status=CycleLockStatus.acquired,
+        key="aiops:lock:cycle",
+        ttl_seconds=360,
+        holder_id="pod-a",
+    )
+
+    settings = _hot_path_settings_with_baseline_enabled(lock_enabled=True)
+
+    with pytest.raises(asyncio.CancelledError):
+        await __main__._hot_path_scheduler_loop(
+            settings=settings,
+            logger=MagicMock(),
+            alert_evaluator=MagicMock(),
+            prometheus_client=MagicMock(),
+            metric_queries={},
+            anomaly_detection_policy=MagicMock(),
+            peak_policy=MagicMock(),
+            rulebook_policy=MagicMock(),
+            redis_ttl_policy=MagicMock(),
+            prometheus_metrics_contract=MagicMock(),
+            denylist=MagicMock(),
+            redis_client=MagicMock(),
+            dedupe_store=MagicMock(),
+            object_store_client=MagicMock(),
+            outbox_repository=MagicMock(),
+            pd_client=MagicMock(),
+            slack_client=MagicMock(),
+            topology_loader=MagicMock(),
+            cycle_lock=cycle_lock,
+            cycle_lock_owner_id="pod-a",
+            coordination_state=_HotPathCoordinationState(enabled=True),
+        )
+
+    # RED: This assertion will fail until HealthRegistry degraded-path wiring is added
+    assert registry.get("baseline_deviation") == HealthStatus.DEGRADED, (
+        "Expected HealthStatus.DEGRADED when scopes_evaluated==0 with non-empty evidence rows "
+        "(Redis fail-open path, FR32, NFR-R2)."
+    )
+
+
+@pytest.mark.asyncio
+async def test_health_registry_baseline_deviation_not_updated_when_stage_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """[4.2-UNIT-006][P1] HealthRegistry NOT updated when baseline deviation stage is disabled.
+
+    Given: BASELINE_DEVIATION_STAGE_ENABLED=False in settings
+    When:  _hot_path_scheduler_loop() completes one cycle
+    Then:  registry.get("baseline_deviation") is None  (no registration at all)
+
+    This verifies the guard: HealthRegistry updates are inside the
+    `if settings.BASELINE_DEVIATION_STAGE_ENABLED:` block.
+    If wiring is mistakenly placed outside the conditional, this test catches it.
+    """
+    from aiops_triage_pipeline.health.registry import HealthRegistry
+
+    registry = HealthRegistry()
+    monkeypatch.setattr(__main__, "get_health_registry", lambda: registry)
+
+    # Disabled: stage produces empty output (the else-branch in __main__.py)
+    disabled_output = SimpleNamespace(
+        findings=(),
+        scopes_evaluated=0,
+        deviations_detected=0,
+        deviations_suppressed_single_metric=0,
+        deviations_suppressed_dedup=0,
+        evaluation_time=datetime(2026, 4, 5, 12, 0, tzinfo=UTC),
+    )
+
+    _patch_baseline_deviation_loop_dependencies(
+        monkeypatch,
+        baseline_deviation_output=disabled_output,
+        evidence_rows=(),
+    )
+
+    cycle_lock = MagicMock()
+    cycle_lock.acquire.return_value = SimpleNamespace(
+        status=CycleLockStatus.acquired,
+        key="aiops:lock:cycle",
+        ttl_seconds=360,
+        holder_id="pod-a",
+    )
+
+    # Stage DISABLED — HealthRegistry must NOT be updated
+    settings = _hot_path_settings_for_coordination_tests(lock_enabled=True)
+    assert settings.BASELINE_DEVIATION_STAGE_ENABLED is False  # sanity-check
+
+    with pytest.raises(asyncio.CancelledError):
+        await __main__._hot_path_scheduler_loop(
+            settings=settings,
+            logger=MagicMock(),
+            alert_evaluator=MagicMock(),
+            prometheus_client=MagicMock(),
+            metric_queries={},
+            anomaly_detection_policy=MagicMock(),
+            peak_policy=MagicMock(),
+            rulebook_policy=MagicMock(),
+            redis_ttl_policy=MagicMock(),
+            prometheus_metrics_contract=MagicMock(),
+            denylist=MagicMock(),
+            redis_client=MagicMock(),
+            dedupe_store=MagicMock(),
+            object_store_client=MagicMock(),
+            outbox_repository=MagicMock(),
+            pd_client=MagicMock(),
+            slack_client=MagicMock(),
+            topology_loader=MagicMock(),
+            cycle_lock=cycle_lock,
+            cycle_lock_owner_id="pod-a",
+            coordination_state=_HotPathCoordinationState(enabled=True),
+        )
+
+    # When stage is disabled, HealthRegistry must NOT have been updated for this component.
+    # None means no update occurred (correct). Any HealthStatus value means update happened
+    # outside the conditional (incorrect).
+    assert registry.get("baseline_deviation") is None, (
+        "Expected registry.get('baseline_deviation') is None when stage is disabled. "
+        "HealthRegistry update must be inside the BASELINE_DEVIATION_STAGE_ENABLED conditional."
+    )
