@@ -15,6 +15,7 @@ from datetime import datetime
 
 import structlog
 
+from aiops_triage_pipeline.baseline import metrics as baseline_metrics
 from aiops_triage_pipeline.baseline.client import SeasonalBaselineClient
 from aiops_triage_pipeline.baseline.computation import (
     MADResult,
@@ -97,8 +98,10 @@ def collect_baseline_deviation_stage_output(
                     reason="HAND_CODED_DETECTOR_FIRED",
                 )
                 deviations_suppressed_dedup += 1
+                baseline_metrics.record_suppressed_dedup()
                 continue
 
+            _scope_t0 = time.perf_counter()
             try:
                 result = _evaluate_scope(
                     scope=scope,
@@ -120,6 +123,7 @@ def collect_baseline_deviation_stage_output(
                     error=str(exc),
                 )
                 continue
+            baseline_metrics.record_mad_computation(time.perf_counter() - _scope_t0)
 
             if result is None:
                 # No deviations found for this scope
@@ -131,8 +135,10 @@ def collect_baseline_deviation_stage_output(
 
             if suppressed_single:
                 deviations_suppressed_single_metric += 1
+                baseline_metrics.record_suppressed_single_metric()
             elif finding_or_suppressed is not None:
                 findings.append(finding_or_suppressed)
+                baseline_metrics.record_finding_emitted()
                 logger.info(
                     "baseline_deviation_finding_emitted",
                     event_type="baseline_deviation.finding_emitted",
@@ -156,7 +162,9 @@ def collect_baseline_deviation_stage_output(
             evaluation_time=evaluation_time,
         )
 
+    baseline_metrics.record_deviations_detected(deviations_detected)
     elapsed_ms = (time.perf_counter() - started_at) * 1000
+    baseline_metrics.record_stage_duration(elapsed_ms / 1000)
     logger.info(
         "baseline_deviation_stage_completed",
         event_type="baseline_deviation.stage_completed",

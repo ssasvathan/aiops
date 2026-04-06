@@ -774,3 +774,339 @@ def test_finding_id_is_deterministic_for_scope() -> None:
 
     assert len(result.findings) == 1
     assert result.findings[0].finding_id == f"BASELINE_DEVIATION:{scope_key}"
+
+
+# ---------------------------------------------------------------------------
+# Story 4.1: OTLP Counters & Histograms — TDD RED PHASE
+#
+# These tests verify that baseline_metrics module-level instruments are
+# incremented / recorded correctly when the stage runs.
+#
+# They will FAIL until:
+#   1. src/aiops_triage_pipeline/baseline/metrics.py is created (Task 1)
+#   2. Recording calls are wired into baseline_deviation.py (Task 2)
+#
+# Pattern: _RecordingInstrument monkeypatch (mirrors tests/unit/health/test_metrics.py)
+# ---------------------------------------------------------------------------
+
+
+class _RecordingInstrument:
+    """Minimal OTLP instrument stub that records every add()/record() call."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[float, dict[str, str] | None]] = []
+
+    def add(self, value: float, attributes: dict[str, str] | None = None) -> None:
+        self.calls.append((value, attributes))
+
+    def record(self, value: float, attributes: dict[str, str] | None = None) -> None:
+        self.calls.append((value, attributes))
+
+
+def test_deviations_detected_counter_incremented(monkeypatch) -> None:
+    """[P0] deviations_detected counter incremented by number of deviating metrics (AC1, FR29).
+
+    Given: stage runs with 3 deviating metrics across 1 scope (>= MIN_CORRELATED_DEVIATIONS)
+    When:  collect_baseline_deviation_stage_output() completes
+    Then:  _deviations_detected.add(3) called once with no attributes
+    """
+    from aiops_triage_pipeline.baseline import metrics as baseline_metrics  # deferred import
+
+    instrument = _RecordingInstrument()
+    monkeypatch.setattr(baseline_metrics, "_deviations_detected", instrument)
+
+    scope = ("prod", "kafka-prod", "three-metric-topic")
+    rows = [
+        _make_deviating_row(scope, "consumer_group_lag"),
+        _make_deviating_row(scope, "topic_messages_in_per_sec"),
+        _make_deviating_row(scope, "failed_produce_requests_per_sec"),
+    ]
+    evidence_output = _make_evidence_output(rows)
+    mock_client = MagicMock(spec=SeasonalBaselineClient)
+    mock_client.read_buckets_batch.return_value = {
+        "consumer_group_lag": _STABLE_HISTORY,
+        "topic_messages_in_per_sec": _STABLE_HISTORY,
+        "failed_produce_requests_per_sec": _STABLE_HISTORY,
+    }
+
+    collect_baseline_deviation_stage_output(
+        evidence_output=evidence_output,
+        peak_output=_make_peak_output(),
+        baseline_client=mock_client,
+        evaluation_time=FIXED_EVAL_TIME,
+    )
+
+    assert instrument.calls == [(3, None)]
+
+
+def test_findings_emitted_counter_incremented(monkeypatch) -> None:
+    """[P0] findings_emitted counter incremented once per correlated finding (AC2, FR29).
+
+    Given: stage produces 1 correlated finding (2 deviating metrics, >= threshold)
+    When:  collect_baseline_deviation_stage_output() completes
+    Then:  _findings_emitted.add(1) called exactly once with no attributes
+    """
+    from aiops_triage_pipeline.baseline import metrics as baseline_metrics  # deferred import
+
+    instrument = _RecordingInstrument()
+    monkeypatch.setattr(baseline_metrics, "_findings_emitted", instrument)
+
+    scope = ("prod", "kafka-prod", "emitted-finding-topic")
+    rows = [
+        _make_deviating_row(scope, "consumer_group_lag"),
+        _make_deviating_row(scope, "topic_messages_in_per_sec"),
+    ]
+    evidence_output = _make_evidence_output(rows)
+    mock_client = _make_mock_client()
+
+    collect_baseline_deviation_stage_output(
+        evidence_output=evidence_output,
+        peak_output=_make_peak_output(),
+        baseline_client=mock_client,
+        evaluation_time=FIXED_EVAL_TIME,
+    )
+
+    assert instrument.calls == [(1, None)]
+
+
+def test_suppressed_single_metric_counter_incremented(monkeypatch) -> None:
+    """[P0] suppressed_single_metric counter incremented for single-metric suppression (AC2, FR29).
+
+    Given: stage has 1 scope with exactly 1 deviating metric (< MIN_CORRELATED_DEVIATIONS=2)
+    When:  collect_baseline_deviation_stage_output() completes
+    Then:  _suppressed_single_metric.add(1) called exactly once with no attributes
+    """
+    from aiops_triage_pipeline.baseline import metrics as baseline_metrics  # deferred import
+
+    instrument = _RecordingInstrument()
+    monkeypatch.setattr(baseline_metrics, "_suppressed_single_metric", instrument)
+
+    scope = ("prod", "kafka-prod", "single-metric-otlp-topic")
+    rows = [_make_deviating_row(scope, "consumer_group_lag")]
+    evidence_output = _make_evidence_output(rows)
+    mock_client = _make_mock_client({"consumer_group_lag": _STABLE_HISTORY})
+
+    collect_baseline_deviation_stage_output(
+        evidence_output=evidence_output,
+        peak_output=_make_peak_output(),
+        baseline_client=mock_client,
+        evaluation_time=FIXED_EVAL_TIME,
+    )
+
+    assert instrument.calls == [(1, None)]
+
+
+def test_suppressed_dedup_counter_incremented(monkeypatch) -> None:
+    """[P0] suppressed_dedup counter incremented for hand-coded dedup suppression (AC2, FR29).
+
+    Given: scope already fired by CONSUMER_LAG hand-coded detector
+    When:  collect_baseline_deviation_stage_output() completes
+    Then:  _suppressed_dedup.add(1) called exactly once with no attributes
+    """
+    from aiops_triage_pipeline.baseline import metrics as baseline_metrics  # deferred import
+
+    instrument = _RecordingInstrument()
+    monkeypatch.setattr(baseline_metrics, "_suppressed_dedup", instrument)
+
+    scope = ("prod", "kafka-prod", "dedup-otlp-topic")
+    hand_coded_finding = _make_hand_coded_finding(scope, "CONSUMER_LAG")
+    rows = [
+        _make_deviating_row(scope, "consumer_group_lag"),
+        _make_deviating_row(scope, "topic_messages_in_per_sec"),
+    ]
+    evidence_output = _make_evidence_output(rows, findings=(hand_coded_finding,))
+    mock_client = _make_mock_client()
+
+    collect_baseline_deviation_stage_output(
+        evidence_output=evidence_output,
+        peak_output=_make_peak_output(),
+        baseline_client=mock_client,
+        evaluation_time=FIXED_EVAL_TIME,
+    )
+
+    assert instrument.calls == [(1, None)]
+
+
+def test_stage_duration_histogram_recorded(monkeypatch) -> None:
+    """[P0] stage_duration_seconds histogram records positive duration per cycle (AC3, FR30).
+
+    Given: stage runs with one scope that emits a finding
+    When:  collect_baseline_deviation_stage_output() completes
+    Then:  _stage_duration_seconds.record() called exactly once with a positive value
+    """
+    from aiops_triage_pipeline.baseline import metrics as baseline_metrics  # deferred import
+
+    instrument = _RecordingInstrument()
+    monkeypatch.setattr(baseline_metrics, "_stage_duration_seconds", instrument)
+
+    scope = ("prod", "kafka-prod", "duration-test-topic")
+    rows = [
+        _make_deviating_row(scope, "consumer_group_lag"),
+        _make_deviating_row(scope, "topic_messages_in_per_sec"),
+    ]
+    evidence_output = _make_evidence_output(rows)
+    mock_client = _make_mock_client()
+
+    collect_baseline_deviation_stage_output(
+        evidence_output=evidence_output,
+        peak_output=_make_peak_output(),
+        baseline_client=mock_client,
+        evaluation_time=FIXED_EVAL_TIME,
+    )
+
+    assert len(instrument.calls) == 1
+    duration_seconds, attrs = instrument.calls[0]
+    assert duration_seconds >= 0.0  # duration must be non-negative
+    assert attrs is None
+
+
+def test_mad_computation_histogram_recorded_per_scope(monkeypatch) -> None:
+    """[P0] mad_computation_seconds histogram records one entry per scope evaluated (AC4, FR30).
+
+    Given: stage runs with 2 scopes (neither dedup-suppressed)
+    When:  collect_baseline_deviation_stage_output() completes
+    Then:  _mad_computation_seconds.record() called exactly twice (once per scope)
+    """
+    from aiops_triage_pipeline.baseline import metrics as baseline_metrics  # deferred import
+
+    instrument = _RecordingInstrument()
+    monkeypatch.setattr(baseline_metrics, "_mad_computation_seconds", instrument)
+
+    scope_a = ("prod", "kafka-prod", "mad-scope-a")
+    scope_b = ("prod", "kafka-prod", "mad-scope-b")
+    rows = [
+        # scope_a: 2 deviating metrics → emits finding
+        _make_deviating_row(scope_a, "consumer_group_lag"),
+        _make_deviating_row(scope_a, "topic_messages_in_per_sec"),
+        # scope_b: 1 deviating metric → single-metric suppression
+        _make_deviating_row(scope_b, "consumer_group_lag"),
+    ]
+    evidence_output = _make_evidence_output(rows)
+
+    def _history(scope, metric_keys, dow, hour):  # noqa: ANN001
+        return {mk: _STABLE_HISTORY for mk in metric_keys}
+
+    mock_client = MagicMock(spec=SeasonalBaselineClient)
+    mock_client.read_buckets_batch.side_effect = _history
+
+    collect_baseline_deviation_stage_output(
+        evidence_output=evidence_output,
+        peak_output=_make_peak_output(),
+        baseline_client=mock_client,
+        evaluation_time=FIXED_EVAL_TIME,
+    )
+
+    assert len(instrument.calls) == 2  # one recording per scope evaluated
+    for mad_seconds, attrs in instrument.calls:
+        assert mad_seconds >= 0.0
+        assert attrs is None
+
+
+def test_instrument_names_match_p7_convention() -> None:
+    """[P1] All 6 instrument names match aiops.baseline_deviation.* P7 naming convention (AC5, AC7).
+
+    Given: baseline/metrics.py module is imported
+    When:  module-level instruments are inspected
+    Then:  each instrument's .name attribute matches the exact P7-specified name
+    """
+    from aiops_triage_pipeline.baseline import metrics as baseline_metrics  # deferred import
+
+    assert baseline_metrics._deviations_detected.name == (
+        "aiops.baseline_deviation.deviations_detected"
+    )
+    assert baseline_metrics._findings_emitted.name == (
+        "aiops.baseline_deviation.findings_emitted"
+    )
+    assert baseline_metrics._suppressed_single_metric.name == (
+        "aiops.baseline_deviation.suppressed_single_metric"
+    )
+    assert baseline_metrics._suppressed_dedup.name == (
+        "aiops.baseline_deviation.suppressed_dedup"
+    )
+    assert baseline_metrics._stage_duration_seconds.name == (
+        "aiops.baseline_deviation.stage_duration_seconds"
+    )
+    assert baseline_metrics._mad_computation_seconds.name == (
+        "aiops.baseline_deviation.mad_computation_seconds"
+    )
+
+
+def test_no_otlp_calls_on_redis_fail_open(monkeypatch) -> None:
+    """[P0] No OTLP instruments are called when Redis is unavailable (fail-open path).
+
+    Given: Redis client raises ConnectionError on read
+    When:  collect_baseline_deviation_stage_output() returns early via fail-open
+    Then:  none of the OTLP instruments record any calls (counters stay silent)
+    """
+    from aiops_triage_pipeline.baseline import metrics as baseline_metrics  # deferred import
+
+    instruments = {
+        name: _RecordingInstrument()
+        for name in (
+            "_deviations_detected",
+            "_findings_emitted",
+            "_suppressed_single_metric",
+            "_suppressed_dedup",
+            "_stage_duration_seconds",
+            "_mad_computation_seconds",
+        )
+    }
+    for attr, instrument in instruments.items():
+        monkeypatch.setattr(baseline_metrics, attr, instrument)
+
+    scope = ("prod", "kafka-prod", "fail-open-topic")
+    rows = [
+        _make_deviating_row(scope, "consumer_group_lag"),
+        _make_deviating_row(scope, "topic_messages_in_per_sec"),
+    ]
+    evidence_output = _make_evidence_output(rows)
+
+    mock_client = MagicMock(spec=SeasonalBaselineClient)
+    mock_client.read_buckets_batch.side_effect = ConnectionError("Redis connection refused")
+
+    result = collect_baseline_deviation_stage_output(
+        evidence_output=evidence_output,
+        peak_output=_make_peak_output(),
+        baseline_client=mock_client,
+        evaluation_time=FIXED_EVAL_TIME,
+    )
+
+    assert result.findings == ()
+    for name, instrument in instruments.items():
+        assert instrument.calls == [], f"Expected no calls on {name}, got {instrument.calls}"
+
+
+def test_deviations_detected_no_op_when_zero_deviations(monkeypatch) -> None:
+    """[P1] record_deviations_detected() is a no-op when deviations_detected == 0.
+
+    Given: stage runs but no metrics deviate (all metrics have sparse history → skipped)
+    When:  collect_baseline_deviation_stage_output() completes
+    Then:  _deviations_detected.add() is never called (guard: if count <= 0: return)
+    """
+    from aiops_triage_pipeline.baseline import metrics as baseline_metrics  # deferred import
+
+    instrument = _RecordingInstrument()
+    monkeypatch.setattr(baseline_metrics, "_deviations_detected", instrument)
+
+    scope = ("prod", "kafka-prod", "zero-deviation-topic")
+    rows = [
+        _make_deviating_row(scope, "consumer_group_lag"),
+        _make_deviating_row(scope, "topic_messages_in_per_sec"),
+    ]
+    evidence_output = _make_evidence_output(rows)
+    # Sparse history (< MIN_BUCKET_SAMPLES=3) → compute_modified_z_score returns None → 0 deviations
+    sparse_history = [10.0, 11.0]
+    mock_client = _make_mock_client({
+        "consumer_group_lag": sparse_history,
+        "topic_messages_in_per_sec": sparse_history,
+    })
+
+    collect_baseline_deviation_stage_output(
+        evidence_output=evidence_output,
+        peak_output=_make_peak_output(),
+        baseline_client=mock_client,
+        evaluation_time=FIXED_EVAL_TIME,
+    )
+
+    # No deviations → record_deviations_detected(0) → guard returns early → no add() call
+    assert instrument.calls == []
