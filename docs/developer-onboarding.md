@@ -80,6 +80,20 @@ flowchart LR
 
 This section covers the full journey of a single anomaly through the pipeline. After reading it you'll be able to trace any triage decision from its Prometheus origin to its dispatched action.
 
+### Startup: Baseline Layer Seeding
+
+Before the first scheduler cycle executes, the hot-path runs `backfill_baselines_from_prometheus()`
+to seed three layers from 30 days of Prometheus range data:
+
+- **Layer A**: Redis peak cache (`aiops:baseline:prometheus:{scope}:{metric_key}`)
+- **Layer B**: In-memory peak history deque (topic_messages_in_per_sec per scope)
+- **Layer C**: Seasonal baseline Redis buckets (`aiops:seasonal_baseline:{scope}:{metric_key}:{dow}:{hour}`)
+  — populated via `SeasonalBaselineClient.seed_from_history()`. Covers all contract metrics
+  automatically; no code changes required when new metrics are added.
+
+The pipeline blocks on the backfill (bounded by `BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS`) before
+starting the first cycle. If Prometheus is unavailable, it starts in degraded mode.
+
 ### Stage Flow
 
 ```mermaid

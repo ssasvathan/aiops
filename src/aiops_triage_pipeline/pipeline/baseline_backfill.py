@@ -10,6 +10,8 @@ from urllib.error import URLError
 
 import structlog
 
+from aiops_triage_pipeline.baseline.client import SeasonalBaselineClient
+from aiops_triage_pipeline.baseline.computation import time_to_bucket
 from aiops_triage_pipeline.contracts.redis_ttl_policy import RedisTtlPolicyV1
 from aiops_triage_pipeline.integrations.prometheus import (
     MetricQueryDefinition,
@@ -26,6 +28,30 @@ _TOPIC_MESSAGES_IN_METRIC_KEY = "topic_messages_in_per_sec"
 # Warn if intermediate ts_max_by_scope could consume substantial memory.
 # At 1000 scopes × 8640 steps, the dict is roughly 1000 × 8640 × 56 ≈ 480 MB.
 _LARGE_SCOPE_WARN_THRESHOLD = 500
+
+
+def _build_best_effort_scope(labels: dict[str, str]) -> tuple[str, ...]:
+    """Build a best-effort scope tuple from whatever labels are available.
+
+    Used for Layer C seeding when build_evidence_scope_key() rejects a record
+    (e.g. lag metrics missing the 'group' label). Falls back to a partial scope
+    derived from env + cluster_name + any available topic/group.
+
+    Raises:
+        ValueError: If even a minimal scope cannot be derived (missing env or cluster_name).
+    """
+    env = labels.get("env")
+    cluster_name = labels.get("cluster_name")
+    if env is None or cluster_name is None:
+        raise ValueError("Cannot build scope: 'env' or 'cluster_name' missing from labels")
+    parts: list[str] = [env, cluster_name]
+    group = labels.get("group")
+    topic = labels.get("topic")
+    if group is not None:
+        parts.append(group)
+    if topic is not None:
+        parts.append(topic)
+    return tuple(parts)
 
 
 class _PeakHistorySeedable(Protocol):
@@ -45,6 +71,7 @@ async def backfill_baselines_from_prometheus(
     redis_client: BaselineStoreClientProtocol,
     redis_ttl_policy: RedisTtlPolicyV1,
     peak_history_retention: _PeakHistorySeedable,
+    seasonal_baseline_client: SeasonalBaselineClient,
     lookback_days: int,
     step_seconds: int,
     timeout_seconds: int,
@@ -56,6 +83,7 @@ async def backfill_baselines_from_prometheus(
     Queries all metrics over the configured lookback window. For each metric:
     - Layer A (Redis): persists the latest MAX value per scope for all metrics.
     - Layer B (in-memory deque): seeds topic_messages_in_per_sec time series per scope.
+    - Layer C (Redis seasonal buckets): seeds all metrics via seed_from_history().
 
     Fails gracefully: per-metric errors are isolated (logged and skipped). If the total
     timeout is exceeded, backfill stops early with a warning and proceeds with whatever
@@ -78,6 +106,9 @@ async def backfill_baselines_from_prometheus(
     # Layer B: ordered time-series MAX per scope (topic_messages_in_per_sec only)
     # key: (env, cluster_id, topic) 3-tuple; value: dict[timestamp -> max_value]
     ts_max_by_scope: dict[tuple[str, str, str], dict[float, float]] = {}
+    # Layer C: raw time-series per (scope, metric_key) for seasonal baseline seeding
+    # key: (scope, metric_key); value: list of (unix_ts_float, value) pairs
+    layer_c_series: dict[tuple[tuple[str, ...], str], list[tuple[float, float]]] = {}
 
     all_metrics = list(metric_queries.items())
     total_metric_count = len(all_metrics)
@@ -124,7 +155,21 @@ async def backfill_baselines_from_prometheus(
                 # build_evidence_scope_key normalizes labels internally — no double call needed
                 scope = build_evidence_scope_key(labels, metric_key)
             except (ValueError, KeyError):
-                continue  # skip malformed label sets — preserve UNKNOWN semantics
+                # Layer A and B require a valid scope; skip this record for those layers.
+                # Layer C: still attempt to seed with best-effort scope from available labels
+                if values:
+                    try:
+                        layer_c_scope = _build_best_effort_scope(labels)
+                    except (ValueError, KeyError):
+                        pass
+                    else:
+                        series_key = (layer_c_scope, metric_key)
+                        series = layer_c_series.setdefault(series_key, [])
+                        for ts, val in values:
+                            if math.isfinite(val):
+                                series.append((ts, val))
+                total_data_points += len(values)
+                continue  # skip malformed label sets for Layers A and B
 
             # Layer A: track (latest_ts, max_val) per scope per metric across series.
             # This handles sparse data correctly: always use the most-recent timestamp's value,
@@ -150,6 +195,14 @@ async def backfill_baselines_from_prometheus(
                         existing_val = ts_map.get(ts)
                         if existing_val is None or val > existing_val:
                             ts_map[ts] = val
+
+            # Layer C: collect all finite values for seasonal baseline seeding
+            if values:
+                series_key = (scope, metric_key)
+                series = layer_c_series.setdefault(series_key, [])
+                for ts, val in values:
+                    if math.isfinite(val):
+                        series.append((ts, val))
 
             total_data_points += len(values)
 
@@ -199,6 +252,35 @@ async def backfill_baselines_from_prometheus(
             total_data_points=total_values,
             estimated_bytes=estimated_bytes,
         )
+
+    # Seed Layer C: seasonal baseline buckets for all scopes × all metrics
+    layer_c_unique_scopes: set[tuple[str, ...]] = set()
+    layer_c_metric_keys: set[str] = set()
+    layer_c_bucket_count = 0
+    for (scope, metric_key), raw_series in layer_c_series.items():
+        if not raw_series:
+            continue
+        time_series = [
+            (datetime.fromtimestamp(ts, tz=UTC), val) for ts, val in raw_series
+        ]
+        seasonal_baseline_client.seed_from_history(scope, metric_key, time_series)
+        layer_c_unique_scopes.add(scope)
+        layer_c_metric_keys.add(metric_key)
+        # Count unique (dow, hour) buckets written for this (scope, metric_key) pair
+        # Delegate to time_to_bucket (P3: sole source of truth for bucket derivation)
+        unique_buckets: set[tuple[int, int]] = set()
+        for ts, _val in raw_series:
+            dt = datetime.fromtimestamp(ts, tz=UTC)
+            unique_buckets.add(time_to_bucket(dt))
+        layer_c_bucket_count += len(unique_buckets)
+
+    logger.info(
+        "baseline_deviation_backfill_seeded",
+        event_type="backfill.seasonal_seeded",
+        scope_count=len(layer_c_unique_scopes),
+        metric_count=len(layer_c_metric_keys),
+        bucket_count=layer_c_bucket_count,
+    )
 
     wall_clock_seconds = round(time.monotonic() - backfill_start, 1)
     logger.info(

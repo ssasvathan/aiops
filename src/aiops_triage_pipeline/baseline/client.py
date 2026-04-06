@@ -2,8 +2,10 @@
 
 import json
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Protocol
 
+from aiops_triage_pipeline.baseline.computation import time_to_bucket
 from aiops_triage_pipeline.baseline.constants import MAX_BUCKET_VALUES
 
 BaselineScope = tuple[str, ...]
@@ -92,3 +94,37 @@ class SeasonalBaselineClient:
             existing = existing[-MAX_BUCKET_VALUES:]
         key = self._build_key(scope, metric_key, dow, hour)
         self._redis.set(key, json.dumps(existing))
+
+    def seed_from_history(
+        self,
+        scope: BaselineScope,
+        metric_key: str,
+        time_series: Sequence[tuple[datetime, float]],
+    ) -> None:
+        """Partition a time-series into 168 (dow, hour) buckets and write to Redis.
+
+        Used during cold-start backfill to seed baselines from Prometheus range data.
+        Each (dt, value) pair is bucketed by UTC (dow, hour) via time_to_bucket().
+        Existing bucket contents are read first and merged; MAX_BUCKET_VALUES cap enforced.
+
+        Args:
+            scope: Baseline scope tuple identifying the metric series.
+            metric_key: The metric identifier string.
+            time_series: Sequence of (timezone-aware datetime, float) pairs.
+
+        Raises:
+            ValueError: If any datetime in time_series is naive (no tzinfo).
+        """
+        # Group new values by (dow, hour) bucket
+        bucket_values: dict[tuple[int, int], list[float]] = {}
+        for dt, value in time_series:
+            bucket = time_to_bucket(dt)  # raises ValueError for naive datetimes
+            bucket_values.setdefault(bucket, []).append(value)
+
+        for (dow, hour), new_values in bucket_values.items():
+            existing = self.read_buckets(scope, metric_key, dow, hour)
+            merged = existing + new_values
+            if len(merged) > MAX_BUCKET_VALUES:
+                merged = merged[-MAX_BUCKET_VALUES:]
+            key = self._build_key(scope, metric_key, dow, hour)
+            self._redis.set(key, json.dumps(merged))

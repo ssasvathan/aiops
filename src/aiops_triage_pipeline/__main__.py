@@ -15,6 +15,7 @@ import redis as redis_lib
 import structlog
 from sqlalchemy import create_engine, delete
 
+from aiops_triage_pipeline.baseline.client import SeasonalBaselineClient
 from aiops_triage_pipeline.cache.dedupe import RedisActionDedupeStore
 from aiops_triage_pipeline.cache.evidence_window import (
     load_sustained_window_states,
@@ -562,6 +563,7 @@ async def _hot_path_scheduler_loop(
         max_idle_cycles=settings.STAGE2_PEAK_HISTORY_MAX_IDLE_CYCLES,
         logger=logger,
     )
+    seasonal_baseline_client = SeasonalBaselineClient(redis_client=redis_client)
     coordination_registry = get_health_registry()
     _previous_shard_holders: dict[int, str] = {}  # shard_id → holder_id when this pod last yielded
 
@@ -584,6 +586,7 @@ async def _hot_path_scheduler_loop(
                 redis_client=redis_client,
                 redis_ttl_policy=redis_ttl_policy,
                 peak_history_retention=peak_history_retention,
+                seasonal_baseline_client=seasonal_baseline_client,
                 lookback_days=settings.BASELINE_BACKFILL_LOOKBACK_DAYS,
                 step_seconds=interval_seconds,
                 timeout_seconds=settings.BASELINE_BACKFILL_TIMEOUT_SECONDS,

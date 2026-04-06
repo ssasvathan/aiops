@@ -49,6 +49,35 @@ Runtime clients initialised at startup:
 - Slack client (mode: `INTEGRATION_MODE_SLACK`)
 - Topology registry loader (requires `TOPOLOGY_REGISTRY_PATH`)
 
+### Startup backfill
+
+Before the first scheduler cycle, the hot-path runs a three-layer cold-start backfill to
+pre-populate Redis and in-memory structures from 30 days of Prometheus range data.
+
+**Layer A — Redis peak cache**: Persists the latest MAX value per scope per metric to Redis
+under `aiops:baseline:{source}:{scope}:{metric_key}` keys. Available for immediate hot-path
+comparison on the first cycle.
+
+**Layer B — In-memory peak history deque**: Seeds the `_PeakHistoryRetention` deque with the
+full `topic_messages_in_per_sec` time-series per scope (3-tuple scopes only). Enables peak
+profile computation from the first cycle.
+
+**Layer C — Seasonal baseline buckets**: Seeds 168 `(day_of_week, hour)` buckets per scope
+per metric in Redis under `aiops:seasonal_baseline:{scope}:{metric_key}:{dow}:{hour}` keys
+via `SeasonalBaselineClient.seed_from_history()`. Enables MAD-based anomaly detection from
+the first cycle without manual data population or code changes when new metrics are added.
+
+**Configurable settings**:
+
+- `BASELINE_BACKFILL_LOOKBACK_DAYS` — how many days of Prometheus history to fetch (default: 30)
+- `BASELINE_BACKFILL_TIMEOUT_SECONDS` — per-metric query timeout
+- `BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS` — overall backfill budget (enforced via `asyncio.wait_for`)
+
+**Cold-start behavior**: If Prometheus is unreachable or the backfill times out, the pipeline
+starts in degraded mode — no crash, but detection quality is reduced until buckets are populated
+via live traffic. A `baseline_deviation_backfill_seeded` structured log event is emitted on
+completion with `scope_count`, `metric_count`, and `bucket_count`.
+
 ### Per-cycle stage flow
 
 Each scheduler tick executes these stages in sequence:
