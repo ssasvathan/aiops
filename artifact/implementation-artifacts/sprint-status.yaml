@@ -49,8 +49,8 @@ development_status:
   epic-1-retrospective: done
 
   # Epic 2: Correlated Anomaly Detection & Pipeline Integration
-  epic-2: backlog
-  2-1-mad-computation-engine: backlog
+  epic-2: in-progress
+  2-1-mad-computation-engine: done
   2-2-baseline-deviation-finding-model: backlog
   2-3-baseline-deviation-stage-detection-correlation-and-dedup: backlog
   2-4-pipeline-integration-and-scheduler-wiring: backlog
