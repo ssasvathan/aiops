@@ -43,7 +43,7 @@ development_status:
   # Epic 1: Seasonal Baseline Foundation & Auto-Discovery
   epic-1: in-progress
   1-1-baseline-constants-and-time-bucket-derivation: done
-  1-2-seasonalbaselineclient-redis-baseline-storage: backlog
+  1-2-seasonalbaselineclient-redis-baseline-storage: done
   1-3-cold-start-backfill-seeding-with-metric-auto-discovery: backlog
   1-4-weekly-baseline-recomputation: backlog
   epic-1-retrospective: optional

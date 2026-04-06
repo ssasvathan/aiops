@@ -68,9 +68,10 @@ Source: `src/aiops_triage_pipeline/storage/casefile_io.py`, `models/case_file.py
 
 Source: `src/aiops_triage_pipeline/baseline/`
 
-- Seasonal baseline Redis key schema: `aiops:seasonal_baseline:{scope}:{metric_key}:{dow}:{hour}` (value: JSON float list, max 12 items)
+- Seasonal baseline Redis key schema: `aiops:seasonal_baseline:{scope}:{metric_key}:{dow}:{hour}` where `{scope}` = `"|".join(scope_tuple)` (e.g. `prod|kafka-prod-east|orders.completed`)
 - Time bucket index: `(dow, hour)` where `dow` = `datetime.weekday()` (Mon=0, Sun=6), `hour` = 0–23 (always UTC)
-- `BaselineDeviationContext` and `BaselineDeviationStageOutput` models — forthcoming (Story 1.2)
+- Value format: JSON-serialized `list[float]`, maximum `MAX_BUCKET_VALUES` (12) items; oldest value dropped when cap is exceeded
+- `BaselineDeviationContext` and `BaselineDeviationStageOutput` models — forthcoming (Story 2.2)
 
 ## Migration Strategy Signal
 
