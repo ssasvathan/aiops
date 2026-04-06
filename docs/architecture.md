@@ -49,6 +49,18 @@
 - ServiceNow table API (`GET/POST/PATCH`)
 - Kafka topic publication (`aiops-case-header`, `aiops-triage-excerpt`)
 
+## Pipeline Stage Ordering
+
+The evaluation pipeline executes stages in this order per cycle:
+
+1. **Evidence stage** (`pipeline/stages/evidence.py`) — normalizes Prometheus observations into `EvidenceStageOutput` with hand-coded anomaly findings.
+2. **Peak stage** (`pipeline/stages/peak.py`) — classifies throughput levels against seasonal baselines; produces `PeakStageOutput`.
+3. **Baseline deviation stage** (`pipeline/stages/baseline_deviation.py`) — detects correlated multi-metric deviations against per-bucket Redis baselines; produces `BaselineDeviationStageOutput`. Placed after peak so peak context is available for future enrichment; runs before topology to allow deviation findings to influence topology scoring.
+4. **Topology stage** (`pipeline/stages/topology.py`) — evaluates dependency graph relationships.
+5. **Casefile, Outbox, Gating, Dispatch stages** — downstream persistence and publication.
+
+The baseline deviation stage (`collect_baseline_deviation_stage_output`) accepts four explicit keyword-only inputs: `evidence_output`, `peak_output`, `baseline_client`, `evaluation_time`. It is fully deterministic — no wall clock reads, no global state.
+
 ## Component Overview
 
 - `pipeline/stages/`: stage computation and gating decisions

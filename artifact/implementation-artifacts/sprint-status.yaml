@@ -52,7 +52,7 @@ development_status:
   epic-2: in-progress
   2-1-mad-computation-engine: done
   2-2-baseline-deviation-finding-model: done
-  2-3-baseline-deviation-stage-detection-correlation-and-dedup: backlog
+  2-3-baseline-deviation-stage-detection-correlation-and-dedup: done
   2-4-pipeline-integration-and-scheduler-wiring: backlog
   epic-2-retrospective: optional
 
