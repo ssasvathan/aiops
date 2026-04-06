@@ -45,7 +45,7 @@ development_status:
   1-1-baseline-constants-and-time-bucket-derivation: done
   1-2-seasonalbaselineclient-redis-baseline-storage: done
   1-3-cold-start-backfill-seeding-with-metric-auto-discovery: done
-  1-4-weekly-baseline-recomputation: backlog
+  1-4-weekly-baseline-recomputation: done
   epic-1-retrospective: optional
 
   # Epic 2: Correlated Anomaly Detection & Pipeline Integration

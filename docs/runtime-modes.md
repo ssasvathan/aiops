@@ -78,6 +78,55 @@ starts in degraded mode — no crash, but detection quality is reduced until buc
 via live traffic. A `baseline_deviation_backfill_seeded` structured log event is emitted on
 completion with `scope_count`, `metric_count`, and `bucket_count`.
 
+### Weekly recomputation
+
+Each hot-path scheduler cycle checks whether a weekly baseline recomputation should be
+triggered. When 7 or more days have elapsed since the last successful recomputation (or the
+`aiops:seasonal_baseline:last_recompute` key is absent), the scheduler spawns a background
+coroutine via `asyncio.create_task()` with name `baseline-weekly-recompute`.
+
+**Computation pattern (Architecture Decision D4):**
+
+1. **Compute phase (Phase 1):** Queries Prometheus `query_range` for 30 days of history
+   for all configured metrics. All values are partitioned into 168 `(day_of_week, hour)`
+   time buckets entirely in memory. No Redis writes occur during this phase.
+2. **Write phase (Phase 2):** All computed buckets are written to Redis via a single
+   pipelined `SET` operation (one round-trip). The pipeline atomically replaces all
+   baseline bucket keys with fresh data.
+3. **Timestamp update:** On success, `aiops:seasonal_baseline:last_recompute` is updated
+   with the current UTC ISO timestamp.
+
+**Concurrency guard:** Only one background recomputation task runs at a time. A new task
+is spawned only when the previous task has completed (checked via `asyncio.Task.done()`).
+
+**Failure mode:**
+
+- If a pod restarts mid-computation (Phase 1), in-flight work is lost but Redis is untouched
+  (no partial writes) — the pipeline continues reading old (valid) baselines.
+- If Prometheus is unreachable during Phase 1, per-metric failures are logged and skipped.
+  If all queries fail, no Redis write occurs and `last_recompute` is NOT updated, causing
+  the next cycle to retry the recomputation.
+- Hot-path cycles continue unaffected while recomputation runs in the background.
+
+**Structured log events:**
+
+| Event | Level | Description |
+|---|---|---|
+| `baseline_deviation_recompute_started` | `info` | Emitted before Prometheus queries begin |
+| `baseline_deviation_recompute_completed` | `info` | Emitted on success; includes `duration_seconds` and `key_count` |
+| `baseline_deviation_recompute_failed` | `warning` | Emitted on failure; includes `exc_info=True` |
+
+**Configurable settings (shared with startup backfill):**
+
+- `BASELINE_BACKFILL_LOOKBACK_DAYS` — days of Prometheus history to recompute from (default: 30)
+- `BASELINE_BACKFILL_TIMEOUT_SECONDS` — per-metric Prometheus query timeout
+- `HOT_PATH_SCHEDULER_INTERVAL_SECONDS` — used as the `step` for Prometheus range queries
+
+**Redis key written by this process:**
+
+- `aiops:seasonal_baseline:last_recompute` — UTC ISO timestamp of last successful recomputation
+- `aiops:seasonal_baseline:{scope}:{metric_key}:{dow}:{hour}` — bucket keys (replaced, not merged)
+
 ### Per-cycle stage flow
 
 Each scheduler tick executes these stages in sequence:

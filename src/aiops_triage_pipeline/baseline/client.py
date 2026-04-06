@@ -1,14 +1,22 @@
 """SeasonalBaselineClient — Redis I/O boundary for seasonal baseline data (D3)."""
 
+import asyncio
 import json
+import math
 from collections.abc import Sequence
-from datetime import datetime
-from typing import Protocol
+from datetime import UTC, datetime, timedelta
+from typing import Any, Protocol
+
+import structlog
 
 from aiops_triage_pipeline.baseline.computation import time_to_bucket
 from aiops_triage_pipeline.baseline.constants import MAX_BUCKET_VALUES
+from aiops_triage_pipeline.integrations.prometheus import MetricQueryDefinition
+from aiops_triage_pipeline.pipeline.stages.evidence import build_evidence_scope_key
 
 BaselineScope = tuple[str, ...]
+
+_LAST_RECOMPUTE_KEY = "aiops:seasonal_baseline:last_recompute"
 
 
 class SeasonalBaselineClientProtocol(Protocol):
@@ -21,6 +29,9 @@ class SeasonalBaselineClientProtocol(Protocol):
         ...
 
     def set(self, key: str, value: str) -> bool | None:
+        ...
+
+    def pipeline(self) -> Any:
         ...
 
 
@@ -94,6 +105,105 @@ class SeasonalBaselineClient:
             existing = existing[-MAX_BUCKET_VALUES:]
         key = self._build_key(scope, metric_key, dow, hour)
         self._redis.set(key, json.dumps(existing))
+
+    def get_last_recompute(self) -> str | None:
+        """Return the stored UTC ISO timestamp of the last successful recomputation, or None."""
+        raw = self._redis.get(_LAST_RECOMPUTE_KEY)
+        if raw is None:
+            return None
+        if isinstance(raw, str):
+            return raw
+        if isinstance(raw, (bytes, bytearray)):
+            return raw.decode()
+        return None
+
+    def set_last_recompute(self, timestamp_iso: str) -> None:
+        """Persist the UTC ISO timestamp of a successful recomputation."""
+        self._redis.set(_LAST_RECOMPUTE_KEY, timestamp_iso)
+
+    async def bulk_recompute(
+        self,
+        *,
+        prometheus_client: Any,
+        metric_queries: dict[str, MetricQueryDefinition],
+        lookback_days: int,
+        step_seconds: int,
+        timeout_seconds: int,
+        logger: structlog.BoundLogger,
+    ) -> int:
+        """Recompute all seasonal baseline buckets from Prometheus history.
+
+        Phase 1: Build all key → JSON-list mappings entirely in memory.
+        Phase 2: Bulk-write all keys via Redis pipeline (single round-trip).
+
+        Returns:
+            Total number of Redis keys written.
+        """
+        # Deferred import to break circular dependency:
+        # baseline/client.py → pipeline/baseline_backfill.py → baseline/client.py
+        # Moving _build_best_effort_scope to baseline/ would fix this but baseline_backfill.py
+        # is out of scope for this story (Story 1.4 explicitly excludes it).
+        from aiops_triage_pipeline.pipeline.baseline_backfill import _build_best_effort_scope
+
+        end = datetime.now(tz=UTC)
+        start = end - timedelta(days=lookback_days)
+
+        # Phase 1: in-memory accumulation — no Redis writes during this phase
+        key_data: dict[str, list[float]] = {}
+
+        for metric_key, metric_defn in metric_queries.items():
+            try:
+                raw_records: list[dict[str, Any]] = await asyncio.to_thread(
+                    prometheus_client.query_range,
+                    metric_defn.metric_name,
+                    start,
+                    end,
+                    step_seconds,
+                    timeout=timeout_seconds,
+                )
+            except Exception:  # noqa: BLE001
+                logger.warning(
+                    "baseline_recompute_metric_query_failed",
+                    event_type="recompute.metric_query_warning",
+                    metric_key=metric_key,
+                    metric_name=metric_defn.metric_name,
+                )
+                continue
+
+            for record in raw_records:
+                labels: dict[str, str] = record.get("labels", {})  # type: ignore[assignment]
+                values: list[tuple[float, float]] = record.get("values", [])  # type: ignore[assignment]
+
+                try:
+                    scope = build_evidence_scope_key(labels, metric_key)
+                except (ValueError, KeyError):
+                    try:
+                        scope = _build_best_effort_scope(labels)
+                    except (ValueError, KeyError):
+                        continue
+
+                for ts_float, val in values:
+                    if not math.isfinite(val):
+                        continue
+                    dt = datetime.fromtimestamp(ts_float, tz=UTC)
+                    dow, hour = time_to_bucket(dt)
+                    redis_key = self._build_key(scope, metric_key, dow, hour)
+                    key_data.setdefault(redis_key, []).append(val)
+
+        # Cap each bucket at MAX_BUCKET_VALUES (P2)
+        bulk_payload: dict[str, str] = {}
+        for key, values in key_data.items():
+            capped = values[-MAX_BUCKET_VALUES:] if len(values) > MAX_BUCKET_VALUES else values
+            bulk_payload[key] = json.dumps(capped)
+
+        # Phase 2: bulk pipeline write (single round-trip)
+        if bulk_payload:
+            pipe = self._redis.pipeline()
+            for key, value in bulk_payload.items():
+                pipe.set(key, value)
+            pipe.execute()
+
+        return len(bulk_payload)
 
     def seed_from_history(
         self,

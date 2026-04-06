@@ -156,6 +156,121 @@ _HARNESS_REDIS_KEY_PATTERNS: tuple[str, ...] = (
 _HARNESS_REDIS_DELETE_BATCH_SIZE = 500
 _HARNESS_OBJECT_DELETE_BATCH_SIZE = 1000
 
+# Weekly recomputation interval: 7 days in seconds
+_RECOMPUTE_INTERVAL_SECONDS = 7 * 24 * 3600
+
+
+def _should_trigger_recompute(
+    last_iso: str | None,
+    now: datetime,
+    interval_seconds: int,
+) -> bool:
+    """Return True if a weekly baseline recomputation should be triggered.
+
+    Args:
+        last_iso: ISO timestamp of last recomputation, or None if key absent.
+        now: Current UTC datetime.
+        interval_seconds: Minimum elapsed seconds before triggering again.
+
+    Returns:
+        True if last_iso is None (key absent) or if elapsed >= interval_seconds.
+    """
+    if last_iso is None:
+        return True
+    last = datetime.fromisoformat(last_iso)
+    return (now - last).total_seconds() >= interval_seconds
+
+
+class _PrometheusFailureTracker:
+    """Wraps a prometheus client to detect per-metric query failures.
+
+    bulk_recompute() catches per-metric errors internally (NFR-R4: no partial writes).
+    This tracker records whether any query raised, so _run_baseline_recompute can
+    detect total failure without requiring bulk_recompute() to propagate exceptions.
+    The last exception is stored so exc_info can be populated with real traceback context
+    when emitting the baseline_deviation_recompute_failed log event.
+    """
+
+    def __init__(self, client: "PrometheusHTTPClient") -> None:
+        self._client = client
+        self.had_failures: bool = False
+        self.last_exception: BaseException | None = None
+
+    def query_range(self, *args: object, **kwargs: object) -> object:
+        """Forward query_range; track failures without swallowing them."""
+        try:
+            return self._client.query_range(*args, **kwargs)  # type: ignore[arg-type]
+        except Exception as exc:
+            self.had_failures = True
+            self.last_exception = exc
+            raise
+
+
+async def _run_baseline_recompute(
+    *,
+    seasonal_baseline_client: "SeasonalBaselineClient",
+    prometheus_client: "PrometheusHTTPClient",
+    metric_queries: "dict[str, MetricQueryDefinition]",
+    lookback_days: int,
+    step_seconds: int,
+    timeout_seconds: int,
+    logger: "structlog.BoundLogger",
+) -> int:
+    """Orchestrate weekly baseline recomputation with structured log events.
+
+    Emits baseline_deviation_recompute_started before Prometheus queries.
+    On success: updates last_recompute timestamp and emits completed event.
+    On failure (all metrics failed or unexpected exception): emits failed event
+    with exc_info, does NOT update timestamp.
+
+    Returns:
+        Number of Redis keys written (0 on failure).
+    """
+    logger.info(
+        "baseline_deviation_recompute_started",
+        event_type="recompute.started",
+    )
+    start_monotonic = time.monotonic()
+
+    # Wrap prometheus_client to detect per-metric failures without needing
+    # bulk_recompute() to propagate them (it catches per-metric errors per NFR-R4).
+    tracked_client = _PrometheusFailureTracker(prometheus_client)
+
+    try:
+        key_count = await seasonal_baseline_client.bulk_recompute(
+            prometheus_client=tracked_client,
+            metric_queries=metric_queries,
+            lookback_days=lookback_days,
+            step_seconds=step_seconds,
+            timeout_seconds=timeout_seconds,
+            logger=logger,
+        )
+    except Exception:
+        logger.warning(
+            "baseline_deviation_recompute_failed",
+            event_type="recompute.failed",
+            exc_info=True,
+        )
+        return 0
+
+    if tracked_client.had_failures:
+        logger.warning(
+            "baseline_deviation_recompute_failed",
+            event_type="recompute.failed",
+            exc_info=tracked_client.last_exception,
+        )
+        return 0
+
+    duration_seconds = round(time.monotonic() - start_monotonic, 2)
+    seasonal_baseline_client.set_last_recompute(datetime.now(UTC).isoformat())
+    logger.info(
+        "baseline_deviation_recompute_completed",
+        event_type="recompute.completed",
+        duration_seconds=duration_seconds,
+        key_count=key_count,
+    )
+    return key_count
+
 
 class _PeakHistoryRetention:
     """Maintain bounded in-process peak baseline windows per topic scope."""
@@ -608,6 +723,8 @@ async def _hot_path_scheduler_loop(
             exc_info=True,
         )
 
+    _recompute_task: asyncio.Task[int] | None = None
+
     while True:
         evaluation_time = datetime.now(UTC)
         coordination_state.last_cycle_time_utc = evaluation_time.isoformat()
@@ -626,6 +743,25 @@ async def _hot_path_scheduler_loop(
             drift_seconds=tick.drift_seconds,
             missed_intervals=tick.missed_intervals,
         )
+
+        # Weekly recomputation timer check — spawn background task if 7+ days elapsed
+        if _recompute_task is None or _recompute_task.done():
+            last_recompute_iso = seasonal_baseline_client.get_last_recompute()
+            if _should_trigger_recompute(
+                last_recompute_iso, evaluation_time, _RECOMPUTE_INTERVAL_SECONDS
+            ):
+                _recompute_task = asyncio.create_task(
+                    _run_baseline_recompute(
+                        seasonal_baseline_client=seasonal_baseline_client,
+                        prometheus_client=prometheus_client,
+                        metric_queries=metric_queries,
+                        lookback_days=settings.BASELINE_BACKFILL_LOOKBACK_DAYS,
+                        step_seconds=settings.HOT_PATH_SCHEDULER_INTERVAL_SECONDS,
+                        timeout_seconds=settings.BASELINE_BACKFILL_TIMEOUT_SECONDS,
+                        logger=logger,
+                    ),
+                    name="baseline-weekly-recompute",
+                )
 
         if settings.DISTRIBUTED_CYCLE_LOCK_ENABLED:
             lock_outcome = cycle_lock.acquire(
