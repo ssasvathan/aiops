@@ -13,6 +13,7 @@ import pytest
 from aiops_triage_pipeline.config.settings import AppEnv, IntegrationMode
 from aiops_triage_pipeline.contracts.diagnosis_report import DiagnosisReportV1, EvidencePack
 from aiops_triage_pipeline.contracts.enums import CriticalityTier, DiagnosisConfidence, Environment
+from aiops_triage_pipeline.contracts.gate_input import Finding
 from aiops_triage_pipeline.contracts.triage_excerpt import TriageExcerptV1
 from aiops_triage_pipeline.denylist.loader import DenylistV1
 from aiops_triage_pipeline.diagnosis.graph import (
@@ -1093,4 +1094,87 @@ async def test_llm_narrative_sanitization_uses_active_denylist() -> None:
 
     assert dirty_fact not in report.evidence_pack.facts
     assert clean_fact in report.evidence_pack.facts
-    assert clean_fact in report.evidence_pack.facts
+
+
+# ---------------------------------------------------------------------------
+# BASELINE_DEVIATION fallback — AC 5 verification tests
+# ---------------------------------------------------------------------------
+
+
+def _make_baseline_deviation_excerpt(case_id: str = "bd-001") -> TriageExcerptV1:
+    """TriageExcerptV1 with anomaly_family=BASELINE_DEVIATION and one BD finding."""
+    return TriageExcerptV1(
+        case_id=case_id,
+        env=Environment.PROD,
+        cluster_id="cluster-a",
+        stream_id="stream-x",
+        topic="payments.events",
+        anomaly_family="BASELINE_DEVIATION",
+        topic_role="SOURCE_TOPIC",
+        criticality_tier=CriticalityTier.TIER_0,
+        routing_key="OWN::Streaming::Payments",
+        sustained=True,
+        evidence_status_map={},
+        findings=(
+            Finding(
+                finding_id="BD-001",
+                name="baseline_deviation_correlated",
+                is_anomalous=True,
+                severity="LOW",
+                is_primary=False,
+                evidence_required=(),
+                reason_codes=("BASELINE_DEV:consumer_lag.offset:HIGH",),
+            ),
+        ),
+        triage_timestamp=datetime(2026, 4, 5, 12, 0, 0, tzinfo=timezone.utc),
+    )
+
+
+async def test_run_cold_path_diagnosis_baseline_deviation_timeout_produces_fallback() -> None:
+    """BASELINE_DEVIATION excerpt + asyncio.TimeoutError → LLM_TIMEOUT fallback with triage_hash."""
+    registry = HealthRegistry()
+    mock_store = _make_mock_store()
+    mock_client = MagicMock(spec=LLMClient)
+    mock_client.invoke = AsyncMock(side_effect=asyncio.TimeoutError())
+
+    report = await run_cold_path_diagnosis(
+        case_id="bd-001",
+        triage_excerpt=_make_baseline_deviation_excerpt("bd-001"),
+        evidence_summary=_EVIDENCE_SUMMARY,
+        llm_client=mock_client,
+        denylist=_EMPTY_DENYLIST,
+        health_registry=registry,
+        object_store_client=mock_store,
+        triage_hash=_FAKE_TRIAGE_HASH,
+    )
+
+    assert report.reason_codes == ("LLM_TIMEOUT",)
+    assert report.triage_hash == _FAKE_TRIAGE_HASH
+    assert "PRIMARY_DIAGNOSIS_ABSENT" in report.gaps
+    assert registry.get("llm") == HealthStatus.DEGRADED
+    mock_store.put_if_absent.assert_called_once()
+
+
+async def test_run_cold_path_diagnosis_baseline_deviation_unavailable_produces_fallback() -> None:
+    """BASELINE_DEVIATION excerpt + httpx.ConnectError → LLM_UNAVAILABLE fallback with hash."""
+    registry = HealthRegistry()
+    mock_store = _make_mock_store()
+    mock_client = MagicMock(spec=LLMClient)
+    mock_client.invoke = AsyncMock(side_effect=httpx.ConnectError("simulated unavailability"))
+
+    report = await run_cold_path_diagnosis(
+        case_id="bd-002",
+        triage_excerpt=_make_baseline_deviation_excerpt("bd-002"),
+        evidence_summary=_EVIDENCE_SUMMARY,
+        llm_client=mock_client,
+        denylist=_EMPTY_DENYLIST,
+        health_registry=registry,
+        object_store_client=mock_store,
+        triage_hash=_FAKE_TRIAGE_HASH,
+    )
+
+    assert report.reason_codes == ("LLM_UNAVAILABLE",)
+    assert report.triage_hash == _FAKE_TRIAGE_HASH
+    assert "PRIMARY_DIAGNOSIS_ABSENT" in report.gaps
+    assert registry.get("llm") == HealthStatus.DEGRADED
+    mock_store.put_if_absent.assert_called_once()

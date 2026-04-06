@@ -76,3 +76,53 @@ def test_build_fallback_report_evidence_pack_empty() -> None:
     assert report.evidence_pack.facts == ()
     assert report.evidence_pack.missing_evidence == ()
     assert report.evidence_pack.matched_rules == ()
+
+
+# ---------------------------------------------------------------------------
+# BASELINE_DEVIATION — AC 4 verification tests
+# ---------------------------------------------------------------------------
+
+
+def test_build_fallback_report_baseline_deviation_timeout() -> None:
+    """BASELINE_DEVIATION case with LLM_TIMEOUT returns UNKNOWN/LOW with triage_hash=None."""
+    report = build_fallback_report(("LLM_TIMEOUT",), case_id="bd-case-001")
+
+    assert isinstance(report, DiagnosisReportV1)
+    assert report.verdict == "UNKNOWN"
+    assert report.confidence == DiagnosisConfidence.LOW
+    assert report.reason_codes == ("LLM_TIMEOUT",)
+    assert report.case_id == "bd-case-001"
+    assert report.triage_hash is None
+    assert report.fault_domain is None
+    # Round-trip schema validity
+    DiagnosisReportV1.model_validate(report.model_dump(mode="json"))
+
+
+def test_build_fallback_report_baseline_deviation_unavailable() -> None:
+    """BASELINE_DEVIATION case with LLM_UNAVAILABLE returns correct schema (no case_id)."""
+    report = build_fallback_report(("LLM_UNAVAILABLE",))
+
+    assert isinstance(report, DiagnosisReportV1)
+    assert report.verdict == "UNKNOWN"
+    assert report.confidence == DiagnosisConfidence.LOW
+    assert report.reason_codes == ("LLM_UNAVAILABLE",)
+    assert report.case_id is None
+    assert report.triage_hash is None
+    assert report.fault_domain is None
+    # Round-trip schema validity
+    DiagnosisReportV1.model_validate(report.model_dump(mode="json"))
+
+
+def test_build_fallback_report_baseline_deviation_error() -> None:
+    """BASELINE_DEVIATION case with LLM_ERROR returns correct schema."""
+    report = build_fallback_report(("LLM_ERROR",))
+
+    assert isinstance(report, DiagnosisReportV1)
+    assert report.verdict == "UNKNOWN"
+    assert report.confidence == DiagnosisConfidence.LOW
+    assert report.reason_codes == ("LLM_ERROR",)
+    assert report.case_id is None
+    assert report.triage_hash is None
+    assert report.fault_domain is None
+    # Round-trip schema validity
+    DiagnosisReportV1.model_validate(report.model_dump(mode="json"))
