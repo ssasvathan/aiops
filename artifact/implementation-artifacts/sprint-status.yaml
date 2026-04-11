@@ -35,7 +35,10 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-11
-last_updated: 2026-04-11  # story 2-2 traceability done
+last_updated: 2026-04-11  # story 2-3 traceability matrix complete, gate: PASS
+# atdd_2_3_completed: 2026-04-11 — story 2-3 ATDD red-phase tests generated (12 failing, 1 passing)
+# atdd_2_3_test_file: tests/integration/test_dashboard_validation.py (class TestBaselineDeviationOverlay)
+# atdd_2_3_test_count: 13 new tests (12 red-fail, 1 vacuous-pass for palette guard)
 # atdd_completed: 2026-04-11 — story 1-1 ATDD red-phase tests generated (32 failing, 1 passing)
 # atdd_test_file: tests/integration/test_infra_story_1_1_grafana_prometheus_red_phase.py
 # trace_completed: 2026-04-11 — story 1-1 traceability matrix generated, gate decision: PASS
@@ -50,6 +53,8 @@ last_updated: 2026-04-11  # story 2-2 traceability done
 # trace_2_1_file: artifact/test-artifacts/traceability/traceability-report-2-1.md
 # trace_2_2_completed: 2026-04-11 — story 2-2 traceability matrix generated, gate decision: PASS
 # trace_2_2_file: artifact/test-artifacts/traceability/traceability-report-2-2.md
+# trace_2_3_completed: 2026-04-11 — story 2-3 traceability matrix generated, gate decision: PASS
+# trace_2_3_file: artifact/test-artifacts/traceability/traceability-report-2-3.md
 project: aiOps
 project_key: NOKEY
 tracking_system: file-system
@@ -67,7 +72,7 @@ development_status:
   epic-2: in-progress
   2-1-hero-banner-p-l-stat-panels: done
   2-2-topic-health-heatmap: done
-  2-3-baseline-deviation-overlay-with-detection-annotations: backlog
+  2-3-baseline-deviation-overlay-with-detection-annotations: done
   epic-2-retrospective: optional
 
   # Epic 3: Noise Suppression & Operational Credibility (Below-the-Fold)

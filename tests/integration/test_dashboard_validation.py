@@ -479,8 +479,179 @@ class TestTopicHealthHeatmap:
     # ── Dashboard version ─────────────────────────────────────────────────────
 
     def test_dashboard_version_is_3(self):
-        """Dashboard version must be incremented to 3 after story 2-2 panel addition (NFR12)."""
+        """Dashboard version must be >= 3 after story 2-2 panel addition (NFR12)."""
         dashboard = self._load_main_dashboard()
-        assert dashboard.get("version") == 3, (
-            f"Dashboard version must be 3 after story 2-2, got {dashboard.get('version')}"
+        assert dashboard.get("version", 0) >= 3, (
+            f"Dashboard version must be >= 3 after story 2-2, got {dashboard.get('version')}"
+        )
+
+
+class TestBaselineDeviationOverlay:
+    """Config-validation tests for story 2-3: fold separator and baseline deviation overlay.
+
+    TDD RED PHASE: these tests fail until aiops-main.json panels id=4 and id=5 are populated.
+    No live docker-compose stack required — all assertions are pure JSON parsing.
+    """
+
+    def _load_main_dashboard(self):
+        path = REPO_ROOT / "grafana/dashboards/aiops-main.json"
+        return json.loads(path.read_text())
+
+    def _get_panel_by_id(self, dashboard, panel_id):
+        panels = dashboard.get("panels", [])
+        return next((p for p in panels if p.get("id") == panel_id), None)
+
+    # ── Fold separator (id=4) ─────────────────────────────────────────────────
+
+    def test_fold_separator_panel_exists(self):
+        """AC1: Fold separator panel (id=4) must exist at y=14 as the above/below-fold boundary."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 4)
+        assert panel is not None, "Fold separator panel (id=4) not found in aiops-main.json"
+        assert panel["gridPos"]["y"] == 14, "Fold separator must be at row y=14 (FR29)"
+        assert panel["gridPos"]["h"] == 1, "Fold separator must have height h=1 (thin spacer row)"
+        assert panel["gridPos"]["w"] == 24, "Fold separator must span full width w=24"
+        assert panel["gridPos"]["x"] == 0, "Fold separator must start at column x=0 (full-width)"
+
+    def test_fold_separator_panel_type(self):
+        """AC1 (FR29): Fold separator must be a text or row panel type (visual spacer only)."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 4)
+        assert panel is not None, "Fold separator panel (id=4) not found"
+        assert panel.get("type") in {"text", "row"}, (
+            f"Fold separator must be type 'text' or 'row', got '{panel.get('type')}'"
+        )
+
+    # ── Baseline overlay panel (id=5) existence and type ─────────────────────
+
+    def test_baseline_overlay_panel_exists(self):
+        """AC2: Baseline deviation overlay panel (id=5) must exist as a timeseries panel."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 5)
+        assert panel is not None, "Baseline deviation overlay panel (id=5) not found"
+        assert panel["type"] == "timeseries", (
+            f"Expected type 'timeseries', got '{panel.get('type')}'"
+        )
+
+    def test_baseline_overlay_grid_position(self):
+        """AC2: Overlay must occupy rows 15-22 (y=15, h=8, w=24, x=0) per UX-DR3 layout."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 5)
+        assert panel is not None, "Baseline deviation overlay panel (id=5) not found"
+        assert panel["gridPos"]["y"] == 15, "Overlay must start at row y=15"
+        assert panel["gridPos"]["h"] == 8, "Overlay must have height h=8"
+        assert panel["gridPos"]["w"] == 24, "Overlay must span full width w=24"
+        assert panel["gridPos"]["x"] == 0, "Overlay must start at column x=0 (full-width)"
+
+    def test_baseline_overlay_is_transparent(self):
+        """AC4 (UX-DR4): Overlay panel must use transparent background (no borders/cards)."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 5)
+        assert panel is not None, "Baseline deviation overlay panel (id=5) not found"
+        assert panel.get("transparent") is True, (
+            "Baseline overlay must have transparent=true per UX-DR4 (no borders/card backgrounds)"
+        )
+
+    # ── Multi-query / targets ─────────────────────────────────────────────────
+
+    def test_baseline_overlay_has_multi_query(self):
+        """AC2: Panel must have at least 2 targets (actual line + bound lines for band-fill)."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 5)
+        assert panel is not None, "Baseline deviation overlay panel (id=5) not found"
+        targets = panel.get("targets", [])
+        assert len(targets) >= 2, (
+            f"Baseline overlay must have >= 2 query targets, got {len(targets)}"
+        )
+
+    def test_baseline_overlay_primary_query_uses_rate(self):
+        """AC4: Primary PromQL query must use rate() with $__rate_interval (time-series panel)."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 5)
+        assert panel is not None, "Baseline deviation overlay panel (id=5) not found"
+        target_a = next((t for t in panel.get("targets", []) if t.get("refId") == "A"), None)
+        assert target_a is not None, "Target refId='A' (primary series) not found"
+        expr = target_a.get("expr", "")
+        assert "rate(" in expr, "Primary query must use rate() for time-series panel (AC4)"
+        assert "$__rate_interval" in expr, (
+            "Primary query must use $__rate_interval range vector (not $__range)"
+        )
+
+    # ── Description ──────────────────────────────────────────────────────────
+
+    def test_baseline_overlay_has_description(self):
+        """AC4 (UX-DR12): Overlay must have a non-empty description field."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 5)
+        assert panel is not None, "Baseline deviation overlay panel (id=5) not found"
+        assert panel.get("description", "").strip() != "", (
+            "Baseline overlay must have a non-empty description (UX-DR12)"
+        )
+
+    # ── Color palette ─────────────────────────────────────────────────────────
+
+    def test_baseline_overlay_uses_accent_blue(self):
+        """AC2 (UX-DR8): accent-blue #4F87DB must be used for the actual-value line/band."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 5)
+        assert panel is not None, "Baseline deviation overlay panel (id=5) not found"
+        panel_json = json.dumps(panel).upper()
+        assert "#4F87DB" in panel_json, (
+            "accent-blue #4F87DB must appear in overlay panel JSON (UX-DR8)"
+        )
+
+    def test_detection_annotations_use_semantic_amber(self):
+        """AC3 (UX-DR8): Detection event markers must use semantic-amber #E8913A."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 5)
+        panel_json = json.dumps(panel).upper() if panel else ""
+        annotations_json = json.dumps(dashboard.get("annotations", {})).upper()
+        assert "#E8913A" in panel_json or "#E8913A" in annotations_json, (
+            "semantic-amber #E8913A must appear in panel id=5 or dashboard annotations (UX-DR8)"
+        )
+
+    def test_no_grafana_default_palette_colors_in_overlay(self):
+        """AC4 (UX-DR1): No forbidden Grafana default palette colors in panel id=5."""
+        forbidden = {
+            "#73BF69", "#F2495C", "#FF9830", "#FADE2A",
+            "#5794F2", "#B877D9", "#37872D", "#C4162A", "#1F60C4", "#8F3BB8",
+        }
+        dashboard = self._load_main_dashboard()
+        panel_json = json.dumps(
+            [p for p in dashboard.get("panels", []) if p.get("id") == 5]
+        ).upper()
+        for color in forbidden:
+            assert color not in panel_json, (
+                f"Forbidden Grafana default color {color} found in overlay panel (UX-DR1)"
+            )
+
+    # ── noValue (NFR5 / UX-DR5) ──────────────────────────────────────────────
+
+    def test_baseline_overlay_has_no_value_message(self):
+        """AC5 (NFR5 / UX-DR5): Overlay must set noValue to prevent blank error states."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 5)
+        assert panel is not None, "Baseline deviation overlay panel (id=5) not found"
+        no_value = panel.get("fieldConfig", {}).get("defaults", {}).get("noValue", "")
+        assert no_value.strip() != "", (
+            "Baseline overlay must have a non-empty fieldConfig.defaults.noValue (NFR5)"
+        )
+
+    # ── Annotation query ─────────────────────────────────────────────────────
+
+    def test_dashboard_annotations_list_is_non_empty(self):
+        """AC3 (FR9): Dashboard annotations list must be non-empty for detection event markers."""
+        dashboard = self._load_main_dashboard()
+        annotations_list = dashboard.get("annotations", {}).get("list", [])
+        assert len(annotations_list) >= 1, (
+            "Dashboard annotations list must contain at least one entry for detection markers (FR9)"
+        )
+
+    # ── Dashboard version ─────────────────────────────────────────────────────
+
+    def test_dashboard_version_is_4(self):
+        """Dashboard version must be >= 4 after story 2-3 panel additions (NFR12)."""
+        dashboard = self._load_main_dashboard()
+        assert dashboard.get("version", 0) >= 4, (
+            f"Dashboard version must be >= 4 after story 2-3, got {dashboard.get('version')}"
         )

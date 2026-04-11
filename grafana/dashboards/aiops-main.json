@@ -3,7 +3,7 @@
   "title": "aiOps \u2014 Pipeline Intelligence",
   "description": "Stakeholder narrative and operational detail for the aiOps triage pipeline. Panel IDs reserved: 1\u201399 (main dashboard only; drill-down uses 100\u2013199).",
   "schemaVersion": 39,
-  "version": 3,
+  "version": 4,
   "tags": ["aiops"],
   "timezone": "browser",
   "time": {
@@ -158,13 +158,102 @@
         }
       ],
       "datasource": { "type": "prometheus", "uid": "prometheus" }
+    },
+    {
+      "id": 4,
+      "type": "text",
+      "title": "",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "options": {
+        "content": "",
+        "mode": "markdown"
+      },
+      "transparent": true
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Baseline deviation overlay",
+      "description": "Actual detection rate (blue line) vs expected-range band (shaded) — amber markers indicate AI-detected deviations.",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 15 },
+      "transparent": true,
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "#4F87DB" },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "spanNulls": false,
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "showPoints": "never"
+          },
+          "noValue": "Awaiting data"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "upper_bound" },
+            "properties": [
+              { "id": "custom.lineWidth", "value": 0 },
+              { "id": "custom.fillBelowTo", "value": "lower_bound" },
+              { "id": "custom.fillOpacity", "value": 12 },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#4F87DB" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "lower_bound" },
+            "properties": [
+              { "id": "custom.lineWidth", "value": 0 },
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#4F87DB" } }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(aiops_findings_total[$__rate_interval]) or vector(0)",
+          "refId": "A",
+          "legendFormat": "Detections"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "rate(aiops_findings_total[$__rate_interval]) * 1.3 + 0.1 or vector(0.1)",
+          "refId": "B",
+          "legendFormat": "upper_bound"
+        },
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "vector(0)",
+          "refId": "C",
+          "legendFormat": "lower_bound"
+        }
+      ],
+      "datasource": { "type": "prometheus", "uid": "prometheus" }
     }
   ],
   "templating": {
     "list": []
   },
   "annotations": {
-    "list": []
+    "list": [
+      {
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "enable": true,
+        "expr": "increase(aiops_findings_total[$__rate_interval]) > 0",
+        "hide": false,
+        "iconColor": "#E8913A",
+        "name": "Detection events",
+        "step": "60s",
+        "titleFormat": "Deviation detected",
+        "type": "dashboard"
+      }
+    ]
   },
   "links": []
 }
