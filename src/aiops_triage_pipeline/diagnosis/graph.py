@@ -30,6 +30,7 @@ from aiops_triage_pipeline.health.alerts import (
 )
 from aiops_triage_pipeline.health.metrics import (
     llm_inflight_add,
+    record_diagnosis_completed,
     record_llm_error,
     record_llm_fallback,
     record_llm_invocation,
@@ -419,6 +420,16 @@ async def run_cold_path_diagnosis(
         await health_registry.update("llm", HealthStatus.HEALTHY)
         _record_llm_completion(result="success")
         _logger.info("cold_path_diagnosis_completed", case_id=case_id)
+        # Emit aiops.diagnosis.completed_total on the success path only.
+        # Do NOT emit on fallback/failure paths.
+        try:
+            record_diagnosis_completed(
+                confidence=report.confidence.value,
+                fault_domain_present="true" if report.fault_domain is not None else "false",
+                topic=triage_excerpt.topic,
+            )
+        except Exception:
+            _logger.warning("diagnosis_metric_emit_error", case_id=case_id, exc_info=True)
         return report
     except Exception as exc:
         _record_llm_completion(result="error", error_type=type(exc).__name__)

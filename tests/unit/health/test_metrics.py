@@ -618,3 +618,295 @@ def test_record_gating_evaluation_function_is_callable() -> None:
     assert callable(getattr(metrics, "record_gating_evaluation", None)), (
         "record_gating_evaluation() not found in health/metrics.py"
     )
+
+
+# ---------------------------------------------------------------------------
+# Story 1.3: Evidence & Diagnosis OTLP Instruments — ATDD Red Phase
+# AC1: aiops.evidence.status up-down-counter — name, labels, uppercase values, delta lifecycle
+# AC2: full label granularity preserved (~hundreds of series)
+# AC3: aiops.diagnosis.completed_total counter — name, labels, confidence, fault_domain_present
+# AC4: instruments defined in health/metrics.py; tests assert metric name + label set
+# ---------------------------------------------------------------------------
+
+
+# AC1 / AC4 — P0: evidence gauge emits expected metric name and all four labels
+def test_record_evidence_status_emits_expected_metric_name_and_labels(monkeypatch) -> None:
+    """aiops.evidence.status gauge: +1 with labels scope, metric_key, status, topic (AC1, AC4)."""
+    from aiops_triage_pipeline.health import metrics
+
+    gauge = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_evidence_status", gauge)
+    monkeypatch.setattr(metrics, "_current_evidence_status", {})
+
+    metrics.record_evidence_status(
+        scope="('dev', 'cluster-a', 'group-1', 'payments.consumer-lag')",
+        metric_key="consumer_group_lag",
+        status="PRESENT",
+        topic="payments.consumer-lag",
+    )
+
+    assert len(gauge.calls) == 1
+    value, attributes = gauge.calls[0]
+    assert value == 1
+    assert attributes == {
+        "scope": "('dev', 'cluster-a', 'group-1', 'payments.consumer-lag')",
+        "metric_key": "consumer_group_lag",
+        "status": "PRESENT",
+        "topic": "payments.consumer-lag",
+    }
+
+
+# AC1 — P0: status values are uppercase
+def test_record_evidence_status_emits_uppercase_status_values(monkeypatch) -> None:
+    """Status values must be uppercase: PRESENT, UNKNOWN, ABSENT, STALE — no lowercase (AC1)."""
+    from aiops_triage_pipeline.health import metrics
+
+    gauge = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_evidence_status", gauge)
+    monkeypatch.setattr(metrics, "_current_evidence_status", {})
+
+    metrics.record_evidence_status(
+        scope="s",
+        metric_key="consumer_group_lag",
+        status="PRESENT",
+        topic="payments.consumer-lag",
+    )
+
+    _, attributes = gauge.calls[0]
+    assert attributes["status"] == "PRESENT"
+    assert attributes["status"] != "present"
+
+
+# AC1 — P0: all four EvidenceStatus enum values are accepted
+def test_record_evidence_status_accepts_all_four_status_values(monkeypatch) -> None:
+    """record_evidence_status accepts PRESENT, UNKNOWN, ABSENT, STALE (all EvidenceStatus, AC1)."""
+    from aiops_triage_pipeline.health import metrics
+
+    gauge = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_evidence_status", gauge)
+
+    for status in ("PRESENT", "UNKNOWN", "ABSENT", "STALE"):
+        monkeypatch.setattr(metrics, "_current_evidence_status", {})
+        metrics.record_evidence_status(
+            scope="s",
+            metric_key="m",
+            status=status,
+            topic="t",
+        )
+
+    positive_calls = [(v, a) for v, a in gauge.calls if v > 0]
+    emitted_statuses = [attrs["status"] for _, attrs in positive_calls]
+    assert set(emitted_statuses) == {"PRESENT", "UNKNOWN", "ABSENT", "STALE"}
+
+
+# AC1 — P0: delta accounting emits -1 for old status and +1 for new status on transition
+def test_record_evidence_status_emits_delta_on_status_transition(monkeypatch) -> None:
+    """Status transition: emit -1 for old, +1 for new status (delta accounting, AC1)."""
+    from aiops_triage_pipeline.health import metrics
+
+    gauge = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_evidence_status", gauge)
+    monkeypatch.setattr(metrics, "_current_evidence_status", {})
+
+    metrics.record_evidence_status(scope="s", metric_key="lag", status="PRESENT", topic="t1")
+    metrics.record_evidence_status(scope="s", metric_key="lag", status="UNKNOWN", topic="t1")
+
+    attrs_present = {"scope": "s", "metric_key": "lag", "status": "PRESENT", "topic": "t1"}
+    attrs_unknown = {"scope": "s", "metric_key": "lag", "status": "UNKNOWN", "topic": "t1"}
+    # First call: +1 PRESENT (no prior status to decrement)
+    assert gauge.calls[0] == (1, attrs_present)
+    # Second call: -1 PRESENT (cleanup old), +1 UNKNOWN (new)
+    assert gauge.calls[1] == (-1, attrs_present)
+    assert gauge.calls[2] == (1, attrs_unknown)
+    assert len(gauge.calls) == 3
+
+
+# AC1 — P1: no emission when status is unchanged (idempotent repeated calls)
+def test_record_evidence_status_no_emission_when_status_unchanged(monkeypatch) -> None:
+    """No emission when status is identical to current state — prevents ghost series (AC1)."""
+    from aiops_triage_pipeline.health import metrics
+
+    gauge = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_evidence_status", gauge)
+    monkeypatch.setattr(metrics, "_current_evidence_status", {})
+
+    metrics.record_evidence_status(scope="s", metric_key="m", status="PRESENT", topic="t")
+    metrics.record_evidence_status(scope="s", metric_key="m", status="PRESENT", topic="t")
+
+    # Only one emission (the first call) — repeated same status = no-op
+    assert len(gauge.calls) == 1
+    attrs = {"scope": "s", "metric_key": "m", "status": "PRESENT", "topic": "t"}
+    assert gauge.calls[0] == (1, attrs)
+
+
+# AC2 — P1: full label granularity preserved — all four labels present for every emission
+def test_record_evidence_status_preserves_full_label_granularity(monkeypatch) -> None:
+    """All four labels (scope, metric_key, status, topic) preserved at full granularity (AC2)."""
+    from aiops_triage_pipeline.health import metrics
+
+    gauge = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_evidence_status", gauge)
+    monkeypatch.setattr(metrics, "_current_evidence_status", {})
+
+    pfx = "('dev', 'cluster-a', 'group-1', 'payments.consumer-lag')"
+    scopes = [
+        (pfx, "consumer_group_lag", "PRESENT", "payments.consumer-lag"),
+        (pfx, "consumer_group_offset", "ABSENT", "payments.consumer-lag"),
+        ("('dev', 'cluster-a', 'inventory.lag')", "topic_messages_in_per_sec",
+         "UNKNOWN", "inventory.lag"),
+    ]
+    for scope, metric_key, status, topic in scopes:
+        metrics.record_evidence_status(
+            scope=scope, metric_key=metric_key, status=status, topic=topic
+        )
+
+    for call in gauge.calls:
+        _, attributes = call
+        assert set(attributes.keys()) == {"scope", "metric_key", "status", "topic"}, (
+            f"Expected exactly 4 labels, got: {set(attributes.keys())}"
+        )
+        assert "routing_key" not in attributes, "routing_key must NOT be in evidence.status labels"
+
+
+# AC3 / AC4 — P0: diagnosis counter emits expected metric name and all three labels
+def test_record_diagnosis_completed_emits_expected_metric_name_and_labels(monkeypatch) -> None:
+    """aiops.diagnosis.completed_total: +1 with confidence, fault_domain_present, topic (AC3)."""
+    from aiops_triage_pipeline.health import metrics
+
+    counter = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_diagnosis_completed_total", counter)
+
+    metrics.record_diagnosis_completed(
+        confidence="HIGH",
+        fault_domain_present="true",
+        topic="payments.consumer-lag",
+    )
+
+    assert counter.calls == [
+        (1, {"confidence": "HIGH", "fault_domain_present": "true",
+             "topic": "payments.consumer-lag"})
+    ]
+
+
+# AC3 — P0: all three DiagnosisConfidence values accepted
+def test_record_diagnosis_completed_accepts_all_confidence_values(monkeypatch) -> None:
+    """record_diagnosis_completed accepts DiagnosisConfidence values: LOW, MEDIUM, HIGH (AC3)."""
+    from aiops_triage_pipeline.health import metrics
+
+    counter = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_diagnosis_completed_total", counter)
+
+    for confidence in ("LOW", "MEDIUM", "HIGH"):
+        metrics.record_diagnosis_completed(
+            confidence=confidence,
+            fault_domain_present="false",
+            topic="test-topic",
+        )
+
+    emitted_confidences = [attrs["confidence"] for _, attrs in counter.calls]
+    assert emitted_confidences == ["LOW", "MEDIUM", "HIGH"]
+
+
+# AC3 — P0: fault_domain_present is "true" or "false" string (not boolean)
+def test_record_diagnosis_completed_fault_domain_present_is_string(monkeypatch) -> None:
+    """fault_domain_present must be string "true" or "false" — not Python bool (AC3)."""
+    from aiops_triage_pipeline.health import metrics
+
+    counter = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_diagnosis_completed_total", counter)
+
+    metrics.record_diagnosis_completed(
+        confidence="HIGH",
+        fault_domain_present="true",
+        topic="payments.consumer-lag",
+    )
+    metrics.record_diagnosis_completed(
+        confidence="LOW",
+        fault_domain_present="false",
+        topic="payments.consumer-lag",
+    )
+
+    assert counter.calls[0][1]["fault_domain_present"] == "true"
+    assert counter.calls[1][1]["fault_domain_present"] == "false"
+    # Must be string type, not bool
+    assert isinstance(counter.calls[0][1]["fault_domain_present"], str)
+    assert isinstance(counter.calls[1][1]["fault_domain_present"], str)
+
+
+# AC3 — P1: diagnosis counter increments by exactly 1 per call
+def test_record_diagnosis_completed_increments_by_one(monkeypatch) -> None:
+    """Each call to record_diagnosis_completed emits +1 (monotonically increasing counter, AC3)."""
+    from aiops_triage_pipeline.health import metrics
+
+    counter = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_diagnosis_completed_total", counter)
+
+    metrics.record_diagnosis_completed(
+        confidence="HIGH", fault_domain_present="true", topic="t1"
+    )
+    metrics.record_diagnosis_completed(
+        confidence="MEDIUM", fault_domain_present="false", topic="t2"
+    )
+
+    assert len(counter.calls) == 2
+    assert counter.calls[0][0] == 1
+    assert counter.calls[1][0] == 1
+
+
+# AC4 — P0: _evidence_status instrument exists and is an up-down-counter (has .add())
+def test_evidence_status_instrument_is_defined_in_metrics_module() -> None:
+    """_evidence_status must be a module-level up-down-counter via create_up_down_counter (AC4)."""
+    from aiops_triage_pipeline.health import metrics
+
+    assert hasattr(metrics, "_evidence_status"), (
+        "_evidence_status up-down-counter not found in health/metrics.py"
+    )
+    assert callable(getattr(metrics._evidence_status, "add", None)), (
+        "_evidence_status must be an UpDownCounter with .add() method"
+    )
+
+
+# AC4 — P0: _diagnosis_completed_total instrument exists and is a counter (has .add())
+def test_diagnosis_completed_total_instrument_is_defined_in_metrics_module() -> None:
+    """_diagnosis_completed_total must be a module-level counter via create_counter (AC4)."""
+    from aiops_triage_pipeline.health import metrics
+
+    assert hasattr(metrics, "_diagnosis_completed_total"), (
+        "_diagnosis_completed_total counter not found in health/metrics.py"
+    )
+    assert callable(getattr(metrics._diagnosis_completed_total, "add", None)), (
+        "_diagnosis_completed_total must be a Counter with .add() method"
+    )
+
+
+# AC4 — P0: public function record_evidence_status is callable
+def test_record_evidence_status_function_is_callable() -> None:
+    """record_evidence_status public function must exist and be callable (AC4)."""
+    from aiops_triage_pipeline.health import metrics
+
+    assert callable(getattr(metrics, "record_evidence_status", None)), (
+        "record_evidence_status() not found in health/metrics.py"
+    )
+
+
+# AC4 — P0: public function record_diagnosis_completed is callable
+def test_record_diagnosis_completed_function_is_callable() -> None:
+    """record_diagnosis_completed public function must exist and be callable (AC4)."""
+    from aiops_triage_pipeline.health import metrics
+
+    assert callable(getattr(metrics, "record_diagnosis_completed", None)), (
+        "record_diagnosis_completed() not found in health/metrics.py"
+    )
+
+
+# AC4 — P1: _current_evidence_status state dict exists for delta accounting
+def test_current_evidence_status_state_dict_exists_in_metrics_module() -> None:
+    """_current_evidence_status module-level dict must exist for delta accounting (AC4, AC1)."""
+    from aiops_triage_pipeline.health import metrics
+
+    assert hasattr(metrics, "_current_evidence_status"), (
+        "_current_evidence_status state dict not found in health/metrics.py"
+    )
+    assert isinstance(metrics._current_evidence_status, dict), (
+        "_current_evidence_status must be a dict"
+    )

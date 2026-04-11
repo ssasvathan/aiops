@@ -13,6 +13,7 @@ from aiops_triage_pipeline.contracts.anomaly_detection_policy import AnomalyDete
 from aiops_triage_pipeline.contracts.enums import Action, EvidenceStatus
 from aiops_triage_pipeline.contracts.redis_ttl_policy import RedisTtlPolicyV1
 from aiops_triage_pipeline.health.metrics import (
+    record_evidence_status,
     record_evidence_unknown_rate,
     record_prometheus_scrape_result,
 )
@@ -180,6 +181,28 @@ def collect_evidence_stage_output(
         metric_keys=tuple(samples_by_metric.keys()),
         rows=rows,
     )
+    # Emit aiops.evidence.status gauge for each (scope, metric_key) combination.
+    # topic is always scope_tuple[-1] per build_evidence_scope_key() contract.
+    # Exception isolation is per-scope so a single bad entry does not abort the remaining emissions.
+    _evidence_logger = get_logger("pipeline.stages.evidence")
+    for scope_tuple, status_by_metric in evidence_status_map_by_scope.items():
+        try:
+            topic = scope_tuple[-1]
+            scope_str = str(scope_tuple)
+            for metric_key, evidence_status_value in status_by_metric.items():
+                record_evidence_status(
+                    scope=scope_str,
+                    metric_key=metric_key,
+                    status=evidence_status_value.value,
+                    topic=topic,
+                )
+        except Exception:
+            _evidence_logger.warning(
+                "evidence_status_metric_emit_failed",
+                event_type="pipeline.stages.evidence.metric_emit_error",
+                scope=str(scope_tuple),
+                exc_info=True,
+            )
     total_scope_count = len(evidence_status_map_by_scope)
     for metric_key in samples_by_metric:
         unknown_count = sum(

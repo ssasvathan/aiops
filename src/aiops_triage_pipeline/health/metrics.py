@@ -213,9 +213,28 @@ _gating_evaluations_total = _meter.create_counter(
     description="Total gating evaluations by gate ID, outcome, and topic",
     unit="1",
 )
+# aiops.evidence.status — PromQL: aiops_evidence_status
+# Up-down-counter (gauge pattern) tracking current evidence status per scope/metric/topic.
+# Uses reset-and-set lifecycle: when status transitions, the old status is decremented (-1)
+# and the new status is incremented (+1). State tracked in _current_evidence_status.
+_evidence_status = _meter.create_up_down_counter(
+    name="aiops.evidence.status",
+    description="Current evidence status per scope/metric/topic: +1=current status, 0=not current",
+    unit="1",
+)
+# aiops.diagnosis.completed_total — PromQL: aiops_diagnosis_completed_total
+_diagnosis_completed_total = _meter.create_counter(
+    name="aiops.diagnosis.completed_total",
+    description="Total LLM diagnosis completions by confidence and fault domain presence",
+    unit="1",
+)
 
 _prev_status_values: dict[str, int] = {}
 _prev_connection_values: dict[str, int] = {"redis": 1}
+# State tracking for aiops.evidence.status delta accounting (reset-and-set lifecycle).
+# Key: (scope_str, metric_key, topic), Value: current status string.
+# Protected by _state_lock.
+_current_evidence_status: dict[tuple[str, str, str], str] = {}
 _redis_dedupe_key_count_value = 0
 _prometheus_degraded_active_value = 0
 _pipeline_peak_history_scope_count_value = 0
@@ -621,6 +640,74 @@ def record_gating_evaluation(
         attributes={
             "gate_id": gate_id,
             "outcome": outcome,
+            "topic": topic,
+        },
+    )
+
+
+def record_evidence_status(
+    *,
+    scope: str,
+    metric_key: str,
+    status: str,
+    topic: str,
+) -> None:
+    """Emit aiops.evidence.status gauge (PromQL: aiops_evidence_status) with delta accounting.
+
+    Uses reset-and-set lifecycle: on each status transition, the old status is decremented
+    (-1) and the new status is incremented (+1). When status is unchanged, no emission occurs.
+
+    Status values MUST be uppercase: "PRESENT", "UNKNOWN", "ABSENT", "STALE" (from
+    EvidenceStatus enum). No lowercase translation at the emission boundary.
+
+    Args:
+        scope:      String representation of the scope tuple (e.g. "('dev', 'cluster-a', 'topic')").
+        metric_key: Metric key string (e.g. "consumer_group_lag").
+        status:     Uppercase EvidenceStatus value: "PRESENT", "UNKNOWN", "ABSENT", "STALE".
+        topic:      Kafka topic name extracted from scope_tuple[-1].
+    """
+    composite_key = (scope, metric_key, topic)
+    with _state_lock:
+        old_status = _current_evidence_status.get(composite_key)
+        _current_evidence_status[composite_key] = status
+    if old_status is not None and old_status != status:
+        # Decrement old status to zero out previous reading
+        _evidence_status.add(
+            -1,
+            attributes={
+                "scope": scope, "metric_key": metric_key,
+                "status": old_status, "topic": topic,
+            },
+        )
+    if old_status != status:
+        # Increment new status to mark it as current
+        _evidence_status.add(
+            1,
+            attributes={"scope": scope, "metric_key": metric_key, "status": status, "topic": topic},
+        )
+
+
+def record_diagnosis_completed(
+    *,
+    confidence: str,
+    fault_domain_present: str,
+    topic: str,
+) -> None:
+    """Increment aiops.diagnosis.completed_total (PromQL: aiops_diagnosis_completed_total) by 1.
+
+    Emitted only on the success path of run_cold_path_diagnosis() after a valid
+    DiagnosisReportV1 has been produced and persisted. Do NOT emit on fallback paths.
+
+    Args:
+        confidence:           Uppercase DiagnosisConfidence value: "LOW", "MEDIUM", "HIGH".
+        fault_domain_present: String boolean: "true" if fault domain present, else "false".
+        topic:                Kafka topic name from triage_excerpt.topic.
+    """
+    _diagnosis_completed_total.add(
+        1,
+        attributes={
+            "confidence": confidence,
+            "fault_domain_present": fault_domain_present,
             "topic": topic,
         },
     )
