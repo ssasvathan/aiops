@@ -3,7 +3,7 @@
   "title": "aiOps \u2014 Pipeline Intelligence",
   "description": "Stakeholder narrative and operational detail for the aiOps triage pipeline. Panel IDs reserved: 1\u201399 (main dashboard only; drill-down uses 100\u2013199).",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "tags": ["aiops"],
   "timezone": "browser",
   "time": {
@@ -93,6 +93,68 @@
           "expr": "increase(aiops_findings_total[$__range]) or vector(0)",
           "refId": "A",
           "legendFormat": ""
+        }
+      ],
+      "datasource": { "type": "prometheus", "uid": "prometheus" }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Topic health",
+      "description": "Per-topic health overview — click any tile to drill down into evidence status, findings, and diagnosis for that topic.",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 8 },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "textMode": "value_and_name",
+        "text": { "titleSize": 14, "valueSize": 16 },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": true,
+          "limit": 10
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#6BAD64", "value": null },
+              { "color": "#E8913A", "value": 1 },
+              { "color": "#D94452", "value": 2 }
+            ]
+          },
+          "noValue": "Awaiting first pipeline cycle",
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": { "text": "HEALTHY" },
+                "1": { "text": "WARNING" },
+                "2": { "text": "CRITICAL" }
+              }
+            }
+          ],
+          "links": [
+            {
+              "title": "View topic details",
+              "url": "/d/aiops-drilldown?var-topic=${__field.labels.topic}&${__url_time_range}",
+              "targetBlank": false
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by(topic) (increase(aiops_findings_total[$__range])) or vector(0)",
+          "refId": "A",
+          "legendFormat": "{{topic}}"
         }
       ],
       "datasource": { "type": "prometheus", "uid": "prometheus" }

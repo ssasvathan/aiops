@@ -275,9 +275,212 @@ class TestHeroBannerPanels:
             "Mapping for value 2 must display 'UNAVAILABLE' (UX-DR14)"
         )
 
-    def test_dashboard_version_is_2(self):
-        """Dashboard version must be incremented to 2 after story 2-1 panel additions (NFR12)."""
+    def test_dashboard_version_is_at_least_2(self):
+        """Dashboard version must be >= 2 after story 2-1 panel additions (NFR12)."""
         dashboard = self._load_main_dashboard()
-        assert dashboard.get("version") == 2, (
-            f"Dashboard version must be 2 after story 2-1, got {dashboard.get('version')}"
+        assert dashboard.get("version", 0) >= 2, (
+            f"Dashboard version must be >= 2 after story 2-1, got {dashboard.get('version')}"
+        )
+
+
+class TestTopicHealthHeatmap:
+    """Config-validation tests for story 2-2: topic health heatmap panel.
+
+    No live docker-compose stack required — all assertions are pure JSON parsing.
+    """
+
+    def _load_main_dashboard(self):
+        path = REPO_ROOT / "grafana/dashboards/aiops-main.json"
+        return json.loads(path.read_text())
+
+    def _get_panel_by_id(self, dashboard, panel_id):
+        panels = dashboard.get("panels", [])
+        return next((p for p in panels if p.get("id") == panel_id), None)
+
+    # ── Panel existence and type ──────────────────────────────────────────────
+
+    def test_heatmap_panel_exists(self):
+        """AC1: Topic health heatmap panel (id=3) must exist and be a stat panel."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 3)
+        assert panel is not None, "Topic health heatmap panel (id=3) not found in aiops-main.json"
+        assert panel["type"] == "stat", f"Expected type 'stat', got '{panel['type']}'"
+
+    # ── Grid position ─────────────────────────────────────────────────────────
+
+    def test_heatmap_grid_position(self):
+        """AC1: Heatmap must occupy rows 8-13 (y=8, h=6, w=24) per UX-DR3 layout."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 3)
+        assert panel is not None, "Topic health heatmap panel (id=3) not found"
+        assert panel["gridPos"]["y"] == 8, "Heatmap must start at row y=8"
+        assert panel["gridPos"]["w"] == 24, "Heatmap must span full width w=24"
+        assert panel["gridPos"]["h"] == 6, "Heatmap must have height h=6"
+
+    # ── Display options ───────────────────────────────────────────────────────
+
+    def test_heatmap_background_color_mode(self):
+        """AC1: Tiles must use background colorMode for per-tile semantic color fills."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 3)
+        assert panel is not None, "Topic health heatmap panel (id=3) not found"
+        assert panel["options"]["colorMode"] == "background", (
+            "Heatmap must have colorMode='background' for per-tile color fills"
+        )
+
+    def test_heatmap_no_sparkline(self):
+        """AC1: No sparkline on heatmap tiles — clean tile display only (no time-series line)."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 3)
+        assert panel is not None, "Topic health heatmap panel (id=3) not found"
+        assert panel["options"]["graphMode"] == "none", (
+            "Heatmap must have graphMode='none' (sparkline disabled for clean tile view)"
+        )
+
+    def test_heatmap_values_mode_for_per_topic_tiles(self):
+        """AC1: values=true + limit=10 required to render one tile per topic label value."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 3)
+        assert panel is not None, "Topic health heatmap panel (id=3) not found"
+        reduce_opts = panel["options"]["reduceOptions"]
+        assert reduce_opts.get("values") is True, (
+            "reduceOptions.values must be true for per-topic tile rendering"
+        )
+        assert reduce_opts.get("limit") == 10, (
+            "reduceOptions.limit must be 10 to accommodate up to 10 topics"
+        )
+
+    def test_heatmap_tile_font_size_meets_readability_minimum(self):
+        """AC4 (UX-DR2): Tile label font size must be 14px+ for projector readability."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 3)
+        assert panel is not None, "Topic health heatmap panel (id=3) not found"
+        text_opts = panel.get("options", {}).get("text", {})
+        title_size = text_opts.get("titleSize", 0)
+        value_size = text_opts.get("valueSize", 0)
+        assert title_size >= 14, (
+            f"Tile title font size must be >= 14px (UX-DR2), got {title_size}"
+        )
+        assert value_size >= 14, (
+            f"Tile value font size must be >= 14px (UX-DR2), got {value_size}"
+        )
+
+    # ── Color configuration ───────────────────────────────────────────────────
+
+    def test_heatmap_thresholds_use_approved_palette(self):
+        """AC1 (UX-DR9): Tile thresholds must use semantic palette tokens only."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 3)
+        assert panel is not None, "Topic health heatmap panel (id=3) not found"
+        steps = panel["fieldConfig"]["defaults"]["thresholds"]["steps"]
+        colors = [s["color"] for s in steps]
+        assert "#6BAD64" in colors, "semantic-green #6BAD64 must be in thresholds (HEALTHY)"
+        assert "#E8913A" in colors, "semantic-amber #E8913A must be in thresholds (WARNING)"
+        assert "#D94452" in colors, "semantic-red #D94452 must be in thresholds (CRITICAL)"
+
+    def test_heatmap_color_field_config_mode_is_thresholds(self):
+        """AC1: fieldConfig.defaults.color.mode must be 'thresholds' to drive tile background."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 3)
+        assert panel is not None, "Topic health heatmap panel (id=3) not found"
+        color_mode = panel["fieldConfig"]["defaults"]["color"]["mode"]
+        assert color_mode == "thresholds", (
+            f"fieldConfig.defaults.color.mode must be 'thresholds', got '{color_mode}'"
+        )
+
+    def test_no_grafana_default_palette_colors_in_heatmap(self):
+        """AC4 (UX-DR1): No forbidden Grafana default palette colors in panel id=3."""
+        forbidden = {
+            "#73BF69", "#F2495C", "#FF9830", "#FADE2A",
+            "#5794F2", "#B877D9", "#37872D", "#C4162A", "#1F60C4", "#8F3BB8",
+        }
+        dashboard = self._load_main_dashboard()
+        # Normalize to uppercase so case-variant hex values are caught.
+        panel_json = json.dumps(
+            [p for p in dashboard.get("panels", []) if p.get("id") == 3]
+        ).upper()
+        for color in forbidden:
+            assert color not in panel_json, (
+                f"Forbidden Grafana default color {color} found in heatmap panel (UX-DR1)"
+            )
+
+    # ── Description ───────────────────────────────────────────────────────────
+
+    def test_heatmap_has_description(self):
+        """AC4 (UX-DR12): Heatmap must have a non-empty description field."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 3)
+        assert panel is not None, "Topic health heatmap panel (id=3) not found"
+        assert panel.get("description", "").strip() != "", (
+            "Heatmap must have a non-empty description (UX-DR12)"
+        )
+
+    # ── Data links ────────────────────────────────────────────────────────────
+
+    def test_heatmap_has_data_link_to_drilldown(self):
+        """AC3: Each tile must link to drill-down dashboard with topic pre-selected."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 3)
+        assert panel is not None, "Topic health heatmap panel (id=3) not found"
+        links = panel.get("fieldConfig", {}).get("defaults", {}).get("links", [])
+        assert len(links) >= 1, "Heatmap must have at least one data link in fieldConfig.defaults"
+        link_url = links[0].get("url", "")
+        assert "aiops-drilldown" in link_url, (
+            "Data link must target stable drill-down UID 'aiops-drilldown'"
+        )
+        assert "var-topic" in link_url, (
+            "Data link must pass topic variable (var-topic) for pre-selection"
+        )
+
+    def test_heatmap_data_link_preserves_time_range(self):
+        """AC3: Data link must preserve the Grafana time range via ${__url_time_range}."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 3)
+        assert panel is not None, "Topic health heatmap panel (id=3) not found"
+        links = panel.get("fieldConfig", {}).get("defaults", {}).get("links", [])
+        assert len(links) >= 1, "Heatmap must have at least one data link"
+        link_url = links[0].get("url", "")
+        assert "__url_time_range" in link_url, (
+            "Data link must include ${__url_time_range} to preserve time range across navigation"
+        )
+
+    # ── Value mappings (WCAG AA) ──────────────────────────────────────────────
+
+    def test_heatmap_has_value_mappings(self):
+        """AC1 (UX-DR14): Tiles must show HEALTHY/WARNING/CRITICAL text labels alongside color."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 3)
+        assert panel is not None, "Topic health heatmap panel (id=3) not found"
+        mappings = panel.get("fieldConfig", {}).get("defaults", {}).get("mappings", [])
+        assert len(mappings) > 0, (
+            "Heatmap tiles must have value mappings for WCAG AA text labels (UX-DR14)"
+        )
+        all_texts = []
+        for m in mappings:
+            for v in m.get("options", {}).values():
+                if isinstance(v, dict):
+                    all_texts.append(v.get("text", ""))
+        assert "HEALTHY" in all_texts, "Mapping for value 0 must display 'HEALTHY' (UX-DR14)"
+        assert "WARNING" in all_texts, "Mapping for value 1 must display 'WARNING' (UX-DR14)"
+        assert "CRITICAL" in all_texts, "Mapping for value 2 must display 'CRITICAL' (UX-DR14)"
+
+    # ── noValue guard (NFR5) ──────────────────────────────────────────────────
+
+    def test_heatmap_has_no_value_message(self):
+        """AC4 (NFR5): Heatmap must set noValue in fieldConfig to prevent blank tile states."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 3)
+        assert panel is not None, "Topic health heatmap panel (id=3) not found"
+        no_value = panel.get("fieldConfig", {}).get("defaults", {}).get("noValue", "")
+        assert no_value.strip() != "", (
+            "Heatmap panel must have a non-empty fieldConfig.defaults.noValue (NFR5)"
+        )
+
+    # ── Dashboard version ─────────────────────────────────────────────────────
+
+    def test_dashboard_version_is_3(self):
+        """Dashboard version must be incremented to 3 after story 2-2 panel addition (NFR12)."""
+        dashboard = self._load_main_dashboard()
+        assert dashboard.get("version") == 3, (
+            f"Dashboard version must be 3 after story 2-2, got {dashboard.get('version')}"
         )
