@@ -655,3 +655,283 @@ class TestBaselineDeviationOverlay:
         assert dashboard.get("version", 0) >= 4, (
             f"Dashboard version must be >= 4 after story 2-3, got {dashboard.get('version')}"
         )
+
+
+class TestGatingIntelligenceFunnel:
+    """Config-validation tests for story 3-1: section separator (id=6) and gating intelligence
+    funnel bargauge panel (id=7).
+
+    No live docker-compose stack required — all assertions are pure JSON parsing.
+    """
+
+    def _load_main_dashboard(self):
+        path = REPO_ROOT / "grafana/dashboards/aiops-main.json"
+        return json.loads(path.read_text())
+
+    def _get_panel_by_id(self, dashboard, panel_id):
+        panels = dashboard.get("panels", [])
+        return next((p for p in panels if p.get("id") == panel_id), None)
+
+    # ── Section separator (id=6) ──────────────────────────────────────────────
+
+    def test_section_separator_panel_exists(self):
+        """AC1 (Task 3.2): Section separator panel (id=6) must exist at y=23 as a text/row
+        panel."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 6)
+        assert panel is not None, "Section separator panel (id=6) not found in aiops-main.json"
+        assert panel.get("type") in {"text", "row"}, (
+            f"Section separator must be type 'text' or 'row', got '{panel.get('type')}'"
+        )
+
+    def test_section_separator_grid_position(self):
+        """AC1 (Task 3.2): Section separator must occupy row 23 (y=23, h=1, w=24, x=0)."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 6)
+        assert panel is not None, "Section separator panel (id=6) not found"
+        assert panel["gridPos"]["y"] == 23, (
+            "Section separator must start at row y=23 (credibility zone boundary)"
+        )
+        assert panel["gridPos"]["h"] == 1, "Section separator must have height h=1 (thin spacer)"
+        assert panel["gridPos"]["w"] == 24, "Section separator must span full width w=24"
+        assert panel["gridPos"]["x"] == 0, (
+            "Section separator must start at column x=0 (full-width)"
+        )
+
+    # ── Gating intelligence funnel (id=7): existence and type ────────────────
+
+    def test_funnel_panel_exists(self):
+        """AC2 (Task 3.3): Gating intelligence funnel panel (id=7) must exist and be a
+        bargauge."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 7)
+        assert panel is not None, (
+            "Gating intelligence funnel panel (id=7) not found in aiops-main.json"
+        )
+        assert panel["type"] == "bargauge", (
+            f"Funnel panel must be type 'bargauge', got '{panel.get('type')}'"
+        )
+
+    # ── Grid position ─────────────────────────────────────────────────────────
+
+    def test_funnel_panel_grid_position(self):
+        """AC2 (Task 3.4): Funnel panel must occupy rows 24-29 (y=24, h=6, w=24, x=0)."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 7)
+        assert panel is not None, "Gating intelligence funnel panel (id=7) not found"
+        assert panel["gridPos"]["y"] == 24, "Funnel panel must start at row y=24"
+        assert panel["gridPos"]["h"] == 6, "Funnel panel must have height h=6"
+        assert panel["gridPos"]["w"] == 24, "Funnel panel must span full width w=24"
+        assert panel["gridPos"]["x"] == 0, "Funnel panel must start at column x=0 (full-width)"
+
+    # ── Transparent background ────────────────────────────────────────────────
+
+    def test_funnel_panel_is_transparent(self):
+        """AC5 / UX-DR4 (Task 3.5): Funnel panel must use transparent=true (bargauge panels
+        require explicit transparent flag — H1 finding from story 2-3 review)."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 7)
+        assert panel is not None, "Gating intelligence funnel panel (id=7) not found"
+        assert panel.get("transparent") is True, (
+            "Funnel panel must have transparent=true (UX-DR4 — explicit transparent required for "
+            "bargauge panels)"
+        )
+
+    # ── Orientation ───────────────────────────────────────────────────────────
+
+    def test_funnel_panel_orientation_is_horizontal(self):
+        """AC2 / UX-DR10 (Task 3.6): Funnel bargauge must use horizontal orientation so
+        funnel stages read top-to-bottom as a natural reading flow."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 7)
+        assert panel is not None, "Gating intelligence funnel panel (id=7) not found"
+        orientation = panel.get("options", {}).get("orientation")
+        assert orientation == "horizontal", (
+            f"Funnel panel options.orientation must be 'horizontal' (UX-DR10), got '{orientation}'"
+        )
+
+    def test_funnel_panel_display_mode_is_gradient(self):
+        """AC2 / UX-DR10: Funnel bargauge must use displayMode='gradient' for the colour
+        progression from detected (accent-blue) through suppressed (grey) to dispatched (green).
+        'lcd' or 'basic' would lose the funnel visual intent."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 7)
+        assert panel is not None, "Gating intelligence funnel panel (id=7) not found"
+        display_mode = panel.get("options", {}).get("displayMode")
+        assert display_mode == "gradient", (
+            f"Funnel panel options.displayMode must be 'gradient' (UX-DR10), got '{display_mode}'"
+        )
+
+    # ── PromQL query: increase + $__range ────────────────────────────────────
+
+    def test_funnel_target_uses_increase_and_range(self):
+        """AC2 (Task 3.7): Funnel target refId='A' PromQL must use increase( and $__range —
+        bargauge/stat panel convention (NOT rate() or $__rate_interval)."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 7)
+        assert panel is not None, "Gating intelligence funnel panel (id=7) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, "Funnel panel must have a target with refId='A'"
+        expr = target_a.get("expr", "")
+        assert "increase(" in expr, (
+            "Funnel panel refId='A' PromQL must use increase( (stat/bargauge panel convention)"
+        )
+        assert "$__range" in expr, (
+            "Funnel panel refId='A' PromQL must use $__range (NOT $__rate_interval)"
+        )
+
+    # ── PromQL query: correct metric ──────────────────────────────────────────
+
+    def test_funnel_target_uses_gating_evaluations_metric(self):
+        """AC2 (Task 3.8): Funnel target refId='A' PromQL must query
+        aiops_gating_evaluations_total — the counter emitted by the gating pipeline."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 7)
+        assert panel is not None, "Gating intelligence funnel panel (id=7) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, "Funnel panel must have a target with refId='A'"
+        expr = target_a.get("expr", "")
+        assert "aiops_gating_evaluations_total" in expr, (
+            "Funnel panel PromQL must query aiops_gating_evaluations_total metric"
+        )
+
+    # ── PromQL aggregation style ──────────────────────────────────────────────
+
+    def test_funnel_target_uses_sum_by_aggregation_style(self):
+        """AC2 (Task 3.9): Funnel PromQL must use 'sum by(' aggregation style — NOT
+        'sum(...)by(' which is a different (non-preferred) style."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 7)
+        assert panel is not None, "Gating intelligence funnel panel (id=7) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, "Funnel panel must have a target with refId='A'"
+        expr = target_a.get("expr", "")
+        assert "sum by(" in expr, (
+            "Funnel panel PromQL must use 'sum by(' aggregation style (not 'sum(...) by(')"
+        )
+
+    # ── PromQL legendFormat: gate_id visible ──────────────────────────────────
+
+    def test_funnel_target_legend_format_shows_gate_id(self):
+        """AC3 (FR13): Funnel target legendFormat must include {{gate_id}} so each bar label
+        shows the named gate rule (AG0-AG6) visible in the bargauge panel."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 7)
+        assert panel is not None, "Gating intelligence funnel panel (id=7) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, "Funnel panel must have a target with refId='A'"
+        legend_format = target_a.get("legendFormat", "")
+        assert "{{gate_id}}" in legend_format, (
+            "Funnel panel legendFormat must include '{{gate_id}}' so gate rule name is visible "
+            "in bar labels (AC3 / FR13)"
+        )
+
+    # ── Color palette: accent-blue (detected) ────────────────────────────────
+
+    def test_funnel_panel_has_accent_blue(self):
+        """AC2 / UX-DR10 (Task 3.10): accent-blue #4F87DB must appear in funnel panel JSON
+        as the gradient start color for detected findings."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 7)
+        assert panel is not None, "Gating intelligence funnel panel (id=7) not found"
+        panel_json = json.dumps(panel).upper()
+        assert "#4F87DB" in panel_json, (
+            "accent-blue #4F87DB must appear in funnel panel JSON (gradient start — detected)"
+        )
+
+    # ── Color palette: semantic-green (dispatched) ────────────────────────────
+
+    def test_funnel_panel_has_semantic_green(self):
+        """AC2 / UX-DR10 (Task 3.11): semantic-green #6BAD64 must appear in funnel panel JSON
+        as the dispatched gradient end color."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 7)
+        assert panel is not None, "Gating intelligence funnel panel (id=7) not found"
+        panel_json = json.dumps(panel).upper()
+        assert "#6BAD64" in panel_json, (
+            "semantic-green #6BAD64 must appear in funnel panel JSON (dispatched gradient end)"
+        )
+
+    # ── Color palette: semantic-grey (suppressed) ────────────────────────────
+
+    def test_funnel_panel_has_semantic_grey(self):
+        """AC2 / UX-DR10 (Task 3.12): semantic-grey #7A7A7A must appear in funnel panel JSON
+        as the suppressed mid-gradient color."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 7)
+        assert panel is not None, "Gating intelligence funnel panel (id=7) not found"
+        panel_json = json.dumps(panel).upper()
+        assert "#7A7A7A" in panel_json, (
+            "semantic-grey #7A7A7A must appear in funnel panel JSON (suppressed mid-gradient)"
+        )
+
+    # ── Forbidden Grafana default palette colors ──────────────────────────────
+
+    def test_no_grafana_default_palette_colors_in_funnel_panel(self):
+        """AC5 / UX-DR1 (Task 3.13): No forbidden Grafana default palette colors may appear
+        in funnel panel id=7 JSON (case-insensitive check)."""
+        forbidden = {
+            "#73BF69", "#F2495C", "#FF9830", "#FADE2A",
+            "#5794F2", "#B877D9", "#37872D", "#C4162A", "#1F60C4", "#8F3BB8",
+        }
+        dashboard = self._load_main_dashboard()
+        panel_json = json.dumps(
+            [p for p in dashboard.get("panels", []) if p.get("id") == 7]
+        ).upper()
+        for color in forbidden:
+            assert color not in panel_json, (
+                f"Forbidden Grafana default color {color} found in funnel panel (UX-DR1)"
+            )
+
+    # ── Description ───────────────────────────────────────────────────────────
+
+    def test_funnel_panel_has_description(self):
+        """AC5 / UX-DR12 (Task 3.14): Funnel panel must have a non-empty one-sentence
+        description field."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 7)
+        assert panel is not None, "Gating intelligence funnel panel (id=7) not found"
+        assert panel.get("description", "").strip() != "", (
+            "Funnel panel must have a non-empty description (UX-DR12)"
+        )
+
+    # ── noValue (NFR5 / UX-DR5) ──────────────────────────────────────────────
+
+    def test_funnel_panel_has_no_value_field(self):
+        """AC4 / NFR5 / UX-DR5 (Task 3.15): Funnel panel must set noValue in fieldConfig to
+        display celebrated zeros in semantic-green when no data exists for a bar segment."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 7)
+        assert panel is not None, "Gating intelligence funnel panel (id=7) not found"
+        no_value = panel.get("fieldConfig", {}).get("defaults", {}).get("noValue", None)
+        assert no_value is not None, (
+            "Funnel panel must have fieldConfig.defaults.noValue set (NFR5 / UX-DR5 celebrated "
+            "zeros)"
+        )
+
+    # ── Label font size ───────────────────────────────────────────────────────
+
+    def test_funnel_panel_text_title_size_meets_readability_minimum(self):
+        """AC2 / UX-DR2 (Task 3.16): Funnel bargauge options.text.titleSize must be >= 14
+        for projector readability."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 7)
+        assert panel is not None, "Gating intelligence funnel panel (id=7) not found"
+        title_size = panel.get("options", {}).get("text", {}).get("titleSize", 0)
+        assert title_size >= 14, (
+            f"Funnel panel options.text.titleSize must be >= 14px (UX-DR2), got {title_size}"
+        )
+
+    # ── Dashboard version ─────────────────────────────────────────────────────
+
+    def test_dashboard_version_is_at_least_5(self):
+        """Dashboard version must be >= 5 after story 3-1 panel additions (Task 3.17 / NFR12).
+        Version must be bumped from 4 to 5 to reflect the new panels."""
+        dashboard = self._load_main_dashboard()
+        assert dashboard.get("version", 0) >= 5, (
+            f"Dashboard version must be >= 5 after story 3-1, got {dashboard.get('version')}"
+        )

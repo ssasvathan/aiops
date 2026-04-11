@@ -3,7 +3,7 @@
   "title": "aiOps \u2014 Pipeline Intelligence",
   "description": "Stakeholder narrative and operational detail for the aiOps triage pipeline. Panel IDs reserved: 1\u201399 (main dashboard only; drill-down uses 100\u2013199).",
   "schemaVersion": 39,
-  "version": 4,
+  "version": 5,
   "tags": ["aiops"],
   "timezone": "browser",
   "time": {
@@ -232,6 +232,73 @@
           "expr": "vector(0)",
           "refId": "C",
           "legendFormat": "lower_bound"
+        }
+      ],
+      "datasource": { "type": "prometheus", "uid": "prometheus" }
+    },
+    {
+      "id": 6,
+      "type": "text",
+      "title": "",
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "options": {
+        "content": "",
+        "mode": "markdown"
+      },
+      "transparent": true
+    },
+    {
+      "id": 7,
+      "type": "bargauge",
+      "title": "Gating intelligence funnel",
+      "description": "Per-gate suppression counts showing how many findings each gate rule eliminated before dispatch — the noise-to-signal funnel.",
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 24 },
+      "transparent": true,
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "gradient",
+        "reduceOptions": {
+          "calcs": ["sum"],
+          "fields": "",
+          "values": false
+        },
+        "text": {
+          "titleSize": 14,
+          "valueSize": 16
+        },
+        "minVizWidth": 0,
+        "minVizHeight": 16
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#7A7A7A", "value": null },
+              { "color": "#6BAD64", "value": 0 }
+            ]
+          },
+          "noValue": "0",
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byFrameRefID", "options": "A" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#4F87DB" } }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by(gate_id, outcome) (increase(aiops_gating_evaluations_total[$__range]))",
+          "refId": "A",
+          "legendFormat": "{{gate_id}} ({{outcome}})"
         }
       ],
       "datasource": { "type": "prometheus", "uid": "prometheus" }
