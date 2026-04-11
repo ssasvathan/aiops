@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-11
-last_updated: 2026-04-11  # story 2-3 traceability matrix complete, gate: PASS
+last_updated: 2026-04-11  # epic-2 retrospective complete
 # atdd_2_3_completed: 2026-04-11 — story 2-3 ATDD red-phase tests generated (12 failing, 1 passing)
 # atdd_2_3_test_file: tests/integration/test_dashboard_validation.py (class TestBaselineDeviationOverlay)
 # atdd_2_3_test_count: 13 new tests (12 red-fail, 1 vacuous-pass for palette guard)
@@ -69,11 +69,11 @@ development_status:
   epic-1-retrospective: done
 
   # Epic 2: Stakeholder Narrative Dashboard (Above-the-Fold)
-  epic-2: in-progress
+  epic-2: done
   2-1-hero-banner-p-l-stat-panels: done
   2-2-topic-health-heatmap: done
   2-3-baseline-deviation-overlay-with-detection-annotations: done
-  epic-2-retrospective: optional
+  epic-2-retrospective: done
 
   # Epic 3: Noise Suppression & Operational Credibility (Below-the-Fold)
   epic-3: backlog
