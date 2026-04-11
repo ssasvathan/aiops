@@ -1,0 +1,23 @@
+{
+  "uid": "aiops-main",
+  "title": "aiOps \u2014 Pipeline Intelligence",
+  "description": "Stakeholder narrative and operational detail for the aiOps triage pipeline. Panel IDs reserved: 1\u201399 (main dashboard only; drill-down uses 100\u2013199).",
+  "schemaVersion": 39,
+  "version": 1,
+  "tags": ["aiops"],
+  "timezone": "browser",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "refresh": "30s",
+  "panels": [],
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": []
+}

@@ -35,7 +35,11 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-11
-last_updated: 2026-04-11
+last_updated: 2026-04-11  # story 1-1 traceability complete → GATE PASS
+# atdd_completed: 2026-04-11 — story 1-1 ATDD red-phase tests generated (32 failing, 1 passing)
+# atdd_test_file: tests/integration/test_infra_story_1_1_grafana_prometheus_red_phase.py
+# trace_completed: 2026-04-11 — story 1-1 traceability matrix generated, gate decision: PASS
+# trace_file: artifact/test-artifacts/traceability/traceability-report-1-1.md
 project: aiOps
 project_key: NOKEY
 tracking_system: file-system
@@ -43,8 +47,8 @@ story_location: artifact/implementation-artifacts
 
 development_status:
   # Epic 1: Pipeline Intelligence Foundation
-  epic-1: backlog
-  1-1-grafana-prometheus-observability-infrastructure: backlog
+  epic-1: in-progress
+  1-1-grafana-prometheus-observability-infrastructure: done
   1-2-findings-gating-otlp-instruments: backlog
   1-3-evidence-diagnosis-otlp-instruments: backlog
   epic-1-retrospective: optional

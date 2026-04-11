@@ -45,6 +45,7 @@ markers = [
 [tool.ruff]
 line-length = 100
 target-version = "py313"
+exclude = [".agents", "_bmad", ".claude", ".cursor"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W"]
