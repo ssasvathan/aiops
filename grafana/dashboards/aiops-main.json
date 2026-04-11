@@ -3,7 +3,7 @@
   "title": "aiOps \u2014 Pipeline Intelligence",
   "description": "Stakeholder narrative and operational detail for the aiOps triage pipeline. Panel IDs reserved: 1\u201399 (main dashboard only; drill-down uses 100\u2013199).",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "tags": ["aiops"],
   "timezone": "browser",
   "time": {
@@ -12,7 +12,92 @@
   },
   "timepicker": {},
   "refresh": "30s",
-  "panels": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Pipeline health",
+      "description": "Aggregate health signal — green: all systems operational, amber: degraded performance, red: pipeline unavailable. (Proxy signal pending dedicated health gauge recording rule.)",
+      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#6BAD64", "value": null },
+              { "color": "#E8913A", "value": 1 },
+              { "color": "#D94452", "value": 2 }
+            ]
+          },
+          "noValue": "Awaiting first pipeline cycle",
+          "mappings": [
+            { "type": "value", "options": { "0": { "text": "HEALTHY" }, "1": { "text": "DEGRADED" }, "2": { "text": "UNAVAILABLE" } } }
+          ]
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(aiops_findings_total) or vector(0)",
+          "refId": "A",
+          "legendFormat": ""
+        }
+      ],
+      "datasource": { "type": "prometheus", "uid": "prometheus" }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Anomalies detected & acted on",
+      "description": "Total anomalies the platform detected and dispatched an action for within the selected time window — the core P&L metric.",
+      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 5 },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "textMode": "auto",
+        "reduceOptions": {
+          "calcs": ["sum"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "#6BAD64" },
+          "unit": "short",
+          "decimals": 0,
+          "noValue": "Awaiting first pipeline cycle",
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "increase(aiops_findings_total[$__range]) or vector(0)",
+          "refId": "A",
+          "legendFormat": ""
+        }
+      ],
+      "datasource": { "type": "prometheus", "uid": "prometheus" }
+    }
+  ],
   "templating": {
     "list": []
   },

@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-11
-last_updated: 2026-04-11  # epic-1 retrospective completed
+last_updated: 2026-04-11  # story 2-1 traceability matrix generated, gate decision: PASS
 # atdd_completed: 2026-04-11 — story 1-1 ATDD red-phase tests generated (32 failing, 1 passing)
 # atdd_test_file: tests/integration/test_infra_story_1_1_grafana_prometheus_red_phase.py
 # trace_completed: 2026-04-11 — story 1-1 traceability matrix generated, gate decision: PASS
@@ -46,6 +46,8 @@ last_updated: 2026-04-11  # epic-1 retrospective completed
 # atdd_1_3_test_file: tests/unit/health/test_metrics.py (appended, lines 624–905)
 # trace_1_3_completed: 2026-04-11 — story 1-3 traceability matrix generated, gate decision: PASS
 # trace_1_3_file: artifact/test-artifacts/traceability/traceability-report-1-3.md
+# trace_2_1_completed: 2026-04-11 — story 2-1 traceability matrix generated, gate decision: PASS
+# trace_2_1_file: artifact/test-artifacts/traceability/traceability-report-2-1.md
 project: aiOps
 project_key: NOKEY
 tracking_system: file-system
@@ -60,8 +62,8 @@ development_status:
   epic-1-retrospective: done
 
   # Epic 2: Stakeholder Narrative Dashboard (Above-the-Fold)
-  epic-2: backlog
-  2-1-hero-banner-p-l-stat-panels: backlog
+  epic-2: in-progress
+  2-1-hero-banner-p-l-stat-panels: done
   2-2-topic-health-heatmap: backlog
   2-3-baseline-deviation-overlay-with-detection-annotations: backlog
   epic-2-retrospective: optional

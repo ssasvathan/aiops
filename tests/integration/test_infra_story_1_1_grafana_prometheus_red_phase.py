@@ -263,17 +263,14 @@ class TestAC3DashboardProvisioningAndJsonShells:
             "UID is a hardcoded constant referenced by inter-dashboard links."
         )
 
-    def test_p1_main_dashboard_panels_is_empty_list(self) -> None:
-        """AC3 P1: aiops-main.json panels must be an empty list (shell — no panels yet)."""
+    def test_p1_main_dashboard_panels_is_a_list(self) -> None:
+        """AC3 P1: aiops-main.json panels key must be a list (populated by later stories)."""
         path = REPO_ROOT / "grafana/dashboards/aiops-main.json"
         assert path.exists(), f"File missing: {path}"
         dashboard = json.loads(path.read_text())
         panels = dashboard.get("panels", None)
         assert isinstance(panels, list), (
-            f"Story 1.1 RED phase: panels must be a list. Found type: {type(panels)}"
-        )
-        assert panels == [], (
-            f"Story 1.1 RED phase: panels must be empty list (shell). Found: {panels!r}"
+            f"Story 1.1: panels must be a list. Found type: {type(panels)}"
         )
 
     def test_p1_drilldown_dashboard_panels_is_empty_list(self) -> None:
