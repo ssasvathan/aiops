@@ -15,6 +15,7 @@ from aiops_triage_pipeline.contracts.enums import (
 )
 from aiops_triage_pipeline.contracts.gate_input import GateInputV1
 from aiops_triage_pipeline.contracts.rulebook import GateEffect, GateSpec, RulebookV1
+from aiops_triage_pipeline.health.metrics import record_gating_evaluation
 from aiops_triage_pipeline.logging.setup import get_logger
 from aiops_triage_pipeline.models.evidence import EvidenceStageOutput
 from aiops_triage_pipeline.models.peak import PeakStageOutput
@@ -25,6 +26,14 @@ _AnomalyFamily = Literal[
     "CONSUMER_LAG", "VOLUME_DROP", "THROUGHPUT_CONSTRAINED_PROXY", "BASELINE_DEVIATION"
 ]
 _EXPECTED_GATE_ORDER: tuple[str, ...] = ("AG0", "AG1", "AG2", "AG3", "AG4", "AG5", "AG6")
+# Prefix map for early gates (AG0–AG3): reason codes from rule_engine.evaluate_gates embed
+# the gate ID as a prefix (e.g. "AG0_INPUT_INVALID", "AG1_ENV_CAP_APPLIED").
+_EARLY_GATE_REASON_PREFIXES: dict[str, str] = {
+    "AG0": "AG0",
+    "AG1": "AG1",
+    "AG2": "AG2",
+    "AG3": "AG3",
+}
 _ACTION_PRIORITY: dict[Action, int] = {
     Action.OBSERVE: 0,
     Action.NOTIFY: 1,
@@ -246,16 +255,96 @@ def evaluate_rulebook_gate_inputs_by_scope(
     """Evaluate all gate inputs and return ActionDecisionV1 payloads by scope."""
     decisions_by_scope: dict[GateScope, tuple[ActionDecisionV1, ...]] = {}
     for scope, gate_inputs in sorted(gate_inputs_by_scope.items()):
-        decisions_by_scope[scope] = tuple(
-            evaluate_rulebook_gates(
+        scope_decisions: list[ActionDecisionV1] = []
+        for gate_input in gate_inputs:
+            decision = evaluate_rulebook_gates(
                 gate_input=gate_input,
                 rulebook=rulebook,
                 dedupe_store=dedupe_store,
                 latency_warning_threshold_ms=latency_warning_threshold_ms,
             )
-            for gate_input in gate_inputs
-        )
+            scope_decisions.append(decision)
+            _emit_gating_evaluation_metrics(
+                gate_input=gate_input,
+                decision=decision,
+            )
+        decisions_by_scope[scope] = tuple(scope_decisions)
     return decisions_by_scope
+
+
+def _emit_gating_evaluation_metrics(
+    *,
+    gate_input: GateInputV1,
+    decision: ActionDecisionV1,
+) -> None:
+    """Emit aiops.gating.evaluations_total once per gate ID per gate input (AC2).
+
+    Outcome mapping:
+    - "fail": gate fired and suppressed/downgraded the action (or AG6: PM condition not met)
+    - "pass": gate evaluated cleanly without suppression (or AG6: PM condition met)
+    - "skip": gate was not evaluated due to eligibility guard
+
+    For AG0–AG3 (early gates via rule_engine.evaluate_gates), pass/fail is inferred from
+    whether the gate contributed any reason codes. For AG4–AG6, gate-specific logic applies.
+
+    AG6 note: AG6's on_pass/on_fail effects write only to postmortem_reason_codes (not
+    gate_reason_codes), so outcome is derived from decision.postmortem_required and eligibility
+    computed from gate_input.env/criticality_tier and AG0's firing status (input_valid proxy).
+    """
+    gate_reason_codes: frozenset[str] = frozenset(decision.gate_reason_codes)
+    topic = gate_input.topic
+
+    # AG6 eligibility: requires PROD + TIER_0 and a valid input (AG0 did not fire).
+    ag0_fired = any(rc.startswith("AG0") for rc in gate_reason_codes)
+    ag6_eligible = (
+        not ag0_fired
+        and gate_input.env == Environment.PROD
+        and gate_input.criticality_tier == CriticalityTier.TIER_0
+    )
+
+    for gate_id in _EXPECTED_GATE_ORDER:
+        if gate_id in _EARLY_GATE_REASON_PREFIXES:
+            prefix = _EARLY_GATE_REASON_PREFIXES[gate_id]
+            fired = any(rc.startswith(prefix) for rc in gate_reason_codes)
+            outcome = "fail" if fired else "pass"
+        elif gate_id == "AG4":
+            # AG4 skips if action < TICKET at evaluation time (use final_action as proxy)
+            if _ACTION_PRIORITY[decision.final_action] < _ACTION_PRIORITY[Action.TICKET]:
+                outcome = "skip"
+            else:
+                fired = any(rc.startswith("AG4") for rc in gate_reason_codes)
+                outcome = "fail" if fired else "pass"
+        elif gate_id == "AG5":
+            # AG5 skips if action was OBSERVE at evaluation time
+            if decision.final_action == Action.OBSERVE:
+                outcome = "skip"
+            else:
+                fired = any(rc.startswith("AG5") for rc in gate_reason_codes)
+                outcome = "fail" if fired else "pass"
+        elif gate_id == "AG6":
+            # AG6 writes to postmortem_reason_codes, not gate_reason_codes.
+            # on_pass fires when peak+sustained (PM required) → outcome "pass".
+            # on_fail fires when condition not met (PM not required) → outcome "fail".
+            # When not eligible (non-PROD, non-TIER_0, or input invalid) → "skip".
+            if not ag6_eligible:
+                outcome = "skip"
+            elif decision.postmortem_required:
+                outcome = "pass"
+            else:
+                outcome = "fail"
+        else:
+            outcome = "skip"
+
+        try:
+            record_gating_evaluation(gate_id=gate_id, outcome=outcome, topic=topic)
+        except Exception:
+            logger = get_logger("pipeline.stages.gating")
+            logger.warning(
+                "gating_metric_emit_failed",
+                event_type="gating.metric_emit_error",
+                gate_id=gate_id,
+                exc_info=True,
+            )
 
 
 def enrich_gate_input_context_by_scope(

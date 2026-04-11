@@ -60,6 +60,7 @@ from aiops_triage_pipeline.health.metrics import (
     record_cycle_lock_acquired,
     record_cycle_lock_fail_open,
     record_cycle_lock_yielded,
+    record_finding,
     record_pipeline_peak_history_evictions,
     record_pipeline_peak_history_scope_count,
     record_shard_assignment,
@@ -1232,6 +1233,25 @@ async def _hot_path_scheduler_loop(
                             slack_client=slack_client,
                             denylist=denylist,
                         )
+                        try:
+                            record_finding(
+                                anomaly_family=gate_input.anomaly_family,
+                                final_action=decision.final_action.value,
+                                topic=gate_input.topic,
+                                routing_key=(
+                                    routing_context.routing_key
+                                    if routing_context
+                                    else "unknown"
+                                ),
+                                criticality_tier=gate_input.criticality_tier.value,
+                            )
+                        except Exception:
+                            logger.warning(
+                                "finding_metric_emit_failed",
+                                event_type="hot_path.finding_metric_error",
+                                scope=scope,
+                                exc_info=True,
+                            )
                     except Exception:
                         logger.error(
                             "hot_path_case_processing_failed",

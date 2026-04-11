@@ -201,6 +201,18 @@ _sn_page_linkage_within_window_rate = _meter.create_up_down_counter(
     description="Rolling rate of PAGE linkage outcomes LINKED within retry window",
     unit="1",
 )
+# aiops.findings.total — PromQL: aiops_findings_total
+_findings_total = _meter.create_counter(
+    name="aiops.findings.total",
+    description="Total findings by anomaly family, action, topic, routing key, and tier",
+    unit="1",
+)
+# aiops.gating.evaluations_total — PromQL: aiops_gating_evaluations_total
+_gating_evaluations_total = _meter.create_counter(
+    name="aiops.gating.evaluations_total",
+    description="Total gating evaluations by gate ID, outcome, and topic",
+    unit="1",
+)
 
 _prev_status_values: dict[str, int] = {}
 _prev_connection_values: dict[str, int] = {"redis": 1}
@@ -565,3 +577,50 @@ def record_sn_page_linkage_slo(
             rate_delta,
             attributes={"component": "servicenow"},
         )
+
+
+def record_finding(
+    *,
+    anomaly_family: str,
+    final_action: str,
+    topic: str,
+    routing_key: str,
+    criticality_tier: str,
+) -> None:
+    """Increment aiops.findings.total (PromQL: aiops_findings_total) by 1.
+
+    Label values must be UPPERCASE matching Python enum contracts (e.g. "NOTIFY", "TIER_0").
+    """
+    _findings_total.add(
+        1,
+        attributes={
+            "anomaly_family": anomaly_family,
+            "final_action": final_action,
+            "topic": topic,
+            "routing_key": routing_key,
+            "criticality_tier": criticality_tier,
+        },
+    )
+
+
+def record_gating_evaluation(
+    *,
+    gate_id: str,
+    outcome: str,
+    topic: str,
+) -> None:
+    """Increment aiops.gating.evaluations_total (PromQL: aiops_gating_evaluations_total) by 1.
+
+    Args:
+        gate_id: Gate identifier from _EXPECTED_GATE_ORDER (e.g. "AG0" .. "AG6").
+        outcome: Evaluation outcome — "pass", "fail", or "skip".
+        topic:   Kafka topic name from gate_input.topic.
+    """
+    _gating_evaluations_total.add(
+        1,
+        attributes={
+            "gate_id": gate_id,
+            "outcome": outcome,
+            "topic": topic,
+        },
+    )

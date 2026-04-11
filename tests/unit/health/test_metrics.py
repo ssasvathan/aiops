@@ -362,3 +362,259 @@ def test_record_sn_page_linkage_slo_uses_rolling_window_for_rate(monkeypatch) ->
         (-0.5, {"component": "servicenow"}),
         (-0.5, {"component": "servicenow"}),
     ]
+
+
+# ---------------------------------------------------------------------------
+# Story 1.2: Findings & Gating OTLP Instruments — ATDD Red Phase
+# AC1: aiops.findings.total counter — name, labels, uppercase values
+# AC2: aiops.gating.evaluations_total counter — name, labels
+# AC3: instruments defined in health/metrics.py using create_counter
+# AC4: tests assert on metric name + label set (not raw string output)
+# ---------------------------------------------------------------------------
+
+
+# AC1 / AC4 — P0
+def test_record_finding_emits_expected_metric_name_and_labels(monkeypatch) -> None:
+    """aiops.findings.total increments by 1 with all five required labels (AC1, AC4)."""
+    from aiops_triage_pipeline.health import metrics
+
+    counter = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_findings_total", counter)
+
+    metrics.record_finding(
+        anomaly_family="BASELINE_DEVIATION",
+        final_action="NOTIFY",
+        topic="payments.consumer-lag",
+        routing_key="payments-team",
+        criticality_tier="TIER_0",
+    )
+
+    assert len(counter.calls) == 1
+    value, attributes = counter.calls[0]
+    assert value == 1
+    assert attributes == {
+        "anomaly_family": "BASELINE_DEVIATION",
+        "final_action": "NOTIFY",
+        "topic": "payments.consumer-lag",
+        "routing_key": "payments-team",
+        "criticality_tier": "TIER_0",
+    }
+
+
+# AC1 / AC4 — P0: uppercase label values
+def test_record_finding_emits_uppercase_label_values(monkeypatch) -> None:
+    """Label values must be uppercase as-is from enum contracts — no lowercasing (AC1)."""
+    from aiops_triage_pipeline.health import metrics
+
+    counter = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_findings_total", counter)
+
+    metrics.record_finding(
+        anomaly_family="CONSUMER_LAG",
+        final_action="PAGE",
+        topic="payments.consumer-lag",
+        routing_key="sre-team",
+        criticality_tier="TIER_1",
+    )
+
+    _, attributes = counter.calls[0]
+    assert attributes["anomaly_family"] == "CONSUMER_LAG"
+    assert attributes["final_action"] == "PAGE"
+    assert attributes["criticality_tier"] == "TIER_1"
+
+
+# AC1 / AC4 — P0: all four Action enum values
+def test_record_finding_accepts_all_action_values(monkeypatch) -> None:
+    """record_finding works for all Action enum values: OBSERVE, NOTIFY, TICKET, PAGE (AC1)."""
+    from aiops_triage_pipeline.health import metrics
+
+    counter = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_findings_total", counter)
+
+    for action in ("OBSERVE", "NOTIFY", "TICKET", "PAGE"):
+        metrics.record_finding(
+            anomaly_family="VOLUME_DROP",
+            final_action=action,
+            topic="inventory.lag",
+            routing_key="inventory-team",
+            criticality_tier="TIER_0",
+        )
+
+    assert len(counter.calls) == 4
+    emitted_actions = [attrs["final_action"] for _, attrs in counter.calls]
+    assert emitted_actions == ["OBSERVE", "NOTIFY", "TICKET", "PAGE"]
+
+
+# AC1 / AC4 — P1: multiple calls accumulate independently
+def test_record_finding_multiple_calls_each_emit_independently(monkeypatch) -> None:
+    """Each call to record_finding emits one independent increment (AC1, NFR8)."""
+    from aiops_triage_pipeline.health import metrics
+
+    counter = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_findings_total", counter)
+
+    metrics.record_finding(
+        anomaly_family="BASELINE_DEVIATION",
+        final_action="NOTIFY",
+        topic="payments.consumer-lag",
+        routing_key="payments-team",
+        criticality_tier="TIER_0",
+    )
+    metrics.record_finding(
+        anomaly_family="THROUGHPUT_CONSTRAINED_PROXY",
+        final_action="TICKET",
+        topic="gateway.throughput",
+        routing_key="platform-team",
+        criticality_tier="TIER_1",
+    )
+
+    assert len(counter.calls) == 2
+    assert counter.calls[0] == (
+        1,
+        {
+            "anomaly_family": "BASELINE_DEVIATION",
+            "final_action": "NOTIFY",
+            "topic": "payments.consumer-lag",
+            "routing_key": "payments-team",
+            "criticality_tier": "TIER_0",
+        },
+    )
+    assert counter.calls[1] == (
+        1,
+        {
+            "anomaly_family": "THROUGHPUT_CONSTRAINED_PROXY",
+            "final_action": "TICKET",
+            "topic": "gateway.throughput",
+            "routing_key": "platform-team",
+            "criticality_tier": "TIER_1",
+        },
+    )
+
+
+# AC2 / AC4 — P0
+def test_record_gating_evaluation_emits_expected_metric_name_and_labels(monkeypatch) -> None:
+    """aiops.gating.evaluations_total increments by 1 with gate_id, outcome, topic (AC2, AC4)."""
+    from aiops_triage_pipeline.health import metrics
+
+    counter = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_gating_evaluations_total", counter)
+
+    metrics.record_gating_evaluation(
+        gate_id="AG0",
+        outcome="pass",
+        topic="payments.consumer-lag",
+    )
+
+    assert len(counter.calls) == 1
+    value, attributes = counter.calls[0]
+    assert value == 1
+    assert attributes == {
+        "gate_id": "AG0",
+        "outcome": "pass",
+        "topic": "payments.consumer-lag",
+    }
+
+
+# AC2 / AC4 — P0: fail and skip outcomes
+def test_record_gating_evaluation_accepts_fail_and_skip_outcomes(monkeypatch) -> None:
+    """record_gating_evaluation handles 'pass', 'fail', and 'skip' outcomes (AC2)."""
+    from aiops_triage_pipeline.health import metrics
+
+    counter = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_gating_evaluations_total", counter)
+
+    metrics.record_gating_evaluation(gate_id="AG1", outcome="pass", topic="topic-a")
+    metrics.record_gating_evaluation(gate_id="AG2", outcome="fail", topic="topic-a")
+    metrics.record_gating_evaluation(gate_id="AG3", outcome="skip", topic="topic-a")
+
+    assert len(counter.calls) == 3
+    outcomes = [attrs["outcome"] for _, attrs in counter.calls]
+    assert outcomes == ["pass", "fail", "skip"]
+
+
+# AC2 — P1: routing_key must NOT appear in gating labels
+def test_record_gating_evaluation_does_not_include_routing_key_label(monkeypatch) -> None:
+    """aiops.gating.evaluations_total labels: gate_id, outcome, topic — no routing_key (AC2)."""
+    from aiops_triage_pipeline.health import metrics
+
+    counter = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_gating_evaluations_total", counter)
+
+    metrics.record_gating_evaluation(
+        gate_id="AG4",
+        outcome="pass",
+        topic="payments.consumer-lag",
+    )
+
+    _, attributes = counter.calls[0]
+    assert "routing_key" not in attributes
+    assert set(attributes.keys()) == {"gate_id", "outcome", "topic"}
+
+
+# AC2 — P1: topic label is present for every gate ID in _EXPECTED_GATE_ORDER
+def test_record_gating_evaluation_emits_topic_for_all_gate_ids(monkeypatch) -> None:
+    """topic label is available and emitted for all known gate IDs AG0–AG6 (AC2)."""
+    from aiops_triage_pipeline.health import metrics
+
+    counter = _RecordingInstrument()
+    monkeypatch.setattr(metrics, "_gating_evaluations_total", counter)
+
+    gate_ids = ["AG0", "AG1", "AG2", "AG3", "AG4", "AG5", "AG6"]
+    for gate_id in gate_ids:
+        metrics.record_gating_evaluation(
+            gate_id=gate_id,
+            outcome="pass",
+            topic="test-topic",
+        )
+
+    assert len(counter.calls) == len(gate_ids)
+    for (_, attrs), gate_id in zip(counter.calls, gate_ids):
+        assert attrs["gate_id"] == gate_id
+        assert "topic" in attrs
+
+
+# AC3 — P0: _findings_total instrument exists and is a counter (not up_down_counter)
+def test_findings_total_instrument_is_defined_in_metrics_module() -> None:
+    """_findings_total must be a module-level counter defined via create_counter (AC3)."""
+    from aiops_triage_pipeline.health import metrics
+
+    assert hasattr(metrics, "_findings_total"), (
+        "_findings_total counter not found in health/metrics.py"
+    )
+    # The instrument must have an .add() method (counter interface)
+    assert callable(getattr(metrics._findings_total, "add", None)), (
+        "_findings_total must be a Counter with .add() method"
+    )
+
+
+# AC3 — P0: _gating_evaluations_total instrument exists and is a counter
+def test_gating_evaluations_total_instrument_is_defined_in_metrics_module() -> None:
+    """_gating_evaluations_total must be a module-level counter defined via create_counter (AC3)."""
+    from aiops_triage_pipeline.health import metrics
+
+    assert hasattr(metrics, "_gating_evaluations_total"), (
+        "_gating_evaluations_total counter not found in health/metrics.py"
+    )
+    assert callable(getattr(metrics._gating_evaluations_total, "add", None)), (
+        "_gating_evaluations_total must be a Counter with .add() method"
+    )
+
+
+# AC3 — P0: public functions are callable
+def test_record_finding_function_is_callable() -> None:
+    """record_finding public function must exist and be callable (AC3)."""
+    from aiops_triage_pipeline.health import metrics
+
+    assert callable(getattr(metrics, "record_finding", None)), (
+        "record_finding() not found in health/metrics.py"
+    )
+
+
+# AC3 — P0: public functions are callable
+def test_record_gating_evaluation_function_is_callable() -> None:
+    """record_gating_evaluation public function must exist and be callable (AC3)."""
+    from aiops_triage_pipeline.health import metrics
+
+    assert callable(getattr(metrics, "record_gating_evaluation", None)), (
+        "record_gating_evaluation() not found in health/metrics.py"
+    )
