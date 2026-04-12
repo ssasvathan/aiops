@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-11
-last_updated: 2026-04-11  # story 4-2 done
+last_updated: 2026-04-11  # story 4-3 done
 # trace_3_3_completed: 2026-04-11 — story 3-3 traceability matrix generated, gate decision: PASS
 # trace_3_3_file: artifact/test-artifacts/traceability/traceability-report-3-3.md
 # trace_3_3_coverage: 100% (4 AC, 45 tests, 0 gaps)
@@ -98,11 +98,11 @@ development_status:
   epic-3-retrospective: done
 
   # Epic 4: SRE Triage Drill-Down
-  epic-4: in-progress
+  epic-4: done
   4-1-drill-down-dashboard-shell-topic-variable-filtering: done
   4-2-evidence-status-per-topic-metrics: done
-  4-3-findings-table-action-decision-tracing: backlog
-  epic-4-retrospective: optional
+  4-3-findings-table-action-decision-tracing: done
+  epic-4-retrospective: done
 
   # Epic 5: Demo-Ready Presentation & Validation
   epic-5: backlog

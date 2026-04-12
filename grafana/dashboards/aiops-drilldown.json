@@ -3,7 +3,7 @@
   "title": "aiOps \u2014 Topic Drill-Down",
   "description": "Per-topic SRE triage view with evidence status, findings, and diagnosis details. Panel IDs reserved: 100\u2013199 (drill-down only; main dashboard uses 1\u201399).",
   "schemaVersion": 39,
-  "version": 3,
+  "version": 4,
   "tags": ["aiops"],
   "timezone": "browser",
   "time": {
@@ -155,6 +155,115 @@
           "expr": "sum by(final_action) (rate(aiops_findings_total{topic=\"$topic\"}[$__rate_interval]))",
           "refId": "A",
           "legendFormat": "{{final_action}}"
+        }
+      ]
+    },
+    {
+      "id": 120,
+      "type": "table",
+      "title": "Findings by topic",
+      "description": "Findings breakdown by anomaly family and final action for the selected topic, enabling action decision tracing per finding type.",
+      "transparent": true,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 13 },
+      "options": {
+        "sortBy": []
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "#4F87DB" },
+          "noValue": "No findings this period"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by(anomaly_family, final_action) (increase(aiops_findings_total{topic=\"$topic\"}[$__range]))",
+          "refId": "A",
+          "legendFormat": "{{anomaly_family}} \u2192 {{final_action}}"
+        }
+      ]
+    },
+    {
+      "id": 130,
+      "type": "stat",
+      "title": "Diagnosis count",
+      "description": "Total LLM diagnosis completions for the selected topic in the selected time window.",
+      "transparent": true,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 12, "x": 0, "y": 19 },
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "textMode": "value_and_name",
+        "text": { "valueSize": 28 },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "#7A7A7A" },
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(increase(aiops_diagnosis_completed_total{topic=\"$topic\"}[$__range]))",
+          "refId": "A",
+          "legendFormat": "Diagnoses"
+        }
+      ]
+    },
+    {
+      "id": 131,
+      "type": "stat",
+      "title": "Gating evaluations",
+      "description": "Total gating evaluations for the selected topic as a proxy for action decision activity and outbox processing.",
+      "transparent": true,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 19 },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "textMode": "value_and_name",
+        "text": { "valueSize": 28 },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#D94452", "value": null },
+              { "color": "#E8913A", "value": 1 },
+              { "color": "#6BAD64", "value": 10 }
+            ]
+          },
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(increase(aiops_gating_evaluations_total{topic=\"$topic\"}[$__range]))",
+          "refId": "A",
+          "legendFormat": "Evaluations"
         }
       ]
     }

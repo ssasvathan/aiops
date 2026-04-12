@@ -3092,3 +3092,435 @@ class TestEvidenceStatusPerTopicMetrics:
             f"Drilldown dashboard version must be >= 3 after story 4-2, "
             f"got {dashboard.get('version')}"
         )
+
+
+class TestFindingsTableActionDecisionTracing:
+    """Config-validation tests for story 4-3: findings table panel (id=120), diagnosis count
+    stat panel (id=130), and gating evaluations stat panel (id=131) on the drill-down dashboard.
+
+    No live docker-compose stack required — all assertions are pure JSON parsing.
+    """
+
+    def _load_drilldown_dashboard(self):
+        path = REPO_ROOT / "grafana/dashboards/aiops-drilldown.json"
+        return json.loads(path.read_text())
+
+    def _get_panel_by_id(self, dashboard, panel_id):
+        panels = dashboard.get("panels", [])
+        return next((p for p in panels if p.get("id") == panel_id), None)
+
+    # ── Findings table panel (id=120): existence and type ─────────────────────
+
+    def test_findings_table_panel_exists(self):
+        """AC1 (Task 5.2): Findings table panel (id=120) must exist and be a table panel."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 120)
+        assert panel is not None, (
+            "Findings table panel (id=120) not found in aiops-drilldown.json (AC1)"
+        )
+        assert panel.get("type") == "table", (
+            f"Findings table panel must be type 'table', got '{panel.get('type')}'"
+        )
+
+    # ── Grid position ─────────────────────────────────────────────────────────
+
+    def test_findings_table_panel_grid_position(self):
+        """AC1 (Task 5.3): Findings table must occupy rows 13-18, full width
+        (y=13, h=6, w=24, x=0)."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 120)
+        assert panel is not None, "Findings table panel (id=120) not found"
+        assert panel["gridPos"]["y"] == 13, "Findings table panel must start at row y=13"
+        assert panel["gridPos"]["h"] == 6, "Findings table panel must have height h=6"
+        assert panel["gridPos"]["w"] == 24, "Findings table panel must span full width w=24"
+        assert panel["gridPos"]["x"] == 0, "Findings table panel must start at column x=0"
+
+    # ── Transparent background ────────────────────────────────────────────────
+
+    def test_findings_table_panel_is_transparent(self):
+        """AC6 / UX-DR4 (Task 5.4): Findings table panel must have transparent=true."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 120)
+        assert panel is not None, "Findings table panel (id=120) not found"
+        assert panel.get("transparent") is True, (
+            "Findings table panel must have transparent=true (UX-DR4)"
+        )
+
+    # ── PromQL query: correct metric ──────────────────────────────────────────
+
+    def test_findings_table_target_uses_aiops_findings_total(self):
+        """AC1 (Task 5.5): Findings table target refId='A' PromQL must query
+        aiops_findings_total to show findings activity per topic (FR19)."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 120)
+        assert panel is not None, "Findings table panel (id=120) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, "Findings table panel must have a target with refId='A'"
+        expr = target_a.get("expr", "")
+        assert "aiops_findings_total" in expr, (
+            "Findings table panel PromQL must query aiops_findings_total metric (AC1 / FR19)"
+        )
+
+    # ── PromQL variable filter ────────────────────────────────────────────────
+
+    def test_findings_table_target_filters_by_topic_variable(self):
+        """AC1 (Task 5.6): Findings table panel PromQL must filter by {topic=$topic} so
+        the table shows only findings for the selected topic."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 120)
+        assert panel is not None, "Findings table panel (id=120) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, "Findings table panel must have a target with refId='A'"
+        expr = target_a.get("expr", "")
+        assert "$topic" in expr, (
+            "Findings table panel PromQL must filter by $topic variable (AC1)"
+        )
+
+    # ── PromQL aggregation: anomaly_family ────────────────────────────────────
+
+    def test_findings_table_target_aggregates_by_anomaly_family(self):
+        """AC1 (Task 5.7): Findings table PromQL must aggregate by anomaly_family label
+        to show per-family finding counts (FR19 / AC1)."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 120)
+        assert panel is not None, "Findings table panel (id=120) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, "Findings table panel must have a target with refId='A'"
+        expr = target_a.get("expr", "")
+        assert "anomaly_family" in expr, (
+            "Findings table PromQL must aggregate by anomaly_family label (AC1 / FR19)"
+        )
+
+    # ── PromQL aggregation: final_action ──────────────────────────────────────
+
+    def test_findings_table_target_aggregates_by_final_action(self):
+        """AC2 (Task 5.8): Findings table PromQL must aggregate by final_action label
+        to enable action decision tracing per finding family (AC2 / FR21)."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 120)
+        assert panel is not None, "Findings table panel (id=120) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, "Findings table panel must have a target with refId='A'"
+        expr = target_a.get("expr", "")
+        assert "final_action" in expr, (
+            "Findings table PromQL must aggregate by final_action label for decision tracing "
+            "(AC2 / FR21)"
+        )
+
+    # ── Description ───────────────────────────────────────────────────────────
+
+    def test_findings_table_panel_has_description(self):
+        """AC6 / UX-DR12 (Task 5.9): Findings table panel must have a non-empty
+        one-sentence description field."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 120)
+        assert panel is not None, "Findings table panel (id=120) not found"
+        assert panel.get("description", "").strip() != "", (
+            "Findings table panel must have a non-empty description (UX-DR12)"
+        )
+
+    # ── noValue guard (AC5 / UX-DR5 / NFR9) ──────────────────────────────────
+
+    def test_findings_table_panel_has_no_value_field(self):
+        """AC5 / UX-DR5 / NFR9 (Task 5.10): Findings table panel must set noValue in
+        fieldConfig so the zero-findings state shows a meaningful message."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 120)
+        assert panel is not None, "Findings table panel (id=120) not found"
+        no_value = panel.get("fieldConfig", {}).get("defaults", {}).get("noValue", None)
+        assert no_value is not None and str(no_value).strip() != "", (
+            "Findings table panel must have a non-empty fieldConfig.defaults.noValue set "
+            "(AC5 / UX-DR5 / NFR9 — zero-findings state)"
+        )
+
+    # ── Forbidden Grafana default palette colors ──────────────────────────────
+
+    def test_no_grafana_default_palette_colors_in_findings_table_panel(self):
+        """AC6 / UX-DR1 (Task 5.11): No forbidden Grafana default palette colors may appear
+        in findings table panel id=120 JSON (case-insensitive check)."""
+        forbidden = {
+            "#73BF69", "#F2495C", "#FF9830", "#FADE2A",
+            "#5794F2", "#B877D9", "#37872D", "#C4162A", "#1F60C4", "#8F3BB8",
+        }
+        dashboard = self._load_drilldown_dashboard()
+        panel_json = json.dumps(
+            [p for p in dashboard.get("panels", []) if p.get("id") == 120]
+        ).upper()
+        for color in forbidden:
+            assert color not in panel_json, (
+                f"Forbidden Grafana default color {color} found in findings table "
+                f"panel id=120 (UX-DR1)"
+            )
+
+    # ── Diagnosis count panel (id=130): existence and type ────────────────────
+
+    def test_diagnosis_count_panel_exists(self):
+        """AC3 (Task 5.12): Diagnosis count stat panel (id=130) must exist and be a stat
+        panel."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 130)
+        assert panel is not None, (
+            "Diagnosis count panel (id=130) not found in aiops-drilldown.json (AC3)"
+        )
+        assert panel.get("type") == "stat", (
+            f"Diagnosis count panel must be type 'stat', got '{panel.get('type')}'"
+        )
+
+    # ── Grid position ─────────────────────────────────────────────────────────
+
+    def test_diagnosis_count_panel_grid_position(self):
+        """AC3 (Task 5.13): Diagnosis count panel must occupy rows 19-23, left 12 cols
+        (y=19, h=5, w=12, x=0)."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 130)
+        assert panel is not None, "Diagnosis count panel (id=130) not found"
+        assert panel["gridPos"]["y"] == 19, "Diagnosis count panel must start at row y=19"
+        assert panel["gridPos"]["h"] == 5, "Diagnosis count panel must have height h=5"
+        assert panel["gridPos"]["w"] == 12, "Diagnosis count panel must have width w=12"
+        assert panel["gridPos"]["x"] == 0, (
+            "Diagnosis count panel must start at column x=0 (left 12 cols)"
+        )
+
+    # ── Transparent background ────────────────────────────────────────────────
+
+    def test_diagnosis_count_panel_is_transparent(self):
+        """AC6 / UX-DR4 (Task 5.14): Diagnosis count panel must have transparent=true."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 130)
+        assert panel is not None, "Diagnosis count panel (id=130) not found"
+        assert panel.get("transparent") is True, (
+            "Diagnosis count panel must have transparent=true (UX-DR4)"
+        )
+
+    # ── PromQL query ──────────────────────────────────────────────────────────
+
+    def test_diagnosis_count_target_uses_diagnosis_completed_total(self):
+        """AC3 (Task 5.15): Diagnosis count target PromQL must query
+        aiops_diagnosis_completed_total for per-topic diagnosis statistics."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 130)
+        assert panel is not None, "Diagnosis count panel (id=130) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, "Diagnosis count panel must have a target with refId='A'"
+        expr = target_a.get("expr", "")
+        assert "aiops_diagnosis_completed_total" in expr, (
+            "Diagnosis count panel PromQL must query aiops_diagnosis_completed_total (AC3)"
+        )
+
+    def test_diagnosis_count_target_filters_by_topic_variable(self):
+        """AC3 (Task 5.16): Diagnosis count panel PromQL must filter by {topic=$topic}."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 130)
+        assert panel is not None, "Diagnosis count panel (id=130) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, "Diagnosis count panel must have a target with refId='A'"
+        expr = target_a.get("expr", "")
+        assert "$topic" in expr, (
+            "Diagnosis count panel PromQL must filter by $topic variable (AC3)"
+        )
+
+    # ── Description ───────────────────────────────────────────────────────────
+
+    def test_diagnosis_count_panel_has_description(self):
+        """AC6 / UX-DR12 (Task 5.17): Diagnosis count panel must have a non-empty
+        one-sentence description field."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 130)
+        assert panel is not None, "Diagnosis count panel (id=130) not found"
+        assert panel.get("description", "").strip() != "", (
+            "Diagnosis count panel must have a non-empty description (UX-DR12)"
+        )
+
+    # ── noValue guard (UX-DR5) ────────────────────────────────────────────────
+
+    def test_diagnosis_count_panel_has_no_value_field(self):
+        """AC5 / UX-DR5 (Task 5.18): Diagnosis count panel must set noValue in fieldConfig
+        so zero-diagnosis periods display as 0, not blank."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 130)
+        assert panel is not None, "Diagnosis count panel (id=130) not found"
+        no_value = panel.get("fieldConfig", {}).get("defaults", {}).get("noValue", None)
+        assert no_value is not None, (
+            "Diagnosis count panel must have fieldConfig.defaults.noValue set (UX-DR5)"
+        )
+
+    # ── Text size (UX-DR2) ────────────────────────────────────────────────────
+
+    def test_diagnosis_count_panel_value_size_meets_minimum(self):
+        """AC6 / UX-DR2 (Task 5.19): Diagnosis count stat panel options.text.valueSize must
+        be >= 28px for below-the-fold readability."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 130)
+        assert panel is not None, "Diagnosis count panel (id=130) not found"
+        value_size = panel.get("options", {}).get("text", {}).get("valueSize", 0)
+        assert value_size >= 28, (
+            f"Diagnosis count panel options.text.valueSize must be >= 28px (UX-DR2), "
+            f"got {value_size}"
+        )
+
+    # ── Forbidden Grafana default palette colors ──────────────────────────────
+
+    def test_no_grafana_default_palette_colors_in_diagnosis_count_panel(self):
+        """AC6 / UX-DR1 (Task 5.20): No forbidden Grafana default palette colors may appear
+        in diagnosis count panel id=130 JSON (case-insensitive check)."""
+        forbidden = {
+            "#73BF69", "#F2495C", "#FF9830", "#FADE2A",
+            "#5794F2", "#B877D9", "#37872D", "#C4162A", "#1F60C4", "#8F3BB8",
+        }
+        dashboard = self._load_drilldown_dashboard()
+        panel_json = json.dumps(
+            [p for p in dashboard.get("panels", []) if p.get("id") == 130]
+        ).upper()
+        for color in forbidden:
+            assert color not in panel_json, (
+                f"Forbidden Grafana default color {color} found in diagnosis count "
+                f"panel id=130 (UX-DR1)"
+            )
+
+    # ── Gating evaluations panel (id=131): existence and type ─────────────────
+
+    def test_gating_evaluations_panel_exists(self):
+        """AC4 (Task 5.21): Gating evaluations stat panel (id=131) must exist and be a stat
+        panel."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 131)
+        assert panel is not None, (
+            "Gating evaluations panel (id=131) not found in aiops-drilldown.json (AC4)"
+        )
+        assert panel.get("type") == "stat", (
+            f"Gating evaluations panel must be type 'stat', got '{panel.get('type')}'"
+        )
+
+    # ── Grid position ─────────────────────────────────────────────────────────
+
+    def test_gating_evaluations_panel_grid_position(self):
+        """AC4 (Task 5.22): Gating evaluations panel must occupy rows 19-23, right 12 cols
+        (y=19, h=5, w=12, x=12)."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 131)
+        assert panel is not None, "Gating evaluations panel (id=131) not found"
+        assert panel["gridPos"]["y"] == 19, "Gating evaluations panel must start at row y=19"
+        assert panel["gridPos"]["h"] == 5, "Gating evaluations panel must have height h=5"
+        assert panel["gridPos"]["w"] == 12, "Gating evaluations panel must have width w=12"
+        assert panel["gridPos"]["x"] == 12, (
+            "Gating evaluations panel must start at column x=12 (right 12 cols)"
+        )
+
+    # ── Transparent background ────────────────────────────────────────────────
+
+    def test_gating_evaluations_panel_is_transparent(self):
+        """AC6 / UX-DR4 (Task 5.23): Gating evaluations panel must have transparent=true."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 131)
+        assert panel is not None, "Gating evaluations panel (id=131) not found"
+        assert panel.get("transparent") is True, (
+            "Gating evaluations panel must have transparent=true (UX-DR4)"
+        )
+
+    # ── PromQL query ──────────────────────────────────────────────────────────
+
+    def test_gating_evaluations_target_uses_gating_evaluations_total(self):
+        """AC4 (Task 5.24): Gating evaluations target PromQL must query
+        aiops_gating_evaluations_total as the action rationale proxy (FR21)."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 131)
+        assert panel is not None, "Gating evaluations panel (id=131) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, (
+            "Gating evaluations panel must have a target with refId='A'"
+        )
+        expr = target_a.get("expr", "")
+        assert "aiops_gating_evaluations_total" in expr, (
+            "Gating evaluations panel PromQL must query aiops_gating_evaluations_total (AC4)"
+        )
+
+    def test_gating_evaluations_target_filters_by_topic_variable(self):
+        """AC4 (Task 5.25): Gating evaluations panel PromQL must filter by {topic=$topic}."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 131)
+        assert panel is not None, "Gating evaluations panel (id=131) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, (
+            "Gating evaluations panel must have a target with refId='A'"
+        )
+        expr = target_a.get("expr", "")
+        assert "$topic" in expr, (
+            "Gating evaluations panel PromQL must filter by $topic variable (AC4)"
+        )
+
+    # ── Description ───────────────────────────────────────────────────────────
+
+    def test_gating_evaluations_panel_has_description(self):
+        """AC6 / UX-DR12 (Task 5.26): Gating evaluations panel must have a non-empty
+        one-sentence description field."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 131)
+        assert panel is not None, "Gating evaluations panel (id=131) not found"
+        assert panel.get("description", "").strip() != "", (
+            "Gating evaluations panel must have a non-empty description (UX-DR12)"
+        )
+
+    # ── noValue guard (UX-DR5) ────────────────────────────────────────────────
+
+    def test_gating_evaluations_panel_has_no_value_field(self):
+        """AC5 / UX-DR5 (Task 5.27): Gating evaluations panel must set noValue in fieldConfig
+        so zero-activity periods display as 0, not blank."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 131)
+        assert panel is not None, "Gating evaluations panel (id=131) not found"
+        no_value = panel.get("fieldConfig", {}).get("defaults", {}).get("noValue", None)
+        assert no_value is not None, (
+            "Gating evaluations panel must have fieldConfig.defaults.noValue set (UX-DR5)"
+        )
+
+    # ── Color mode (health signal) ────────────────────────────────────────────
+
+    def test_gating_evaluations_panel_colormode_is_background(self):
+        """AC4 (Task 5.28): Gating evaluations panel must use options.colorMode='background'
+        so the three-state health color mapping fills the panel tile."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 131)
+        assert panel is not None, "Gating evaluations panel (id=131) not found"
+        color_mode = panel.get("options", {}).get("colorMode")
+        assert color_mode == "background", (
+            f"Gating evaluations panel options.colorMode must be 'background' (AC4), "
+            f"got '{color_mode}'"
+        )
+
+    # ── Forbidden Grafana default palette colors ──────────────────────────────
+
+    def test_no_grafana_default_palette_colors_in_gating_evaluations_panel(self):
+        """AC6 / UX-DR1 (Task 5.29): No forbidden Grafana default palette colors may appear
+        in gating evaluations panel id=131 JSON (case-insensitive check)."""
+        forbidden = {
+            "#73BF69", "#F2495C", "#FF9830", "#FADE2A",
+            "#5794F2", "#B877D9", "#37872D", "#C4162A", "#1F60C4", "#8F3BB8",
+        }
+        dashboard = self._load_drilldown_dashboard()
+        panel_json = json.dumps(
+            [p for p in dashboard.get("panels", []) if p.get("id") == 131]
+        ).upper()
+        for color in forbidden:
+            assert color not in panel_json, (
+                f"Forbidden Grafana default color {color} found in gating evaluations "
+                f"panel id=131 (UX-DR1)"
+            )
+
+    # ── Dashboard version ─────────────────────────────────────────────────────
+
+    def test_drilldown_dashboard_version_is_at_least_4(self):
+        """Drilldown dashboard version must be >= 4 after story 4-3 panel additions
+        (Task 5.30 / NFR12)."""
+        dashboard = self._load_drilldown_dashboard()
+        assert dashboard.get("version", 0) >= 4, (
+            f"Drilldown dashboard version must be >= 4 after story 4-3, "
+            f"got {dashboard.get('version')}"
+        )
