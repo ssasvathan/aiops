@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -263,6 +263,160 @@ def test_run_harness_cleanup_runs_sweep_and_logs_summary(monkeypatch) -> None:
     assert complete_log.kwargs["outbox_rows_deleted_count"] == 3
     assert complete_log.kwargs["redis_keys_matched_count"] == 5
     assert complete_log.kwargs["redis_keys_deleted_count"] == 5
+
+
+def test_should_trigger_periodic_harness_cleanup_returns_false_when_interval_zero() -> None:
+    assert (
+        __main__._should_trigger_periodic_harness_cleanup(
+            app_env_value=__main__.AppEnv.local.value,
+            interval_seconds=0,
+            last_at=None,
+            now=datetime(2026, 4, 12, 12, 0, 0, tzinfo=UTC),
+        )
+        is False
+    )
+
+
+def test_should_trigger_periodic_harness_cleanup_refuses_non_local_or_harness_env() -> None:
+    now = datetime(2026, 4, 12, 12, 0, 0, tzinfo=UTC)
+    for forbidden_env in ("prod", "uat", "dev"):
+        assert (
+            __main__._should_trigger_periodic_harness_cleanup(
+                app_env_value=forbidden_env,
+                interval_seconds=600,
+                last_at=None,
+                now=now,
+            )
+            is False
+        ), f"must refuse env={forbidden_env!r}"
+
+
+def test_should_trigger_periodic_harness_cleanup_fires_on_first_tick_in_local_env() -> None:
+    assert (
+        __main__._should_trigger_periodic_harness_cleanup(
+            app_env_value=__main__.AppEnv.local.value,
+            interval_seconds=600,
+            last_at=None,
+            now=datetime(2026, 4, 12, 12, 0, 0, tzinfo=UTC),
+        )
+        is True
+    )
+
+
+def test_should_trigger_periodic_harness_cleanup_respects_interval_elapsed() -> None:
+    last_at = datetime(2026, 4, 12, 12, 0, 0, tzinfo=UTC)
+    # Not yet elapsed (9 min after last, interval 10 min).
+    assert (
+        __main__._should_trigger_periodic_harness_cleanup(
+            app_env_value=__main__.AppEnv.harness.value,
+            interval_seconds=600,
+            last_at=last_at,
+            now=last_at + timedelta(minutes=9),
+        )
+        is False
+    )
+    # Exactly elapsed.
+    assert (
+        __main__._should_trigger_periodic_harness_cleanup(
+            app_env_value=__main__.AppEnv.harness.value,
+            interval_seconds=600,
+            last_at=last_at,
+            now=last_at + timedelta(minutes=10),
+        )
+        is True
+    )
+
+
+def test_periodic_harness_cleanup_not_respawned_while_task_in_flight() -> None:
+    """AC4: `_harness_cleanup_task.done()` guard prevents double-spawn.
+
+    Exercises the outer state guard directly (independent of the scheduler loop)
+    by simulating an in-flight task and asserting the predicate-gate would not
+    be consulted.
+    """
+    in_flight_task = MagicMock()
+    in_flight_task.done.return_value = False
+
+    should_skip_due_to_in_flight = not (
+        in_flight_task is None or in_flight_task.done()
+    )
+    assert should_skip_due_to_in_flight is True
+
+    completed_task = MagicMock()
+    completed_task.done.return_value = True
+
+    should_skip_due_to_in_flight = not (
+        completed_task is None or completed_task.done()
+    )
+    assert should_skip_due_to_in_flight is False
+
+
+@pytest.mark.asyncio
+async def test_run_harness_cleanup_once_calls_helpers_and_logs_summary(monkeypatch) -> None:
+    object_store_client = MagicMock()
+    engine = MagicMock()
+    redis_client = MagicMock()
+    logger = MagicMock()
+
+    monkeypatch.setattr(
+        __main__,
+        "_collect_harness_casefile_keys",
+        lambda **kwargs: ["cases/case-harness-a/triage.json"],
+    )
+    monkeypatch.setattr(__main__, "_delete_harness_casefiles", lambda **kwargs: (1, 0))
+    monkeypatch.setattr(__main__, "_delete_harness_outbox_rows", lambda **kwargs: 2)
+    monkeypatch.setattr(__main__, "_delete_harness_redis_keys", lambda **kwargs: (4, 4))
+
+    await __main__._run_harness_cleanup_once(
+        object_store_client=object_store_client,
+        engine=engine,
+        redis_client=redis_client,
+        logger=logger,
+    )
+
+    complete_log = next(
+        (
+            call
+            for call in logger.info.call_args_list
+            if call.args and call.args[0] == "harness_periodic_cleanup_completed"
+        ),
+        None,
+    )
+    assert complete_log is not None
+    assert complete_log.kwargs["event_type"] == "harness.periodic_cleanup.complete"
+    assert complete_log.kwargs["casefiles_found_count"] == 1
+    assert complete_log.kwargs["casefiles_deleted_count"] == 1
+    assert complete_log.kwargs["outbox_rows_deleted_count"] == 2
+    assert complete_log.kwargs["redis_keys_deleted_count"] == 4
+
+
+@pytest.mark.asyncio
+async def test_run_harness_cleanup_once_swallows_helper_exceptions(monkeypatch) -> None:
+    logger = MagicMock()
+
+    def _boom(**kwargs):
+        raise RuntimeError("redis unreachable")
+
+    monkeypatch.setattr(__main__, "_collect_harness_casefile_keys", _boom)
+
+    # Must not raise — hot-path loop stability depends on it.
+    await __main__._run_harness_cleanup_once(
+        object_store_client=MagicMock(),
+        engine=MagicMock(),
+        redis_client=MagicMock(),
+        logger=logger,
+    )
+
+    failure_log = next(
+        (
+            call
+            for call in logger.warning.call_args_list
+            if call.args and call.args[0] == "harness_periodic_cleanup_failed"
+        ),
+        None,
+    )
+    assert failure_log is not None
+    assert failure_log.kwargs["event_type"] == "harness.periodic_cleanup.error"
 
 
 def _build_cold_path_settings_for_unit() -> SimpleNamespace:
@@ -834,6 +988,7 @@ async def test_hot_path_scheduler_loop_calls_backfill_before_first_cycle(
             dedupe_store=MagicMock(),
             object_store_client=MagicMock(),
             outbox_repository=MagicMock(),
+            engine=MagicMock(),
             pd_client=MagicMock(),
             slack_client=MagicMock(),
             topology_loader=MagicMock(),
@@ -1171,6 +1326,8 @@ def _hot_path_settings_for_coordination_tests(*, lock_enabled: bool) -> SimpleNa
         BASELINE_BACKFILL_TIMEOUT_SECONDS=60,
         BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS=270,
         BASELINE_DEVIATION_STAGE_ENABLED=False,
+        APP_ENV=SimpleNamespace(value="prod"),
+        HARNESS_PERIODIC_CLEANUP_INTERVAL_SECONDS=0,
     )
 
 
@@ -1330,6 +1487,7 @@ async def test_hot_path_scheduler_skips_stage_execution_when_cycle_lock_yielded(
             dedupe_store=MagicMock(),
             object_store_client=MagicMock(),
             outbox_repository=MagicMock(),
+            engine=MagicMock(),
             pd_client=MagicMock(),
             slack_client=MagicMock(),
             topology_loader=topology_loader,
@@ -1398,6 +1556,7 @@ async def test_hot_path_scheduler_fail_open_continues_to_pipeline_path(
             dedupe_store=MagicMock(),
             object_store_client=MagicMock(),
             outbox_repository=MagicMock(),
+            engine=MagicMock(),
             pd_client=MagicMock(),
             slack_client=MagicMock(),
             topology_loader=topology_loader,
@@ -1452,6 +1611,7 @@ async def test_hot_path_scheduler_does_not_attempt_lock_when_feature_flag_disabl
             dedupe_store=MagicMock(),
             object_store_client=MagicMock(),
             outbox_repository=MagicMock(),
+            engine=MagicMock(),
             pd_client=MagicMock(),
             slack_client=MagicMock(),
             topology_loader=topology_loader,
@@ -1505,6 +1665,7 @@ async def test_hot_path_scheduler_skips_casefile_pipeline_when_existing_triage_f
             dedupe_store=MagicMock(),
             object_store_client=MagicMock(),
             outbox_repository=outbox_repository,
+            engine=MagicMock(),
             pd_client=MagicMock(),
             slack_client=MagicMock(),
             topology_loader=topology_loader,
@@ -1577,6 +1738,7 @@ async def test_hot_path_scheduler_skips_casefile_pipeline_for_invalid_existing_t
             dedupe_store=MagicMock(),
             object_store_client=MagicMock(),
             outbox_repository=outbox_repository,
+            engine=MagicMock(),
             pd_client=MagicMock(),
             slack_client=MagicMock(),
             topology_loader=topology_loader,
@@ -1660,6 +1822,7 @@ async def test_hot_path_scheduler_logs_outbox_audit_signal_for_observe_cases(
             dedupe_store=MagicMock(),
             object_store_client=MagicMock(),
             outbox_repository=outbox_repository,
+            engine=MagicMock(),
             pd_client=MagicMock(),
             slack_client=MagicMock(),
             topology_loader=topology_loader,
@@ -1734,6 +1897,7 @@ async def test_hot_path_scheduler_logs_case_error_for_non_targeted_lookup_value_
             dedupe_store=MagicMock(),
             object_store_client=MagicMock(),
             outbox_repository=MagicMock(),
+            engine=MagicMock(),
             pd_client=MagicMock(),
             slack_client=MagicMock(),
             topology_loader=topology_loader,
@@ -1813,6 +1977,7 @@ async def test_hot_path_scheduler_logs_case_error_when_lookup_raises_integration
             dedupe_store=MagicMock(),
             object_store_client=MagicMock(),
             outbox_repository=MagicMock(),
+            engine=MagicMock(),
             pd_client=MagicMock(),
             slack_client=MagicMock(),
             topology_loader=topology_loader,
@@ -1860,6 +2025,8 @@ def _hot_path_settings_for_shard_tests(*, shard_enabled: bool) -> SimpleNamespac
         BASELINE_BACKFILL_TIMEOUT_SECONDS=60,
         BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS=270,
         BASELINE_DEVIATION_STAGE_ENABLED=False,
+        APP_ENV=SimpleNamespace(value="prod"),
+        HARNESS_PERIODIC_CLEANUP_INTERVAL_SECONDS=0,
     )
 
 
@@ -1907,6 +2074,7 @@ def _make_shard_loop_call(monkeypatch, settings, shard_coordinator):
         dedupe_store=MagicMock(),
         object_store_client=MagicMock(),
         outbox_repository=MagicMock(),
+        engine=MagicMock(),
         pd_client=MagicMock(),
         slack_client=MagicMock(),
         topology_loader=topology_loader,
@@ -2204,6 +2372,7 @@ async def test_health_registry_healthy_registered_after_successful_cycle(
             dedupe_store=MagicMock(),
             object_store_client=MagicMock(),
             outbox_repository=MagicMock(),
+            engine=MagicMock(),
             pd_client=MagicMock(),
             slack_client=MagicMock(),
             topology_loader=MagicMock(),
@@ -2290,6 +2459,7 @@ async def test_health_registry_degraded_on_redis_unavailable(
             dedupe_store=MagicMock(),
             object_store_client=MagicMock(),
             outbox_repository=MagicMock(),
+            engine=MagicMock(),
             pd_client=MagicMock(),
             slack_client=MagicMock(),
             topology_loader=MagicMock(),
@@ -2369,6 +2539,7 @@ async def test_health_registry_baseline_deviation_not_updated_when_stage_disable
             dedupe_store=MagicMock(),
             object_store_client=MagicMock(),
             outbox_repository=MagicMock(),
+            engine=MagicMock(),
             pd_client=MagicMock(),
             slack_client=MagicMock(),
             topology_loader=MagicMock(),

@@ -111,6 +111,13 @@ class Settings(BaseSettings):
     DISTRIBUTED_CYCLE_LOCK_ENABLED: bool = False
     CYCLE_LOCK_MARGIN_SECONDS: int = 60
 
+    # Periodic in-process harness cleanup (demo-freshness knob).
+    # When > 0 AND APP_ENV ∈ {local, harness}, the hot-path scheduler wipes harness
+    # S3/Redis/outbox state every N seconds so the findings counter keeps ticking
+    # across a long-running demo. Defaults to 0 (disabled) — prod/uat/dev env files
+    # must never opt in.
+    HARNESS_PERIODIC_CLEANUP_INTERVAL_SECONDS: int = 0
+
     # Shard coordination (Story 4.2) — disabled by default for incremental rollout
     # SHARD_LEASE_TTL_SECONDS must be < HOT_PATH_SCHEDULER_INTERVAL_SECONDS so that a
     # pod's NX lease expires before the next cycle, allowing clean per-cycle re-acquisition.
@@ -287,6 +294,8 @@ class Settings(BaseSettings):
             )
         if self.CYCLE_LOCK_MARGIN_SECONDS <= 0:
             raise ValueError("CYCLE_LOCK_MARGIN_SECONDS must be > 0")
+        if self.HARNESS_PERIODIC_CLEANUP_INTERVAL_SECONDS < 0:
+            raise ValueError("HARNESS_PERIODIC_CLEANUP_INTERVAL_SECONDS must be >= 0")
         self.TOPOLOGY_REGISTRY_PATH = self.TOPOLOGY_REGISTRY_PATH.strip()
         if not self.TOPOLOGY_REGISTRY_PATH:
             raise ValueError("TOPOLOGY_REGISTRY_PATH must be a non-empty path")

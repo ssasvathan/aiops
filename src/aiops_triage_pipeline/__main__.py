@@ -166,6 +166,30 @@ _HARNESS_OBJECT_DELETE_BATCH_SIZE = 1000
 _RECOMPUTE_INTERVAL_SECONDS = 7 * 24 * 3600
 
 
+def _should_trigger_periodic_harness_cleanup(
+    *,
+    app_env_value: str,
+    interval_seconds: int,
+    last_at: datetime | None,
+    now: datetime,
+) -> bool:
+    """Return True if a periodic harness-state cleanup should fire this tick.
+
+    Triple-gated:
+    - interval_seconds must be > 0 (knob opt-in)
+    - app_env_value must be `local` or `harness` (never prod/uat/dev)
+    - wall-clock elapsed since last cleanup must be >= interval_seconds,
+      or this is the first tick (last_at is None)
+    """
+    if interval_seconds <= 0:
+        return False
+    if app_env_value not in {AppEnv.local.value, AppEnv.harness.value}:
+        return False
+    if last_at is None:
+        return True
+    return (now - last_at).total_seconds() >= interval_seconds
+
+
 def _should_trigger_recompute(
     last_iso: str | None,
     now: datetime,
@@ -579,7 +603,8 @@ def _run_hot_path() -> None:
         redis_client = redis_lib.Redis.from_url(settings.REDIS_URL)
         dedupe_store = RedisActionDedupeStore(redis_client)
         object_store_client = build_s3_object_store_client_from_settings(settings)
-        outbox_repository = OutboxSqlRepository(engine=create_engine(settings.DATABASE_URL))
+        engine = create_engine(settings.DATABASE_URL)
+        outbox_repository = OutboxSqlRepository(engine=engine)
         outbox_repository.ensure_schema()
         pd_client = PagerDutyClient(
             mode=PagerDutyIntegrationMode(settings.INTEGRATION_MODE_PD.value),
@@ -638,6 +663,7 @@ def _run_hot_path() -> None:
             dedupe_store=dedupe_store,
             object_store_client=object_store_client,
             outbox_repository=outbox_repository,
+            engine=engine,
             pd_client=pd_client,
             slack_client=slack_client,
             topology_loader=topology_loader,
@@ -730,6 +756,7 @@ async def _hot_path_scheduler_loop(
     dedupe_store: RedisActionDedupeStore,
     object_store_client,
     outbox_repository: OutboxSqlRepository,
+    engine,
     pd_client: PagerDutyClient,
     slack_client: SlackClient,
     topology_loader: TopologyRegistryLoader,
@@ -794,6 +821,8 @@ async def _hot_path_scheduler_loop(
         )
 
     _recompute_task: asyncio.Task[int] | None = None
+    _harness_cleanup_task: asyncio.Task[None] | None = None
+    _last_harness_cleanup_at: datetime | None = None
 
     while True:
         evaluation_time = datetime.now(UTC)
@@ -832,6 +861,27 @@ async def _hot_path_scheduler_loop(
                     ),
                     name="baseline-weekly-recompute",
                 )
+
+        # Periodic harness-state cleanup (demo-freshness knob).
+        # Reuses the same helpers as `--mode harness-cleanup`; scoped to `case-harness-*`.
+        if (
+            _harness_cleanup_task is None or _harness_cleanup_task.done()
+        ) and _should_trigger_periodic_harness_cleanup(
+            app_env_value=settings.APP_ENV.value,
+            interval_seconds=settings.HARNESS_PERIODIC_CLEANUP_INTERVAL_SECONDS,
+            last_at=_last_harness_cleanup_at,
+            now=evaluation_time,
+        ):
+            _harness_cleanup_task = asyncio.create_task(
+                _run_harness_cleanup_once(
+                    object_store_client=object_store_client,
+                    engine=engine,
+                    redis_client=redis_client,
+                    logger=logger,
+                ),
+                name="harness-periodic-cleanup",
+            )
+            _last_harness_cleanup_at = evaluation_time
 
         if settings.DISTRIBUTED_CYCLE_LOCK_ENABLED:
             lock_outcome = cycle_lock.acquire(
@@ -1922,6 +1972,52 @@ def _delete_harness_redis_keys(*, redis_client) -> tuple[int, int]:
     for batch in _chunk_keys(sorted_keys, _HARNESS_REDIS_DELETE_BATCH_SIZE):
         deleted_count += int(redis_client.delete(*batch))
     return len(sorted_keys), deleted_count
+
+
+async def _run_harness_cleanup_once(
+    *,
+    object_store_client,
+    engine,
+    redis_client,
+    logger: structlog.BoundLogger,
+) -> None:
+    """Run one periodic harness-state wipe off the event loop.
+
+    Orchestrates the same three helpers used by `--mode harness-cleanup` but via
+    `asyncio.to_thread` so the hot-path scheduler never blocks. Caller is
+    responsible for the `APP_ENV in {local, harness}` env gate.
+    """
+    try:
+        keys = await asyncio.to_thread(
+            _collect_harness_casefile_keys, object_store_client=object_store_client
+        )
+        casefiles_deleted, casefiles_failed = await asyncio.to_thread(
+            _delete_harness_casefiles, object_store_client=object_store_client, keys=keys
+        )
+        outbox_deleted = await asyncio.to_thread(
+            _delete_harness_outbox_rows, engine=engine
+        )
+        redis_matched, redis_deleted = await asyncio.to_thread(
+            _delete_harness_redis_keys, redis_client=redis_client
+        )
+    except Exception:
+        logger.warning(
+            "harness_periodic_cleanup_failed",
+            event_type="harness.periodic_cleanup.error",
+            exc_info=True,
+        )
+        return
+
+    logger.info(
+        "harness_periodic_cleanup_completed",
+        event_type="harness.periodic_cleanup.complete",
+        casefiles_found_count=len(keys),
+        casefiles_deleted_count=casefiles_deleted,
+        casefiles_failed_count=casefiles_failed,
+        outbox_rows_deleted_count=outbox_deleted,
+        redis_keys_matched_count=redis_matched,
+        redis_keys_deleted_count=redis_deleted,
+    )
 
 
 def _run_harness_cleanup() -> None:
