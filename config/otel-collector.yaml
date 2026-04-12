@@ -1,0 +1,44 @@
+# OpenTelemetry Collector configuration — bridges OTLP metrics from aiOps app
+# services (hot-path, outbox-publisher, cold-path) to a Prometheus scrape endpoint.
+#
+# Pipeline: app (OTLP HTTP) → otel-collector → Prometheus (scrape :8889/metrics) → Grafana
+#
+# Name translation: dotted OTLP names (aiops.findings.total) become underscored
+# Prometheus names (aiops_findings_total). Dashboards already query the underscored
+# form, so no dashboard edits are required.
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+      grpc:
+        endpoint: 0.0.0.0:4317
+
+processors:
+  # Batch metric points before export to reduce overhead; short timeout keeps
+  # scrape freshness aligned with Prometheus 15s scrape_interval.
+  batch:
+    timeout: 5s
+    send_batch_size: 1024
+
+exporters:
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    # Preserve OTLP resource attributes (service.name, deployment.environment, etc.)
+    # as Prometheus labels so dashboards can filter by them if needed.
+    resource_to_telemetry_conversion:
+      enabled: true
+
+extensions:
+  # Health endpoint used by the docker-compose healthcheck.
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+service:
+  extensions: [health_check]
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [prometheus]

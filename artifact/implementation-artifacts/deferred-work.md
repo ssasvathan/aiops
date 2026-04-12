@@ -1,5 +1,9 @@
 # Deferred Work
 
+## Deferred from: code review of fix-grafana-empty-dashboard (2026-04-11)
+
+- `config/otel-collector.yaml` has no `memory_limiter` processor. Valid operational hardening for higher metric volumes or production-like stacks; not required for local dev. When stack is deployed beyond local Docker (dev/uat/prod), add `memory_limiter` as the first processor in the metrics pipeline with bounded `check_interval`/`limit_mib`.
+
 ## Deferred from: code review of 2-1-hero-banner-p-l-stat-panels (2026-04-11)
 
 - `TestDashboardJsonShells::test_dashboards_have_no_panels_initially` test name is misleading — now that panels are populated in story 2-1, the test only asserts `isinstance(list)` vacuously. Pre-existing test from story 1-1; rename or strengthen in a future cleanup story.

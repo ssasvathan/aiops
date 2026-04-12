@@ -15,9 +15,11 @@ scrape_configs:
     static_configs:
       - targets: ['harness:8000']
 
-  # aiOps pipeline app metrics — exposed by the app container on port 8080
-  # Scrape errors are expected until stories 1-2/1-3 add OTLP instruments and metrics endpoint
+  # aiOps pipeline app metrics — app/outbox-publisher/cold-path emit OTLP HTTP
+  # to the otel-collector sidecar, which re-exposes the stream as /metrics on :8889.
+  # Dotted OTLP names (aiops.findings.total) are translated to underscored Prometheus
+  # names (aiops_findings_total) by the collector's Prometheus exporter.
   - job_name: 'aiops-pipeline'
     scrape_interval: 15s
     static_configs:
-      - targets: ['app:8080']
+      - targets: ['otel-collector:8889']

@@ -156,6 +156,25 @@ services:
       - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus-data:/prometheus
 
+  # OpenTelemetry Collector — receives OTLP metrics from app/outbox-publisher/cold-path
+  # and exposes them as a Prometheus scrape endpoint on :8889/metrics.
+  # Keep as infrastructure-only bridge; dashboards and app instruments stay unchanged.
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.96.0
+    command: ["--config=/etc/otelcol/otel-collector.yaml"]
+    ports:
+      - "8889:8889"   # Prometheus scrape endpoint (debug/host access)
+      - "13133:13133" # Collector health check endpoint
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:13133/"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    volumes:
+      - ./config/otel-collector.yaml:/etc/otelcol/otel-collector.yaml:ro
+
   grafana:
     image: grafana/grafana-oss:12.4.2
     ports:
@@ -225,6 +244,8 @@ services:
         condition: service_healthy
       prometheus:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
       kafka-init:
         condition: service_completed_successfully
       minio-init:
@@ -244,6 +265,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
       kafka-init:
         condition: service_completed_successfully
       minio-init:
@@ -261,6 +284,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_healthy
+      otel-collector:
+        condition: service_started
       kafka-init:
         condition: service_completed_successfully
       minio-init:

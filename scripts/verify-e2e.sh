@@ -91,7 +91,7 @@ check_produced_cases() {
 
   # Fallback: simpler grep if python3 parsing produced no result
   if [ "$max_cases" -eq 0 ]; then
-    if echo "$log_lines" | grep -qE '"produced_cases": *[1-9]'; then
+    if echo "$log_lines" | grep -qE '("produced_cases": *[1-9]|produced_cases=[1-9])'; then
       echo "OK (produced_cases > 0 confirmed via grep fallback)"
       return 0
     fi
@@ -145,6 +145,38 @@ check_outbox_row() {
   fi
 }
 check "Postgres outbox has ≥1 row" check_outbox_row
+
+# Check 4: Prometheus is scraping the aiops-pipeline target (via otel-collector)
+# and has received at least one aiops_* sample. Guards against regressions in the
+# OTLP → collector → Prometheus → Grafana dashboard pipeline.
+check_prometheus_scrape() {
+  local targets
+  targets=$(curl -fsS 'http://localhost:9090/api/v1/targets?state=active' 2>&1 || echo "")
+  if [ -z "$targets" ]; then
+    echo "FAILED — could not query Prometheus targets API at :9090"
+    return 1
+  fi
+  if ! echo "$targets" | grep -q '"job":"aiops-pipeline"'; then
+    echo "FAILED — aiops-pipeline job not found in Prometheus targets"
+    return 1
+  fi
+  local up_count
+  up_count=$(echo "$targets" | python3 -c "import sys,json; d=json.load(sys.stdin); print(sum(1 for t in d.get('data',{}).get('activeTargets',[]) if t.get('labels',{}).get('job')=='aiops-pipeline' and t.get('health')=='up'))" 2>/dev/null || echo "0")
+  if [ "$up_count" -lt 1 ] 2>/dev/null; then
+    echo "FAILED — aiops-pipeline target is not UP (collector down or scrape misconfigured)"
+    return 1
+  fi
+  # Confirm at least one aiops_* series has samples.
+  local sample
+  sample=$(curl -fsS 'http://localhost:9090/api/v1/query?query=count(%7B__name__%3D~%22aiops_.*%22%7D)' 2>&1 || echo "")
+  if echo "$sample" | grep -qE '"value":\[[0-9.]+,"[1-9]'; then
+    echo "OK (aiops-pipeline UP, aiops_* series present)"
+    return 0
+  fi
+  echo "FAILED — aiops-pipeline target UP but zero aiops_* samples in Prometheus"
+  return 1
+}
+check "Prometheus scraping aiops-pipeline" check_prometheus_scrape
 
 echo ""
 if [ "$ERRORS" -eq 0 ]; then
