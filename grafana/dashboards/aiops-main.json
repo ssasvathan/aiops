@@ -3,7 +3,7 @@
   "title": "aiOps \u2014 Pipeline Intelligence",
   "description": "Stakeholder narrative and operational detail for the aiOps triage pipeline. Panel IDs reserved: 1\u201399 (main dashboard only; drill-down uses 100\u2013199).",
   "schemaVersion": 39,
-  "version": 9,
+  "version": 11,
   "tags": ["aiops"],
   "timezone": "browser",
   "time": {
@@ -72,7 +72,7 @@
         "graphMode": "area",
         "justifyMode": "center",
         "orientation": "horizontal",
-        "textMode": "auto",
+        "textMode": "value",
         "reduceOptions": {
           "calcs": ["sum"],
           "fields": "",
@@ -92,9 +92,9 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "increase(aiops_findings_total[$__range]) or vector(0)",
+          "expr": "sum(increase(aiops_findings_total[$__range])) or vector(0)",
           "refId": "A",
-          "legendFormat": ""
+          "legendFormat": "Actioned in window"
         }
       ],
       "datasource": { "type": "prometheus", "uid": "prometheus" }
@@ -219,13 +219,13 @@
       "targets": [
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "rate(aiops_findings_total[$__rate_interval]) or vector(0)",
+          "expr": "sum(rate(aiops_findings_total[$__rate_interval])) or vector(0)",
           "refId": "A",
           "legendFormat": "Detections"
         },
         {
           "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "rate(aiops_findings_total[$__rate_interval]) * 1.3 + 0.1 or vector(0.1)",
+          "expr": "sum(rate(aiops_findings_total[$__rate_interval])) * 1.3 + 0.1 or vector(0.1)",
           "refId": "B",
           "legendFormat": "upper_bound"
         },
