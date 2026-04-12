@@ -3,7 +3,7 @@
   "title": "aiOps \u2014 Pipeline Intelligence",
   "description": "Stakeholder narrative and operational detail for the aiOps triage pipeline. Panel IDs reserved: 1\u201399 (main dashboard only; drill-down uses 100\u2013199).",
   "schemaVersion": 39,
-  "version": 6,
+  "version": 7,
   "tags": ["aiops"],
   "timezone": "browser",
   "time": {
@@ -403,6 +403,174 @@
           "expr": "sum by(anomaly_family) (increase(aiops_findings_total[$__range]))",
           "refId": "A",
           "legendFormat": "{{anomaly_family}}"
+        }
+      ],
+      "datasource": { "type": "prometheus", "uid": "prometheus" }
+    },
+    {
+      "id": 10,
+      "type": "stat",
+      "title": "Diagnosis invocations",
+      "description": "Total LLM diagnosis engine invocations completed in the selected time window.",
+      "gridPos": { "h": 2, "w": 12, "x": 12, "y": 36 },
+      "transparent": true,
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "textMode": "value",
+        "text": { "valueSize": 28 },
+        "reduceOptions": {
+          "calcs": ["sum"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "#7A7A7A" },
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(increase(aiops_diagnosis_completed_total[$__range]))",
+          "refId": "A",
+          "legendFormat": "Invocations"
+        }
+      ],
+      "datasource": { "type": "prometheus", "uid": "prometheus" }
+    },
+    {
+      "id": 11,
+      "type": "stat",
+      "title": "Fault domain identification rate",
+      "description": "Percentage of completed diagnoses where a specific fault domain was identified.",
+      "gridPos": { "h": 2, "w": 12, "x": 12, "y": 38 },
+      "transparent": true,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "textMode": "value",
+        "text": { "valueSize": 28 },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#7A7A7A", "value": null },
+              { "color": "#E8913A", "value": 0.5 },
+              { "color": "#6BAD64", "value": 0.8 }
+            ]
+          },
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(increase(aiops_diagnosis_completed_total{fault_domain_present=\"true\"}[$__range])) / sum(increase(aiops_diagnosis_completed_total[$__range]))",
+          "refId": "A",
+          "legendFormat": "Fault domain rate"
+        }
+      ],
+      "datasource": { "type": "prometheus", "uid": "prometheus" }
+    },
+    {
+      "id": 12,
+      "type": "barchart",
+      "title": "Confidence distribution",
+      "description": "Distribution of diagnosis confidence levels (LOW, MEDIUM, HIGH) over the selected time window.",
+      "gridPos": { "h": 3, "w": 12, "x": 12, "y": 40 },
+      "transparent": true,
+      "options": {
+        "orientation": "horizontal",
+        "sort": "desc",
+        "text": {
+          "titleSize": 14,
+          "valueSize": 14
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#7A7A7A", "value": null },
+              { "color": "#6BAD64", "value": 0 }
+            ]
+          },
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by(confidence) (increase(aiops_diagnosis_completed_total[$__range]))",
+          "refId": "A",
+          "legendFormat": "{{confidence}}"
+        }
+      ],
+      "datasource": { "type": "prometheus", "uid": "prometheus" }
+    },
+    {
+      "id": 13,
+      "type": "stat",
+      "title": "High confidence rate",
+      "description": "Percentage of completed diagnoses that achieved HIGH confidence level.",
+      "gridPos": { "h": 2, "w": 12, "x": 12, "y": 43 },
+      "transparent": true,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "textMode": "value",
+        "text": { "valueSize": 28 },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#7A7A7A", "value": null },
+              { "color": "#E8913A", "value": 0.5 },
+              { "color": "#6BAD64", "value": 0.7 }
+            ]
+          },
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(increase(aiops_diagnosis_completed_total{confidence=\"HIGH\"}[$__range])) / sum(increase(aiops_diagnosis_completed_total[$__range]))",
+          "refId": "A",
+          "legendFormat": "High confidence rate"
         }
       ],
       "datasource": { "type": "prometheus", "uid": "prometheus" }
