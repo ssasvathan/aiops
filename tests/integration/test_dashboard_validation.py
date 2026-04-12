@@ -2455,6 +2455,334 @@ class TestPipelineCapabilityStack:
             f"Dashboard version must be >= 8 after story 3-4, got {dashboard.get('version')}"
         )
 
+
+class TestDrillDownDashboardShell:
+    """Config-validation tests for story 4-1: Drill-down dashboard shell, $topic template
+    variable, back navigation panel (id=100), and topic health stat panel (id=101).
+
+    No live docker-compose stack required — all assertions are pure JSON parsing.
+    """
+
+    def _load_main_dashboard(self):
+        path = REPO_ROOT / "grafana/dashboards/aiops-main.json"
+        return json.loads(path.read_text())
+
+    def _load_drilldown_dashboard(self):
+        path = REPO_ROOT / "grafana/dashboards/aiops-drilldown.json"
+        return json.loads(path.read_text())
+
+    def _get_panel_by_id(self, dashboard, panel_id):
+        panels = dashboard.get("panels", [])
+        return next((p for p in panels if p.get("id") == panel_id), None)
+
+    # ── $topic template variable ──────────────────────────────────────────────
+
+    def test_topic_variable_exists_in_drilldown(self):
+        """AC1 (Task 6.2): $topic template variable must exist in drilldown templating list."""
+        dashboard = self._load_drilldown_dashboard()
+        variables = dashboard.get("templating", {}).get("list", [])
+        topic_var = next((v for v in variables if v.get("name") == "topic"), None)
+        assert topic_var is not None, (
+            "$topic template variable not found in aiops-drilldown.json templating.list (FR20)"
+        )
+
+    def test_topic_variable_type_is_query(self):
+        """AC1 (Task 6.3): $topic variable must be type 'query' so it is populated from
+        Prometheus label values."""
+        dashboard = self._load_drilldown_dashboard()
+        variables = dashboard.get("templating", {}).get("list", [])
+        topic_var = next((v for v in variables if v.get("name") == "topic"), None)
+        assert topic_var is not None, "$topic variable not found"
+        assert topic_var.get("type") == "query", (
+            f"$topic variable type must be 'query', got '{topic_var.get('type')}'"
+        )
+
+    def test_topic_variable_datasource_is_prometheus(self):
+        """AC1 (Task 6.3): $topic variable datasource must be prometheus."""
+        dashboard = self._load_drilldown_dashboard()
+        variables = dashboard.get("templating", {}).get("list", [])
+        topic_var = next((v for v in variables if v.get("name") == "topic"), None)
+        assert topic_var is not None, "$topic variable not found"
+        ds = topic_var.get("datasource", {})
+        assert ds.get("type") == "prometheus", (
+            f"$topic variable datasource must be prometheus, got '{ds.get('type')}'"
+        )
+
+    def test_topic_variable_query_uses_aiops_findings_total(self):
+        """AC1 (Task 6.4): $topic variable query must use aiops_findings_total to enumerate
+        available topics from the findings counter label set."""
+        dashboard = self._load_drilldown_dashboard()
+        variables = dashboard.get("templating", {}).get("list", [])
+        topic_var = next((v for v in variables if v.get("name") == "topic"), None)
+        assert topic_var is not None, "$topic variable not found"
+        definition = topic_var.get("definition", "")
+        query = topic_var.get("query", "")
+        query_str = query if isinstance(query, str) else query.get("query", "")
+        combined = definition + query_str
+        assert "aiops_findings_total" in combined, (
+            "$topic variable query must use aiops_findings_total to enumerate topics (AC1)"
+        )
+
+    # ── Default time window ───────────────────────────────────────────────────
+
+    def test_drilldown_default_time_window_is_24h(self):
+        """AC1 (Task 6.5): Drilldown default time window must be 24h (now-24h to now) —
+        tighter than the main dashboard's 7d for per-topic triage focus."""
+        dashboard = self._load_drilldown_dashboard()
+        time_range = dashboard.get("time", {})
+        assert time_range.get("from") == "now-24h", (
+            f"Drilldown default time.from must be 'now-24h', got '{time_range.get('from')}'"
+        )
+
+    # ── Back navigation panel (id=100) ────────────────────────────────────────
+
+    def test_back_navigation_panel_exists(self):
+        """AC4 (Task 6.6): Back navigation text panel (id=100) must exist in drilldown."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 100)
+        assert panel is not None, (
+            "Back navigation panel (id=100) not found in aiops-drilldown.json (AC4)"
+        )
+        assert panel.get("type") == "text", (
+            f"Back navigation panel must be type 'text', got '{panel.get('type')}'"
+        )
+
+    def test_back_navigation_panel_grid_position(self):
+        """AC4 (Task 6.7): Back navigation panel must occupy row 0, full width
+        (y=0, h=1, w=24, x=0)."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 100)
+        assert panel is not None, "Back navigation panel (id=100) not found"
+        assert panel["gridPos"]["y"] == 0, "Back navigation panel must start at row y=0"
+        assert panel["gridPos"]["h"] == 1, "Back navigation panel must have height h=1"
+        assert panel["gridPos"]["w"] == 24, "Back navigation panel must span full width w=24"
+        assert panel["gridPos"]["x"] == 0, "Back navigation panel must start at column x=0"
+
+    def test_back_navigation_panel_is_transparent(self):
+        """AC4 (Task 6.8): Back navigation panel must have transparent=true (UX-DR4)."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 100)
+        assert panel is not None, "Back navigation panel (id=100) not found"
+        assert panel.get("transparent") is True, (
+            "Back navigation panel must have transparent=true (UX-DR4)"
+        )
+
+    def test_back_navigation_panel_content_references_main_dashboard(self):
+        """AC4 (Task 6.9): Back navigation panel content must reference aiops-main so the
+        link navigates back to the main overview dashboard."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 100)
+        assert panel is not None, "Back navigation panel (id=100) not found"
+        content = panel.get("options", {}).get("content", "")
+        assert "aiops-main" in content, (
+            "Back navigation panel content must reference 'aiops-main' dashboard UID (AC4)"
+        )
+
+    # ── Topic health stat panel (id=101) ──────────────────────────────────────
+
+    def test_topic_health_panel_exists(self):
+        """AC5 (Task 6.10): Topic health stat panel (id=101) must exist and be a stat panel."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 101)
+        assert panel is not None, (
+            "Topic health panel (id=101) not found in aiops-drilldown.json (AC5)"
+        )
+        assert panel.get("type") == "stat", (
+            f"Topic health panel must be type 'stat', got '{panel.get('type')}'"
+        )
+
+    def test_topic_health_panel_grid_position(self):
+        """AC5 (Task 6.11): Topic health panel must occupy rows 1-4, left 8 cols
+        (y=1, h=4, w=8, x=0) per UX-DR6 layout."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 101)
+        assert panel is not None, "Topic health panel (id=101) not found"
+        assert panel["gridPos"]["y"] == 1, "Topic health panel must start at row y=1"
+        assert panel["gridPos"]["h"] == 4, "Topic health panel must have height h=4"
+        assert panel["gridPos"]["w"] == 8, "Topic health panel must have width w=8"
+        assert panel["gridPos"]["x"] == 0, (
+            "Topic health panel must start at column x=0 (left 8 cols per UX-DR6)"
+        )
+
+    def test_topic_health_panel_is_transparent(self):
+        """AC6 / UX-DR4 (Task 6.12): Topic health panel must have transparent=true."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 101)
+        assert panel is not None, "Topic health panel (id=101) not found"
+        assert panel.get("transparent") is True, (
+            "Topic health panel must have transparent=true (UX-DR4)"
+        )
+
+    def test_topic_health_panel_target_uses_aiops_findings_total(self):
+        """AC5 (Task 6.13): Topic health panel target refId='A' PromQL must query
+        aiops_findings_total as the topic activity proxy."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 101)
+        assert panel is not None, "Topic health panel (id=101) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, "Topic health panel must have a target with refId='A'"
+        expr = target_a.get("expr", "")
+        assert "aiops_findings_total" in expr, (
+            "Topic health panel PromQL must query aiops_findings_total metric (AC5)"
+        )
+
+    def test_topic_health_panel_target_filters_by_topic_variable(self):
+        """AC2 (Task 6.14): Topic health panel PromQL must filter by {topic="$topic"} so the
+        panel updates when the template variable selection changes (FR20)."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 101)
+        assert panel is not None, "Topic health panel (id=101) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, "Topic health panel must have a target with refId='A'"
+        expr = target_a.get("expr", "")
+        assert "$topic" in expr, (
+            "Topic health panel PromQL must filter by $topic variable (AC2 / FR20)"
+        )
+
+    def test_topic_health_panel_has_description(self):
+        """AC6 / UX-DR12 (Task 6.15): Topic health panel must have a non-empty
+        one-sentence description field."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 101)
+        assert panel is not None, "Topic health panel (id=101) not found"
+        assert panel.get("description", "").strip() != "", (
+            "Topic health panel must have a non-empty description (UX-DR12)"
+        )
+
+    def test_topic_health_panel_has_no_value_field(self):
+        """AC6 / NFR5 / UX-DR5 (Task 6.16): Topic health panel must set noValue in
+        fieldConfig so zero findings display as 0, not blank."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 101)
+        assert panel is not None, "Topic health panel (id=101) not found"
+        no_value = panel.get("fieldConfig", {}).get("defaults", {}).get("noValue", None)
+        assert no_value is not None, (
+            "Topic health panel must have fieldConfig.defaults.noValue set "
+            "(NFR5 / UX-DR5 — zero state must render as 0)"
+        )
+
+    def test_topic_health_panel_value_size_meets_minimum(self):
+        """AC6 / UX-DR2 (Task 6.17): Topic health stat panel options.text.valueSize must be
+        >= 28px for readability."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 101)
+        assert panel is not None, "Topic health panel (id=101) not found"
+        value_size = panel.get("options", {}).get("text", {}).get("valueSize", 0)
+        assert value_size >= 28, (
+            f"Topic health panel options.text.valueSize must be >= 28px (UX-DR2), "
+            f"got {value_size}"
+        )
+
+    def test_topic_health_panel_colormode_is_background(self):
+        """AC5 (Task 6.18): Topic health panel must use options.colorMode='background' so the
+        three-state health color mapping fills the entire panel tile."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 101)
+        assert panel is not None, "Topic health panel (id=101) not found"
+        color_mode = panel.get("options", {}).get("colorMode")
+        assert color_mode == "background", (
+            f"Topic health panel options.colorMode must be 'background' (AC5), "
+            f"got '{color_mode}'"
+        )
+
+    def test_no_grafana_default_palette_colors_in_topic_health_panel(self):
+        """AC6 / UX-DR1 (Task 6.19): No forbidden Grafana default palette colors may appear
+        in topic health panel id=101 JSON (case-insensitive check)."""
+        forbidden = {
+            "#73BF69", "#F2495C", "#FF9830", "#FADE2A",
+            "#5794F2", "#B877D9", "#37872D", "#C4162A", "#1F60C4", "#8F3BB8",
+        }
+        dashboard = self._load_drilldown_dashboard()
+        panel_json = json.dumps(
+            [p for p in dashboard.get("panels", []) if p.get("id") == 101]
+        ).upper()
+        for color in forbidden:
+            assert color not in panel_json, (
+                f"Forbidden Grafana default color {color} found in topic health "
+                f"panel id=101 (UX-DR1)"
+            )
+
+    # ── Heatmap data link (main dashboard panel id=3) ─────────────────────────
+
+    def test_heatmap_panel_has_field_data_links(self):
+        """AC3 (Task 6.20): Main dashboard heatmap panel (id=3) must have at least one field-
+        level data link (fieldConfig.defaults.links) to the drill-down dashboard (FR16, FR31)."""
+        dashboard = self._load_main_dashboard()
+        panels = dashboard.get("panels", [])
+        heatmap = next((p for p in panels if p.get("id") == 3), None)
+        assert heatmap is not None, "Heatmap panel (id=3) not found in aiops-main.json"
+        links = heatmap.get("fieldConfig", {}).get("defaults", {}).get("links", [])
+        assert len(links) >= 1, (
+            "Heatmap panel (id=3) must have at least one fieldConfig.defaults.links entry "
+            "for drill-down navigation (AC3 / FR16)"
+        )
+
+    def test_heatmap_data_link_references_drilldown(self):
+        """AC3 (Task 6.21): Heatmap data link URL must reference aiops-drilldown dashboard
+        UID so navigation lands on the correct drill-down dashboard."""
+        dashboard = self._load_main_dashboard()
+        panels = dashboard.get("panels", [])
+        heatmap = next((p for p in panels if p.get("id") == 3), None)
+        assert heatmap is not None, "Heatmap panel (id=3) not found"
+        links = heatmap.get("fieldConfig", {}).get("defaults", {}).get("links", [])
+        assert len(links) >= 1, "Heatmap panel must have at least one field data link"
+        link_url = links[0].get("url", "")
+        assert "aiops-drilldown" in link_url, (
+            "Heatmap data link URL must reference 'aiops-drilldown' dashboard UID (AC3 / FR16)"
+        )
+
+    def test_heatmap_data_link_includes_topic_parameter(self):
+        """AC3 (Task 6.22): Heatmap data link URL must include var-topic= parameter so the
+        clicked topic pre-selects in the drill-down's $topic variable (FR20)."""
+        dashboard = self._load_main_dashboard()
+        panels = dashboard.get("panels", [])
+        heatmap = next((p for p in panels if p.get("id") == 3), None)
+        assert heatmap is not None, "Heatmap panel (id=3) not found"
+        links = heatmap.get("fieldConfig", {}).get("defaults", {}).get("links", [])
+        assert len(links) >= 1, "Heatmap panel must have at least one field data link"
+        link_url = links[0].get("url", "")
+        assert "var-topic=" in link_url, (
+            "Heatmap data link URL must include 'var-topic=' parameter for topic pre-selection "
+            "(AC3 / FR20)"
+        )
+
+    # ── Drilldown structural invariants ───────────────────────────────────────
+
+    def test_drilldown_dashboard_uid(self):
+        """AC6 (Task 6.23): Drilldown dashboard UID must be hardcoded as 'aiops-drilldown'."""
+        dashboard = self._load_drilldown_dashboard()
+        assert dashboard.get("uid") == "aiops-drilldown", (
+            f"Drilldown dashboard UID must be 'aiops-drilldown', got '{dashboard.get('uid')}'"
+        )
+
+    def test_drilldown_dashboard_schema_version(self):
+        """AC6 (Task 6.24): Drilldown dashboard schemaVersion must be 39 (unchanged)."""
+        dashboard = self._load_drilldown_dashboard()
+        assert dashboard.get("schemaVersion") == 39, (
+            f"Drilldown schemaVersion must be 39, got {dashboard.get('schemaVersion')}"
+        )
+
+    def test_drilldown_panel_ids_within_100_to_199(self):
+        """AC6 (Task 6.25): All drilldown panel IDs must be within 100-199 range — never
+        overlap with main dashboard (1-99) or future dashboards."""
+        dashboard = self._load_drilldown_dashboard()
+        panels = dashboard.get("panels", [])
+        for panel in panels:
+            pid = panel.get("id")
+            assert pid is not None and 100 <= pid <= 199, (
+                f"Drilldown panel id={pid} is outside 100-199 range (AC6)"
+            )
+
+    def test_drilldown_dashboard_version_is_at_least_2(self):
+        """Dashboard version must be >= 2 after story 4-1 additions (Task 6.26 / NFR12)."""
+        dashboard = self._load_drilldown_dashboard()
+        assert dashboard.get("version", 0) >= 2, (
+            f"Drilldown dashboard version must be >= 2 after story 4-1, "
+            f"got {dashboard.get('version')}"
+        )
+
     # ── Dashboard version ─────────────────────────────────────────────────────
 
     def test_dashboard_version_is_at_least_7(self):

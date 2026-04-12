@@ -273,17 +273,14 @@ class TestAC3DashboardProvisioningAndJsonShells:
             f"Story 1.1: panels must be a list. Found type: {type(panels)}"
         )
 
-    def test_p1_drilldown_dashboard_panels_is_empty_list(self) -> None:
-        """AC3 P1: aiops-drilldown.json panels must be an empty list (shell — no panels yet)."""
+    def test_p1_drilldown_dashboard_panels_is_a_list(self) -> None:
+        """AC3 P1: aiops-drilldown.json panels must be a list (shell structure intact)."""
         path = REPO_ROOT / "grafana/dashboards/aiops-drilldown.json"
         assert path.exists(), f"File missing: {path}"
         dashboard = json.loads(path.read_text())
         panels = dashboard.get("panels", None)
         assert isinstance(panels, list), (
             f"Story 1.1 RED phase: panels must be a list. Found type: {type(panels)}"
-        )
-        assert panels == [], (
-            f"Story 1.1 RED phase: panels must be empty list (shell). Found: {panels!r}"
         )
 
     def test_p1_main_dashboard_schema_version_is_39(self) -> None:

@@ -3,18 +3,94 @@
   "title": "aiOps \u2014 Topic Drill-Down",
   "description": "Per-topic SRE triage view with evidence status, findings, and diagnosis details. Panel IDs reserved: 100\u2013199 (drill-down only; main dashboard uses 1\u201399).",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "tags": ["aiops"],
   "timezone": "browser",
   "time": {
-    "from": "now-1h",
+    "from": "now-24h",
     "to": "now"
   },
   "timepicker": {},
   "refresh": "30s",
-  "panels": [],
+  "panels": [
+    {
+      "id": 100,
+      "type": "text",
+      "title": "",
+      "transparent": true,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "options": {
+        "mode": "markdown",
+        "content": "[← Back to Overview](/d/aiops-main)"
+      }
+    },
+    {
+      "id": 101,
+      "type": "stat",
+      "title": "Topic health",
+      "description": "Total findings processed for the selected topic as a proxy for topic pipeline activity and health status.",
+      "transparent": true,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 1 },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "textMode": "value_and_name",
+        "text": { "valueSize": 28 },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#7A7A7A", "value": null },
+              { "color": "#E8913A", "value": 1 },
+              { "color": "#6BAD64", "value": 10 }
+            ]
+          },
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(increase(aiops_findings_total{topic=\"$topic\"}[$__range]))",
+          "refId": "A",
+          "legendFormat": "{{topic}}"
+        }
+      ]
+    }
+  ],
   "templating": {
-    "list": []
+    "list": [
+      {
+        "name": "topic",
+        "type": "query",
+        "label": "Topic",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "definition": "label_values(aiops_findings_total, topic)",
+        "query": {
+          "query": "label_values(aiops_findings_total, topic)",
+          "refId": "StandardVariableQuery"
+        },
+        "refresh": 2,
+        "sort": 1,
+        "multi": false,
+        "includeAll": false,
+        "hide": 0,
+        "options": [],
+        "current": {}
+      }
+    ]
   },
   "annotations": {
     "list": []
