@@ -3,7 +3,7 @@
   "title": "aiOps \u2014 Pipeline Intelligence",
   "description": "Stakeholder narrative and operational detail for the aiOps triage pipeline. Panel IDs reserved: 1\u201399 (main dashboard only; drill-down uses 100\u2013199).",
   "schemaVersion": 39,
-  "version": 7,
+  "version": 8,
   "tags": ["aiops"],
   "timezone": "browser",
   "time": {
@@ -571,6 +571,132 @@
           "expr": "sum(increase(aiops_diagnosis_completed_total{confidence=\"HIGH\"}[$__range])) / sum(increase(aiops_diagnosis_completed_total[$__range]))",
           "refId": "A",
           "legendFormat": "High confidence rate"
+        }
+      ],
+      "datasource": { "type": "prometheus", "uid": "prometheus" }
+    },
+    {
+      "id": 14,
+      "type": "stat",
+      "title": "Pipeline capability stack",
+      "description": "Total findings processed as a proxy for overall pipeline stage activity and operational status.",
+      "gridPos": { "h": 5, "w": 12, "x": 0, "y": 36 },
+      "transparent": true,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "textMode": "value_and_name",
+        "text": { "valueSize": 28 },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#7A7A7A", "value": null },
+              { "color": "#6BAD64", "value": 1 }
+            ]
+          },
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(increase(aiops_findings_total[$__range]))",
+          "refId": "A",
+          "legendFormat": "Pipeline activity"
+        }
+      ],
+      "datasource": { "type": "prometheus", "uid": "prometheus" }
+    },
+    {
+      "id": 15,
+      "type": "stat",
+      "title": "Pipeline throughput",
+      "description": "Total findings processed in the selected window, with sparkline to show throughput trend over time.",
+      "gridPos": { "h": 2, "w": 12, "x": 0, "y": 41 },
+      "transparent": true,
+      "options": {
+        "colorMode": "none",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "textMode": "value_and_name",
+        "text": { "valueSize": 28 },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "#7A7A7A" },
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(increase(aiops_findings_total[$__range]))",
+          "refId": "A",
+          "legendFormat": "Findings processed"
+        }
+      ],
+      "datasource": { "type": "prometheus", "uid": "prometheus" }
+    },
+    {
+      "id": 16,
+      "type": "stat",
+      "title": "Outbox health",
+      "description": "Gating evaluations processed in the selected window as a proxy for outbox processing activity.",
+      "gridPos": { "h": 2, "w": 12, "x": 0, "y": 43 },
+      "transparent": true,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "textMode": "value_and_name",
+        "text": { "valueSize": 28 },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#D94452", "value": null },
+              { "color": "#E8913A", "value": 1 },
+              { "color": "#6BAD64", "value": 10 }
+            ]
+          },
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum(increase(aiops_gating_evaluations_total[$__range]))",
+          "refId": "A",
+          "legendFormat": "Outbox health"
         }
       ],
       "datasource": { "type": "prometheus", "uid": "prometheus" }

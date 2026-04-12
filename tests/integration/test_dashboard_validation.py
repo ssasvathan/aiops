@@ -2049,6 +2049,415 @@ class TestLLMDiagnosisEngineStatistics:
     # ── Dashboard version ─────────────────────────────────────────────────────
 
     def test_dashboard_version_is_at_least_7(self):
+        """Dashboard version must be >= 7 after story 3-3 panel additions (NFR12).
+        Version must be bumped from 6 to 7 to reflect the new panels."""
+        dashboard = self._load_main_dashboard()
+        assert dashboard.get("version", 0) >= 7, (
+            f"Dashboard version must be >= 7 after story 3-3, got {dashboard.get('version')}"
+        )
+
+
+class TestPipelineCapabilityStack:
+    """Config-validation tests for story 3-4: Pipeline capability stack, throughput, and
+    outbox health panels (id=14 capability stack, id=15 pipeline throughput, id=16 outbox health).
+
+    No live docker-compose stack required — all assertions are pure JSON parsing.
+    """
+
+    def _load_main_dashboard(self):
+        path = REPO_ROOT / "grafana/dashboards/aiops-main.json"
+        return json.loads(path.read_text())
+
+    def _get_panel_by_id(self, dashboard, panel_id):
+        panels = dashboard.get("panels", [])
+        return next((p for p in panels if p.get("id") == panel_id), None)
+
+    # ── Capability stack panel (id=14): existence and type ────────────────────
+
+    def test_capability_stack_panel_exists(self):
+        """AC1 (Task 5.2): Capability stack panel (id=14) must exist and be a stat panel."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 14)
+        assert panel is not None, (
+            "Capability stack panel (id=14) not found in aiops-main.json"
+        )
+        assert panel["type"] == "stat", (
+            f"Capability stack panel must be type 'stat', got '{panel.get('type')}'"
+        )
+
+    # ── Grid position ─────────────────────────────────────────────────────────
+
+    def test_capability_stack_panel_grid_position(self):
+        """AC1 (Task 5.3): Capability stack panel must occupy rows 36-40, left half
+        (y=36, h=5, w=12, x=0) — opposite of story 3-3 right-half panels."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 14)
+        assert panel is not None, "Capability stack panel (id=14) not found"
+        assert panel["gridPos"]["y"] == 36, "Capability stack panel must start at row y=36"
+        assert panel["gridPos"]["h"] == 5, "Capability stack panel must have height h=5"
+        assert panel["gridPos"]["w"] == 12, "Capability stack panel must have width w=12"
+        assert panel["gridPos"]["x"] == 0, (
+            "Capability stack panel must start at column x=0 (left half — NOT x=12)"
+        )
+
+    # ── Transparent background ────────────────────────────────────────────────
+
+    def test_capability_stack_panel_is_transparent(self):
+        """AC4 / UX-DR4 (Task 5.4): Capability stack panel must have transparent=true."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 14)
+        assert panel is not None, "Capability stack panel (id=14) not found"
+        assert panel.get("transparent") is True, (
+            "Capability stack panel must have transparent=true (UX-DR4)"
+        )
+
+    # ── PromQL query: correct metric ──────────────────────────────────────────
+
+    def test_capability_stack_target_uses_aiops_findings_total(self):
+        """AC1 (Task 5.5): Capability stack target refId='A' PromQL must query
+        aiops_findings_total as a pipeline activity proxy (FR22)."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 14)
+        assert panel is not None, "Capability stack panel (id=14) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, "Capability stack panel must have a target with refId='A'"
+        expr = target_a.get("expr", "")
+        assert "aiops_findings_total" in expr, (
+            "Capability stack panel PromQL must query aiops_findings_total metric (FR22)"
+        )
+
+    # ── Description ───────────────────────────────────────────────────────────
+
+    def test_capability_stack_panel_has_description(self):
+        """AC4 / UX-DR12 (Task 5.6): Capability stack panel must have a non-empty
+        one-sentence description field."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 14)
+        assert panel is not None, "Capability stack panel (id=14) not found"
+        assert panel.get("description", "").strip() != "", (
+            "Capability stack panel must have a non-empty description (UX-DR12)"
+        )
+
+    # ── noValue guard (NFR5 / UX-DR5) ────────────────────────────────────────
+
+    def test_capability_stack_panel_has_no_value_field(self):
+        """AC4 / NFR5 / UX-DR5 (Task 5.7): Capability stack panel must set noValue in
+        fieldConfig so zero findings display as 0, not blank."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 14)
+        assert panel is not None, "Capability stack panel (id=14) not found"
+        no_value = panel.get("fieldConfig", {}).get("defaults", {}).get("noValue", None)
+        assert no_value is not None, (
+            "Capability stack panel must have fieldConfig.defaults.noValue set "
+            "(NFR5 / UX-DR5 — zero findings must render as 0)"
+        )
+
+    # ── Text size (UX-DR2) ────────────────────────────────────────────────────
+
+    def test_capability_stack_panel_value_size_meets_minimum(self):
+        """AC4 / UX-DR2 (Task 5.8): Capability stack stat panel options.text.valueSize must
+        be >= 28px for below-the-fold secondary value readability."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 14)
+        assert panel is not None, "Capability stack panel (id=14) not found"
+        value_size = panel.get("options", {}).get("text", {}).get("valueSize", 0)
+        assert value_size >= 28, (
+            f"Capability stack panel options.text.valueSize must be >= 28px (UX-DR2), "
+            f"got {value_size}"
+        )
+
+    # ── Forbidden Grafana default palette colors ──────────────────────────────
+
+    def test_no_grafana_default_palette_colors_in_capability_stack_panel(self):
+        """AC4 / UX-DR1 (Task 5.9): No forbidden Grafana default palette colors may appear
+        in capability stack panel id=14 JSON (case-insensitive check)."""
+        forbidden = {
+            "#73BF69", "#F2495C", "#FF9830", "#FADE2A",
+            "#5794F2", "#B877D9", "#37872D", "#C4162A", "#1F60C4", "#8F3BB8",
+        }
+        dashboard = self._load_main_dashboard()
+        panel_json = json.dumps(
+            [p for p in dashboard.get("panels", []) if p.get("id") == 14]
+        ).upper()
+        for color in forbidden:
+            assert color not in panel_json, (
+                f"Forbidden Grafana default color {color} found in capability stack "
+                f"panel id=14 (UX-DR1)"
+            )
+
+    # ── Pipeline throughput panel (id=15): existence and type ─────────────────
+
+    def test_pipeline_throughput_panel_exists(self):
+        """AC2 (Task 5.10): Pipeline throughput panel (id=15) must exist and be a stat panel."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 15)
+        assert panel is not None, (
+            "Pipeline throughput panel (id=15) not found in aiops-main.json"
+        )
+        assert panel["type"] == "stat", (
+            f"Pipeline throughput panel must be type 'stat', got '{panel.get('type')}'"
+        )
+
+    # ── Grid position ─────────────────────────────────────────────────────────
+
+    def test_pipeline_throughput_panel_grid_position(self):
+        """AC2 (Task 5.11): Pipeline throughput panel must occupy rows 41-42, left half
+        (y=41, h=2, w=12, x=0)."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 15)
+        assert panel is not None, "Pipeline throughput panel (id=15) not found"
+        assert panel["gridPos"]["y"] == 41, "Pipeline throughput panel must start at row y=41"
+        assert panel["gridPos"]["h"] == 2, "Pipeline throughput panel must have height h=2"
+        assert panel["gridPos"]["w"] == 12, "Pipeline throughput panel must have width w=12"
+        assert panel["gridPos"]["x"] == 0, (
+            "Pipeline throughput panel must start at column x=0 (left half)"
+        )
+
+    # ── Transparent background ────────────────────────────────────────────────
+
+    def test_pipeline_throughput_panel_is_transparent(self):
+        """AC4 / UX-DR4 (Task 5.12): Pipeline throughput panel must have transparent=true."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 15)
+        assert panel is not None, "Pipeline throughput panel (id=15) not found"
+        assert panel.get("transparent") is True, (
+            "Pipeline throughput panel must have transparent=true (UX-DR4)"
+        )
+
+    # ── PromQL query: correct metric ──────────────────────────────────────────
+
+    def test_pipeline_throughput_target_uses_aiops_findings_total(self):
+        """AC2 (Task 5.13): Pipeline throughput target refId='A' PromQL must query
+        aiops_findings_total as a throughput proxy (FR23)."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 15)
+        assert panel is not None, "Pipeline throughput panel (id=15) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, (
+            "Pipeline throughput panel must have a target with refId='A'"
+        )
+        expr = target_a.get("expr", "")
+        assert "aiops_findings_total" in expr, (
+            "Pipeline throughput panel PromQL must query aiops_findings_total metric (FR23)"
+        )
+
+    # ── Description ───────────────────────────────────────────────────────────
+
+    def test_pipeline_throughput_panel_has_description(self):
+        """AC4 / UX-DR12 (Task 5.14): Pipeline throughput panel must have a non-empty
+        one-sentence description field."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 15)
+        assert panel is not None, "Pipeline throughput panel (id=15) not found"
+        assert panel.get("description", "").strip() != "", (
+            "Pipeline throughput panel must have a non-empty description (UX-DR12)"
+        )
+
+    # ── noValue guard (NFR5 / UX-DR5) ────────────────────────────────────────
+
+    def test_pipeline_throughput_panel_has_no_value_field(self):
+        """AC2 / NFR5 / UX-DR5 (Task 5.15): Pipeline throughput panel must set noValue in
+        fieldConfig so zero throughput displays as 0, not blank."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 15)
+        assert panel is not None, "Pipeline throughput panel (id=15) not found"
+        no_value = panel.get("fieldConfig", {}).get("defaults", {}).get("noValue", None)
+        assert no_value is not None, (
+            "Pipeline throughput panel must have fieldConfig.defaults.noValue set "
+            "(NFR5 / UX-DR5 — zero throughput must render as 0)"
+        )
+
+    # ── Text size (UX-DR2) ────────────────────────────────────────────────────
+
+    def test_pipeline_throughput_panel_value_size_meets_minimum(self):
+        """AC4 / UX-DR2 (Task 5.16): Pipeline throughput stat panel options.text.valueSize
+        must be >= 28px for below-the-fold secondary value readability."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 15)
+        assert panel is not None, "Pipeline throughput panel (id=15) not found"
+        value_size = panel.get("options", {}).get("text", {}).get("valueSize", 0)
+        assert value_size >= 28, (
+            f"Pipeline throughput panel options.text.valueSize must be >= 28px (UX-DR2), "
+            f"got {value_size}"
+        )
+
+    # ── Sparkline enabled (AC2) ───────────────────────────────────────────────
+
+    def test_pipeline_throughput_panel_sparkline_enabled(self):
+        """AC2 (Task 5.17): Pipeline throughput stat panel must have options.graphMode='area'
+        to enable the sparkline trend visualization (FR23)."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 15)
+        assert panel is not None, "Pipeline throughput panel (id=15) not found"
+        graph_mode = panel.get("options", {}).get("graphMode")
+        assert graph_mode == "area", (
+            f"Pipeline throughput panel options.graphMode must be 'area' for sparkline "
+            f"(AC2 / FR23), got '{graph_mode}'"
+        )
+
+    # ── Forbidden Grafana default palette colors ──────────────────────────────
+
+    def test_no_grafana_default_palette_colors_in_pipeline_throughput_panel(self):
+        """AC4 / UX-DR1 (Task 5.18): No forbidden Grafana default palette colors may appear
+        in pipeline throughput panel id=15 JSON (case-insensitive check)."""
+        forbidden = {
+            "#73BF69", "#F2495C", "#FF9830", "#FADE2A",
+            "#5794F2", "#B877D9", "#37872D", "#C4162A", "#1F60C4", "#8F3BB8",
+        }
+        dashboard = self._load_main_dashboard()
+        panel_json = json.dumps(
+            [p for p in dashboard.get("panels", []) if p.get("id") == 15]
+        ).upper()
+        for color in forbidden:
+            assert color not in panel_json, (
+                f"Forbidden Grafana default color {color} found in pipeline throughput "
+                f"panel id=15 (UX-DR1)"
+            )
+
+    # ── Outbox health panel (id=16): existence and type ───────────────────────
+
+    def test_outbox_health_panel_exists(self):
+        """AC3 (Task 5.19): Outbox health panel (id=16) must exist and be a stat panel."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 16)
+        assert panel is not None, (
+            "Outbox health panel (id=16) not found in aiops-main.json"
+        )
+        assert panel["type"] == "stat", (
+            f"Outbox health panel must be type 'stat', got '{panel.get('type')}'"
+        )
+
+    # ── Grid position ─────────────────────────────────────────────────────────
+
+    def test_outbox_health_panel_grid_position(self):
+        """AC3 (Task 5.20): Outbox health panel must occupy rows 43-44, left half
+        (y=43, h=2, w=12, x=0) — stacked below throughput on left half."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 16)
+        assert panel is not None, "Outbox health panel (id=16) not found"
+        assert panel["gridPos"]["y"] == 43, "Outbox health panel must start at row y=43"
+        assert panel["gridPos"]["h"] == 2, "Outbox health panel must have height h=2"
+        assert panel["gridPos"]["w"] == 12, "Outbox health panel must have width w=12"
+        assert panel["gridPos"]["x"] == 0, (
+            "Outbox health panel must start at column x=0 (left half — avoids gridPos "
+            "conflict with story 3-3 right-half panels)"
+        )
+
+    # ── Transparent background ────────────────────────────────────────────────
+
+    def test_outbox_health_panel_is_transparent(self):
+        """AC4 / UX-DR4 (Task 5.21): Outbox health panel must have transparent=true."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 16)
+        assert panel is not None, "Outbox health panel (id=16) not found"
+        assert panel.get("transparent") is True, (
+            "Outbox health panel must have transparent=true (UX-DR4)"
+        )
+
+    # ── PromQL query: correct metric ──────────────────────────────────────────
+
+    def test_outbox_health_target_uses_aiops_gating_evaluations_total(self):
+        """AC3 (Task 5.22): Outbox health target refId='A' PromQL must query
+        aiops_gating_evaluations_total as the outbox activity proxy (FR24)."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 16)
+        assert panel is not None, "Outbox health panel (id=16) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, "Outbox health panel must have a target with refId='A'"
+        expr = target_a.get("expr", "")
+        assert "aiops_gating_evaluations_total" in expr, (
+            "Outbox health panel PromQL must query aiops_gating_evaluations_total metric (FR24)"
+        )
+
+    # ── Description ───────────────────────────────────────────────────────────
+
+    def test_outbox_health_panel_has_description(self):
+        """AC4 / UX-DR12 (Task 5.23): Outbox health panel must have a non-empty
+        one-sentence description field."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 16)
+        assert panel is not None, "Outbox health panel (id=16) not found"
+        assert panel.get("description", "").strip() != "", (
+            "Outbox health panel must have a non-empty description (UX-DR12)"
+        )
+
+    # ── noValue guard (NFR5 / UX-DR5) ────────────────────────────────────────
+
+    def test_outbox_health_panel_has_no_value_field(self):
+        """AC3 / NFR5 / UX-DR5 (Task 5.24): Outbox health panel must set noValue in
+        fieldConfig so zero gating evaluations display as 0, not blank."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 16)
+        assert panel is not None, "Outbox health panel (id=16) not found"
+        no_value = panel.get("fieldConfig", {}).get("defaults", {}).get("noValue", None)
+        assert no_value is not None, (
+            "Outbox health panel must have fieldConfig.defaults.noValue set "
+            "(NFR5 / UX-DR5 — zero evaluations must render as 0)"
+        )
+
+    # ── Text size (UX-DR2) ────────────────────────────────────────────────────
+
+    def test_outbox_health_panel_value_size_meets_minimum(self):
+        """AC4 / UX-DR2 (Task 5.25): Outbox health stat panel options.text.valueSize must
+        be >= 28px for below-the-fold secondary value readability."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 16)
+        assert panel is not None, "Outbox health panel (id=16) not found"
+        value_size = panel.get("options", {}).get("text", {}).get("valueSize", 0)
+        assert value_size >= 28, (
+            f"Outbox health panel options.text.valueSize must be >= 28px (UX-DR2), "
+            f"got {value_size}"
+        )
+
+    # ── Three-state health color mode (AC3) ───────────────────────────────────
+
+    def test_outbox_health_panel_colormode_is_background(self):
+        """AC3 (Task 5.26): Outbox health panel must use options.colorMode='background' so
+        the three-state health color mapping (red/amber/green) fills the entire panel tile."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 16)
+        assert panel is not None, "Outbox health panel (id=16) not found"
+        color_mode = panel.get("options", {}).get("colorMode")
+        assert color_mode == "background", (
+            f"Outbox health panel options.colorMode must be 'background' (AC3 three-state "
+            f"health mapping), got '{color_mode}'"
+        )
+
+    # ── Forbidden Grafana default palette colors ──────────────────────────────
+
+    def test_no_grafana_default_palette_colors_in_outbox_health_panel(self):
+        """AC4 / UX-DR1 (Task 5.27): No forbidden Grafana default palette colors may appear
+        in outbox health panel id=16 JSON (case-insensitive check)."""
+        forbidden = {
+            "#73BF69", "#F2495C", "#FF9830", "#FADE2A",
+            "#5794F2", "#B877D9", "#37872D", "#C4162A", "#1F60C4", "#8F3BB8",
+        }
+        dashboard = self._load_main_dashboard()
+        panel_json = json.dumps(
+            [p for p in dashboard.get("panels", []) if p.get("id") == 16]
+        ).upper()
+        for color in forbidden:
+            assert color not in panel_json, (
+                f"Forbidden Grafana default color {color} found in outbox health "
+                f"panel id=16 (UX-DR1)"
+            )
+
+    # ── Dashboard version ─────────────────────────────────────────────────────
+
+    def test_dashboard_version_is_at_least_8(self):
+        """Dashboard version must be >= 8 after story 3-4 panel additions (Task 5.28 / NFR12).
+        Version must be bumped from 7 to 8 to reflect the new panels."""
+        dashboard = self._load_main_dashboard()
+        assert dashboard.get("version", 0) >= 8, (
+            f"Dashboard version must be >= 8 after story 3-4, got {dashboard.get('version')}"
+        )
+
+    # ── Dashboard version ─────────────────────────────────────────────────────
+
+    def test_dashboard_version_is_at_least_7(self):
         """AC4 (Task 6.40 / NFR12): Dashboard version must be >= 7 after story 3-3 panel
         additions. Version must be bumped from 6 to 7 to reflect the new panels."""
         dashboard = self._load_main_dashboard()

@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-11
-last_updated: 2026-04-11  # story 3-3 traceability matrix generated, gate decision: PASS
+last_updated: 2026-04-11  # story 3-4 done
 # trace_3_3_completed: 2026-04-11 — story 3-3 traceability matrix generated, gate decision: PASS
 # trace_3_3_file: artifact/test-artifacts/traceability/traceability-report-3-3.md
 # trace_3_3_coverage: 100% (4 AC, 45 tests, 0 gaps)
@@ -94,7 +94,7 @@ development_status:
   3-1-gating-intelligence-funnel-per-gate-suppression: done
   3-2-action-distribution-anomaly-family-breakdown: done
   3-3-llm-diagnosis-engine-statistics: done
-  3-4-pipeline-capability-stack-throughput-outbox-health: backlog
+  3-4-pipeline-capability-stack-throughput-outbox-health: done
   epic-3-retrospective: optional
 
   # Epic 4: SRE Triage Drill-Down
