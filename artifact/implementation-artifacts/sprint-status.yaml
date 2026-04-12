@@ -90,12 +90,12 @@ development_status:
   epic-2-retrospective: done
 
   # Epic 3: Noise Suppression & Operational Credibility (Below-the-Fold)
-  epic-3: in-progress
+  epic-3: done
   3-1-gating-intelligence-funnel-per-gate-suppression: done
   3-2-action-distribution-anomaly-family-breakdown: done
   3-3-llm-diagnosis-engine-statistics: done
   3-4-pipeline-capability-stack-throughput-outbox-health: done
-  epic-3-retrospective: optional
+  epic-3-retrospective: done
 
   # Epic 4: SRE Triage Drill-Down
   epic-4: backlog
