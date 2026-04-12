@@ -3524,3 +3524,128 @@ class TestFindingsTableActionDecisionTracing:
             f"Drilldown dashboard version must be >= 4 after story 4-3, "
             f"got {dashboard.get('version')}"
         )
+
+
+class TestTimeWindowPresetsKioskMode:
+    """Config-validation tests for story 5-1: time window defaults and timepicker presets
+    on main and drill-down dashboards.
+
+    No live docker-compose stack required — all assertions are pure JSON parsing.
+    """
+
+    def _load_main_dashboard(self):
+        path = REPO_ROOT / "grafana/dashboards/aiops-main.json"
+        return json.loads(path.read_text())
+
+    def _load_drilldown_dashboard(self):
+        path = REPO_ROOT / "grafana/dashboards/aiops-drilldown.json"
+        return json.loads(path.read_text())
+
+    # ── Main dashboard time defaults ──────────────────────────────────────────
+
+    def test_main_dashboard_default_time_from_is_7d(self):
+        """AC1 (Task 3.2): Main dashboard default time.from must be 'now-7d' for the
+        7-day stakeholder narrative window (FR32)."""
+        dashboard = self._load_main_dashboard()
+        time_from = dashboard.get("time", {}).get("from")
+        assert time_from == "now-7d", (
+            f"Main dashboard time.from must be 'now-7d' (AC1 / FR32), got '{time_from}'"
+        )
+
+    # ── Main dashboard timepicker presets ─────────────────────────────────────
+
+    def test_main_dashboard_timepicker_has_1h_preset(self):
+        """AC1 (Task 3.3): Main dashboard timepicker must include '1h' quick range."""
+        dashboard = self._load_main_dashboard()
+        presets = dashboard.get("timepicker", {}).get("time_options", [])
+        assert "1h" in presets, (
+            f"Main dashboard timepicker.time_options must include '1h' (AC1 / FR32), "
+            f"got {presets}"
+        )
+
+    def test_main_dashboard_timepicker_has_6h_preset(self):
+        """AC1 (Task 3.4): Main dashboard timepicker must include '6h' quick range."""
+        dashboard = self._load_main_dashboard()
+        presets = dashboard.get("timepicker", {}).get("time_options", [])
+        assert "6h" in presets, (
+            f"Main dashboard timepicker.time_options must include '6h' (AC1 / FR32), "
+            f"got {presets}"
+        )
+
+    def test_main_dashboard_timepicker_has_24h_preset(self):
+        """AC1 (Task 3.5): Main dashboard timepicker must include '24h' quick range."""
+        dashboard = self._load_main_dashboard()
+        presets = dashboard.get("timepicker", {}).get("time_options", [])
+        assert "24h" in presets, (
+            f"Main dashboard timepicker.time_options must include '24h' (AC1 / FR32), "
+            f"got {presets}"
+        )
+
+    def test_main_dashboard_timepicker_has_7d_preset(self):
+        """AC1 (Task 3.6): Main dashboard timepicker must include '7d' quick range."""
+        dashboard = self._load_main_dashboard()
+        presets = dashboard.get("timepicker", {}).get("time_options", [])
+        assert "7d" in presets, (
+            f"Main dashboard timepicker.time_options must include '7d' (AC1 / FR32), "
+            f"got {presets}"
+        )
+
+    def test_main_dashboard_timepicker_has_30d_preset(self):
+        """AC1 (Task 3.7): Main dashboard timepicker must include '30d' quick range."""
+        dashboard = self._load_main_dashboard()
+        presets = dashboard.get("timepicker", {}).get("time_options", [])
+        assert "30d" in presets, (
+            f"Main dashboard timepicker.time_options must include '30d' (AC1 / FR32), "
+            f"got {presets}"
+        )
+
+    # ── Drill-down dashboard time defaults ────────────────────────────────────
+
+    def test_drilldown_dashboard_default_time_from_is_24h(self):
+        """AC2 (Task 3.8): Drill-down dashboard default time.from must be 'now-24h' for the
+        per-topic triage window (set in story 4-1, verified here)."""
+        dashboard = self._load_drilldown_dashboard()
+        time_from = dashboard.get("time", {}).get("from")
+        assert time_from == "now-24h", (
+            f"Drilldown dashboard time.from must be 'now-24h' (AC2), got '{time_from}'"
+        )
+
+    # ── Drill-down timepicker presets ─────────────────────────────────────────
+
+    def test_drilldown_dashboard_timepicker_has_1h_preset(self):
+        """AC2 (Task 3.9): Drill-down dashboard timepicker must include '1h' quick range."""
+        dashboard = self._load_drilldown_dashboard()
+        presets = dashboard.get("timepicker", {}).get("time_options", [])
+        assert "1h" in presets, (
+            f"Drilldown dashboard timepicker.time_options must include '1h' (AC2 / FR32), "
+            f"got {presets}"
+        )
+
+    def test_drilldown_dashboard_timepicker_has_7d_preset(self):
+        """AC2 (Task 3.10): Drill-down dashboard timepicker must include '7d' quick range."""
+        dashboard = self._load_drilldown_dashboard()
+        presets = dashboard.get("timepicker", {}).get("time_options", [])
+        assert "7d" in presets, (
+            f"Drilldown dashboard timepicker.time_options must include '7d' (AC2 / FR32), "
+            f"got {presets}"
+        )
+
+    # ── Dashboard versions ────────────────────────────────────────────────────
+
+    def test_main_dashboard_version_is_at_least_9(self):
+        """AC4 (Task 3.11 / NFR12): Main dashboard version must be >= 9 after story 5-1
+        time window configuration."""
+        dashboard = self._load_main_dashboard()
+        assert dashboard.get("version", 0) >= 9, (
+            f"Main dashboard version must be >= 9 after story 5-1, "
+            f"got {dashboard.get('version')}"
+        )
+
+    def test_drilldown_dashboard_version_is_at_least_5(self):
+        """AC4 (Task 3.12 / NFR12): Drilldown dashboard version must be >= 5 after story 5-1
+        timepicker configuration."""
+        dashboard = self._load_drilldown_dashboard()
+        assert dashboard.get("version", 0) >= 5, (
+            f"Drilldown dashboard version must be >= 5 after story 5-1, "
+            f"got {dashboard.get('version')}"
+        )

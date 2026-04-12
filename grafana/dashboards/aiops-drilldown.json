@@ -3,14 +3,16 @@
   "title": "aiOps \u2014 Topic Drill-Down",
   "description": "Per-topic SRE triage view with evidence status, findings, and diagnosis details. Panel IDs reserved: 100\u2013199 (drill-down only; main dashboard uses 1\u201399).",
   "schemaVersion": 39,
-  "version": 4,
+  "version": 5,
   "tags": ["aiops"],
   "timezone": "browser",
   "time": {
     "from": "now-24h",
     "to": "now"
   },
-  "timepicker": {},
+  "timepicker": {
+    "time_options": ["1h", "6h", "24h", "7d", "30d"]
+  },
   "refresh": "30s",
   "panels": [
     {

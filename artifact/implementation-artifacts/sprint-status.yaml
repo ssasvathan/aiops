@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-11
-last_updated: 2026-04-11  # story 4-3 done
+last_updated: 2026-04-11  # story 5-1 done
 # trace_3_3_completed: 2026-04-11 — story 3-3 traceability matrix generated, gate decision: PASS
 # trace_3_3_file: artifact/test-artifacts/traceability/traceability-report-3-3.md
 # trace_3_3_coverage: 100% (4 AC, 45 tests, 0 gaps)
@@ -105,7 +105,7 @@ development_status:
   epic-4-retrospective: done
 
   # Epic 5: Demo-Ready Presentation & Validation
-  epic-5: backlog
-  5-1-time-window-presets-kiosk-mode: backlog
+  epic-5: in-progress
+  5-1-time-window-presets-kiosk-mode: done
   5-2-pre-demo-validation-color-palette-enforcement: backlog
   epic-5-retrospective: optional
