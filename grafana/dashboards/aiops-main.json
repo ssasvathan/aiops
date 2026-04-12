@@ -3,7 +3,7 @@
   "title": "aiOps \u2014 Pipeline Intelligence",
   "description": "Stakeholder narrative and operational detail for the aiOps triage pipeline. Panel IDs reserved: 1\u201399 (main dashboard only; drill-down uses 100\u2013199).",
   "schemaVersion": 39,
-  "version": 5,
+  "version": 6,
   "tags": ["aiops"],
   "timezone": "browser",
   "time": {
@@ -299,6 +299,110 @@
           "expr": "sum by(gate_id, outcome) (increase(aiops_gating_evaluations_total[$__range]))",
           "refId": "A",
           "legendFormat": "{{gate_id}} ({{outcome}})"
+        }
+      ],
+      "datasource": { "type": "prometheus", "uid": "prometheus" }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Action distribution",
+      "description": "Rate of findings dispatched over time, broken down by action type (OBSERVE, NOTIFY, TICKET, PAGE) — confirms the platform maintains a stable, low-noise action profile.",
+      "gridPos": { "h": 5, "w": 12, "x": 0, "y": 30 },
+      "transparent": true,
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "none" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "#4F87DB" },
+          "custom": {
+            "stacking": { "mode": "normal" },
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "spanNulls": false,
+            "drawStyle": "line",
+            "lineInterpolation": "linear",
+            "showPoints": "never"
+          },
+          "noValue": "0"
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "OBSERVE" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#4F87DB" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "NOTIFY" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#E8913A" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "TICKET" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#D94452" } }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "PAGE" },
+            "properties": [
+              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#6BAD64" } }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by(final_action) (rate(aiops_findings_total[$__rate_interval]))",
+          "refId": "A",
+          "legendFormat": "{{final_action}}"
+        }
+      ],
+      "datasource": { "type": "prometheus", "uid": "prometheus" }
+    },
+    {
+      "id": 9,
+      "type": "barchart",
+      "title": "Anomaly family breakdown",
+      "description": "Total findings in the selected time window grouped by anomaly family — shows which detection patterns (consumer lag, volume drop, throughput proxy, baseline deviation) are most active.",
+      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 30 },
+      "transparent": true,
+      "options": {
+        "orientation": "horizontal",
+        "sort": "desc",
+        "text": {
+          "titleSize": 14,
+          "valueSize": 14
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#7A7A7A", "value": null },
+              { "color": "#6BAD64", "value": 0 }
+            ]
+          },
+          "noValue": "0"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by(anomaly_family) (increase(aiops_findings_total[$__range]))",
+          "refId": "A",
+          "legendFormat": "{{anomaly_family}}"
         }
       ],
       "datasource": { "type": "prometheus", "uid": "prometheus" }

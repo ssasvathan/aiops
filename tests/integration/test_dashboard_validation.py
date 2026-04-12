@@ -935,3 +935,433 @@ class TestGatingIntelligenceFunnel:
         assert dashboard.get("version", 0) >= 5, (
             f"Dashboard version must be >= 5 after story 3-1, got {dashboard.get('version')}"
         )
+
+
+class TestActionDistributionAnomalyBreakdown:
+    """Config-validation tests for story 3-2: action distribution timeseries (id=8)
+    and anomaly family breakdown barchart (id=9).
+
+    No live docker-compose stack required — all assertions are pure JSON parsing.
+    """
+
+    def _load_main_dashboard(self):
+        path = REPO_ROOT / "grafana/dashboards/aiops-main.json"
+        return json.loads(path.read_text())
+
+    def _get_panel_by_id(self, dashboard, panel_id):
+        panels = dashboard.get("panels", [])
+        return next((p for p in panels if p.get("id") == panel_id), None)
+
+    # ── Action distribution panel (id=8): existence and type ─────────────────
+
+    def test_action_distribution_panel_exists(self):
+        """AC1 (Task 4.2): Action distribution panel (id=8) must exist and be a timeseries
+        panel."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 8)
+        assert panel is not None, (
+            "Action distribution panel (id=8) not found in aiops-main.json"
+        )
+        assert panel["type"] == "timeseries", (
+            f"Action distribution panel must be type 'timeseries', got '{panel.get('type')}'"
+        )
+
+    # ── Grid position ─────────────────────────────────────────────────────────
+
+    def test_action_distribution_panel_grid_position(self):
+        """AC1 (Task 4.3): Action distribution panel must occupy rows 30-34, left half
+        (y=30, h=5, w=12, x=0) per UX-DR3 layout."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 8)
+        assert panel is not None, "Action distribution panel (id=8) not found"
+        assert panel["gridPos"]["y"] == 30, "Action distribution panel must start at row y=30"
+        assert panel["gridPos"]["h"] == 5, "Action distribution panel must have height h=5"
+        assert panel["gridPos"]["w"] == 12, "Action distribution panel must have width w=12"
+        assert panel["gridPos"]["x"] == 0, (
+            "Action distribution panel must start at column x=0 (left half)"
+        )
+
+    # ── Transparent background ────────────────────────────────────────────────
+
+    def test_action_distribution_panel_is_transparent(self):
+        """AC4 / UX-DR4 (Task 4.4): Action distribution timeseries panel must have
+        transparent=true — timeseries panels require explicit transparent flag."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 8)
+        assert panel is not None, "Action distribution panel (id=8) not found"
+        assert panel.get("transparent") is True, (
+            "Action distribution panel must have transparent=true (UX-DR4 — explicit "
+            "transparent required for timeseries panels)"
+        )
+
+    # ── PromQL query: rate + $__rate_interval ─────────────────────────────────
+
+    def test_action_distribution_target_uses_rate_and_rate_interval(self):
+        """AC1 (Task 4.5): Action distribution target refId='A' PromQL must use rate( and
+        $__rate_interval — timeseries panel convention (NOT increase() or $__range)."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 8)
+        assert panel is not None, "Action distribution panel (id=8) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, "Action distribution panel must have a target with refId='A'"
+        expr = target_a.get("expr", "")
+        assert "rate(" in expr, (
+            "Action distribution refId='A' PromQL must use rate( (timeseries panel convention)"
+        )
+        assert "$__rate_interval" in expr, (
+            "Action distribution refId='A' PromQL must use $__rate_interval (NOT $__range)"
+        )
+
+    # ── PromQL query: correct metric ──────────────────────────────────────────
+
+    def test_action_distribution_target_uses_aiops_findings_total(self):
+        """AC1 (Task 4.6): Action distribution target refId='A' PromQL must query
+        aiops_findings_total — the counter emitted by the findings pipeline."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 8)
+        assert panel is not None, "Action distribution panel (id=8) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, "Action distribution panel must have a target with refId='A'"
+        expr = target_a.get("expr", "")
+        assert "aiops_findings_total" in expr, (
+            "Action distribution panel PromQL must query aiops_findings_total metric"
+        )
+
+    # ── PromQL aggregation style ──────────────────────────────────────────────
+
+    def test_action_distribution_target_uses_sum_by_aggregation_style(self):
+        """AC1 (Task 4.7): Action distribution PromQL must use 'sum by(' aggregation style —
+        NOT 'sum(...)by(' which is a different non-preferred style."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 8)
+        assert panel is not None, "Action distribution panel (id=8) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, "Action distribution panel must have a target with refId='A'"
+        expr = target_a.get("expr", "")
+        assert "sum by(" in expr, (
+            "Action distribution PromQL must use 'sum by(' aggregation style "
+            "(not 'sum(...) by(')"
+        )
+
+    # ── PromQL label: final_action ────────────────────────────────────────────
+
+    def test_action_distribution_target_uses_final_action_label(self):
+        """AC1 (Task 4.8): Action distribution PromQL must use 'sum by(final_action)' label
+        so each action type (OBSERVE, NOTIFY, TICKET, PAGE) appears as a distinct series."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 8)
+        assert panel is not None, "Action distribution panel (id=8) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, "Action distribution panel must have a target with refId='A'"
+        expr = target_a.get("expr", "")
+        assert "final_action" in expr, (
+            "Action distribution PromQL must aggregate by 'final_action' label"
+        )
+
+    # ── legendFormat: final_action visible ───────────────────────────────────
+
+    def test_action_distribution_target_legend_format_shows_final_action(self):
+        """AC1 (Task 4.9): Action distribution target legendFormat must include
+        {{final_action}} so each series label renders OBSERVE, NOTIFY, TICKET, PAGE."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 8)
+        assert panel is not None, "Action distribution panel (id=8) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, "Action distribution panel must have a target with refId='A'"
+        legend_format = target_a.get("legendFormat", "")
+        assert "final_action" in legend_format, (
+            "Action distribution legendFormat must include 'final_action' so series labels "
+            "render (AC1)"
+        )
+
+    # ── Description ───────────────────────────────────────────────────────────
+
+    def test_action_distribution_panel_has_description(self):
+        """AC4 / UX-DR12 (Task 4.10): Action distribution panel must have a non-empty
+        one-sentence description field."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 8)
+        assert panel is not None, "Action distribution panel (id=8) not found"
+        assert panel.get("description", "").strip() != "", (
+            "Action distribution panel must have a non-empty description (UX-DR12)"
+        )
+
+    # ── noValue guard (NFR9 / UX-DR5) ────────────────────────────────────────
+
+    def test_action_distribution_panel_has_no_value_field(self):
+        """AC2 / NFR9 / UX-DR5 (Task 4.11): Action distribution panel must set noValue in
+        fieldConfig so the PAGE series renders as zero (celebrated zero) — not missing."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 8)
+        assert panel is not None, "Action distribution panel (id=8) not found"
+        no_value = panel.get("fieldConfig", {}).get("defaults", {}).get("noValue", None)
+        assert no_value is not None, (
+            "Action distribution panel must have fieldConfig.defaults.noValue set "
+            "(NFR9 / UX-DR5 — PAGE celebrated zero)"
+        )
+
+    # ── Forbidden Grafana default palette colors ──────────────────────────────
+
+    def test_no_grafana_default_palette_colors_in_action_distribution_panel(self):
+        """AC4 / UX-DR1 (Task 4.12): No forbidden Grafana default palette colors may appear
+        in action distribution panel id=8 JSON (case-insensitive check)."""
+        forbidden = {
+            "#73BF69", "#F2495C", "#FF9830", "#FADE2A",
+            "#5794F2", "#B877D9", "#37872D", "#C4162A", "#1F60C4", "#8F3BB8",
+        }
+        dashboard = self._load_main_dashboard()
+        panel_json = json.dumps(
+            [p for p in dashboard.get("panels", []) if p.get("id") == 8]
+        ).upper()
+        for color in forbidden:
+            assert color not in panel_json, (
+                f"Forbidden Grafana default color {color} found in action distribution "
+                f"panel id=8 (UX-DR1)"
+            )
+
+    # ── Stacking mode (AC1 — stacked display) ────────────────────────────────
+
+    def test_action_distribution_panel_uses_stacking_normal(self):
+        """AC1 (Task 1.6): Action distribution timeseries panel must have
+        fieldConfig.defaults.custom.stacking.mode='normal' for stacked series display."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 8)
+        assert panel is not None, "Action distribution panel (id=8) not found"
+        stacking = (
+            panel.get("fieldConfig", {})
+            .get("defaults", {})
+            .get("custom", {})
+            .get("stacking", {})
+        )
+        assert stacking.get("mode") == "normal", (
+            "Action distribution panel must have stacking.mode='normal' for stacked "
+            "time-series display (AC1 / FR12)"
+        )
+
+    # ── Anomaly family breakdown panel (id=9): existence and type ────────────
+
+    def test_anomaly_family_breakdown_panel_exists(self):
+        """AC3 (Task 4.13): Anomaly family breakdown panel (id=9) must exist and be a
+        barchart panel."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 9)
+        assert panel is not None, (
+            "Anomaly family breakdown panel (id=9) not found in aiops-main.json"
+        )
+        assert panel["type"] == "barchart", (
+            f"Anomaly family breakdown panel must be type 'barchart', got '{panel.get('type')}'"
+        )
+
+    # ── Grid position ─────────────────────────────────────────────────────────
+
+    def test_anomaly_family_breakdown_panel_grid_position(self):
+        """AC3 (Task 4.14): Anomaly family breakdown panel must occupy rows 30-34, right half
+        (y=30, h=5, w=12, x=12) per UX-DR3 layout."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 9)
+        assert panel is not None, "Anomaly family breakdown panel (id=9) not found"
+        assert panel["gridPos"]["y"] == 30, (
+            "Anomaly family breakdown panel must start at row y=30"
+        )
+        assert panel["gridPos"]["h"] == 5, (
+            "Anomaly family breakdown panel must have height h=5"
+        )
+        assert panel["gridPos"]["w"] == 12, (
+            "Anomaly family breakdown panel must have width w=12"
+        )
+        assert panel["gridPos"]["x"] == 12, (
+            "Anomaly family breakdown panel must start at column x=12 (right half)"
+        )
+
+    # ── Transparent background ────────────────────────────────────────────────
+
+    def test_anomaly_family_breakdown_panel_is_transparent(self):
+        """AC4 / UX-DR4 (Task 4.15): Anomaly family breakdown barchart panel must have
+        transparent=true — barchart panels require explicit transparent flag."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 9)
+        assert panel is not None, "Anomaly family breakdown panel (id=9) not found"
+        assert panel.get("transparent") is True, (
+            "Anomaly family breakdown panel must have transparent=true (UX-DR4 — explicit "
+            "transparent required for barchart panels)"
+        )
+
+    # ── Horizontal orientation (AC3 — horizontal bars) ───────────────────────
+
+    def test_anomaly_family_breakdown_panel_uses_horizontal_orientation(self):
+        """AC3 / UX-DR3 (Task 2.4): Anomaly family breakdown barchart must use
+        options.orientation='horizontal' for horizontal bars per FR10 layout requirement."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 9)
+        assert panel is not None, "Anomaly family breakdown panel (id=9) not found"
+        orientation = panel.get("options", {}).get("orientation")
+        assert orientation == "horizontal", (
+            f"Anomaly family breakdown panel must have options.orientation='horizontal' "
+            f"(AC3 / UX-DR3), got '{orientation}'"
+        )
+
+    # ── Sort by value (AC3 — sorted by value) ────────────────────────────────
+
+    def test_anomaly_family_breakdown_panel_is_sorted_desc(self):
+        """AC3 (Task 2.4): Anomaly family breakdown barchart bars must be sorted by value
+        (desc) — AC3 explicitly requires 'sorted by value' horizontal bars."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 9)
+        assert panel is not None, "Anomaly family breakdown panel (id=9) not found"
+        sort = panel.get("options", {}).get("sort")
+        assert sort == "desc", (
+            f"Anomaly family breakdown panel must have options.sort='desc' for value-sorted "
+            f"bars (AC3), got '{sort}'"
+        )
+
+    # ── PromQL query: increase + $__range ─────────────────────────────────────
+
+    def test_anomaly_family_breakdown_target_uses_increase_and_range(self):
+        """AC3 (Task 4.16): Anomaly family breakdown target refId='A' PromQL must use
+        increase( and $__range — stat/bargauge/barchart panel convention (NOT rate() or
+        $__rate_interval)."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 9)
+        assert panel is not None, "Anomaly family breakdown panel (id=9) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, (
+            "Anomaly family breakdown panel must have a target with refId='A'"
+        )
+        expr = target_a.get("expr", "")
+        assert "increase(" in expr, (
+            "Anomaly family breakdown refId='A' PromQL must use increase( "
+            "(stat/barchart panel convention)"
+        )
+        assert "$__range" in expr, (
+            "Anomaly family breakdown refId='A' PromQL must use $__range (NOT $__rate_interval)"
+        )
+
+    # ── PromQL query: correct metric ──────────────────────────────────────────
+
+    def test_anomaly_family_breakdown_target_uses_aiops_findings_total(self):
+        """AC3 (Task 4.17): Anomaly family breakdown target refId='A' PromQL must query
+        aiops_findings_total — the counter emitted by the findings pipeline."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 9)
+        assert panel is not None, "Anomaly family breakdown panel (id=9) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, (
+            "Anomaly family breakdown panel must have a target with refId='A'"
+        )
+        expr = target_a.get("expr", "")
+        assert "aiops_findings_total" in expr, (
+            "Anomaly family breakdown panel PromQL must query aiops_findings_total metric"
+        )
+
+    # ── PromQL label: anomaly_family ──────────────────────────────────────────
+
+    def test_anomaly_family_breakdown_target_uses_anomaly_family_label(self):
+        """AC3 (Task 4.18): Anomaly family breakdown PromQL must use
+        'sum by(anomaly_family)' label so each anomaly family appears as a distinct bar."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 9)
+        assert panel is not None, "Anomaly family breakdown panel (id=9) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, (
+            "Anomaly family breakdown panel must have a target with refId='A'"
+        )
+        expr = target_a.get("expr", "")
+        assert "anomaly_family" in expr, (
+            "Anomaly family breakdown PromQL must aggregate by 'anomaly_family' label"
+        )
+
+    # ── legendFormat: anomaly_family visible ──────────────────────────────────
+
+    def test_anomaly_family_breakdown_target_legend_format_shows_anomaly_family(self):
+        """AC3 (Task 4.19): Anomaly family breakdown target legendFormat must include
+        {{anomaly_family}} so bar labels render correctly."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 9)
+        assert panel is not None, "Anomaly family breakdown panel (id=9) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, (
+            "Anomaly family breakdown panel must have a target with refId='A'"
+        )
+        legend_format = target_a.get("legendFormat", "")
+        assert "anomaly_family" in legend_format, (
+            "Anomaly family breakdown legendFormat must include 'anomaly_family' so bar "
+            "labels render (AC3)"
+        )
+
+    # ── Description ───────────────────────────────────────────────────────────
+
+    def test_anomaly_family_breakdown_panel_has_description(self):
+        """AC4 / UX-DR12 (Task 4.20): Anomaly family breakdown panel must have a non-empty
+        one-sentence description field."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 9)
+        assert panel is not None, "Anomaly family breakdown panel (id=9) not found"
+        assert panel.get("description", "").strip() != "", (
+            "Anomaly family breakdown panel must have a non-empty description (UX-DR12)"
+        )
+
+    # ── noValue guard (NFR9 / UX-DR5) ────────────────────────────────────────
+
+    def test_anomaly_family_breakdown_panel_has_no_value_field(self):
+        """AC3 / NFR9 / UX-DR5 (Task 4.21): Anomaly family breakdown panel must set noValue
+        in fieldConfig so anomaly families with no occurrences show 0 — not blank."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 9)
+        assert panel is not None, "Anomaly family breakdown panel (id=9) not found"
+        no_value = panel.get("fieldConfig", {}).get("defaults", {}).get("noValue", None)
+        assert no_value is not None, (
+            "Anomaly family breakdown panel must have fieldConfig.defaults.noValue set "
+            "(NFR9 / UX-DR5 — zero-state anomaly families)"
+        )
+
+    # ── Forbidden Grafana default palette colors ──────────────────────────────
+
+    def test_no_grafana_default_palette_colors_in_anomaly_family_breakdown_panel(self):
+        """AC4 / UX-DR1 (Task 4.22): No forbidden Grafana default palette colors may appear
+        in anomaly family breakdown panel id=9 JSON (case-insensitive check)."""
+        forbidden = {
+            "#73BF69", "#F2495C", "#FF9830", "#FADE2A",
+            "#5794F2", "#B877D9", "#37872D", "#C4162A", "#1F60C4", "#8F3BB8",
+        }
+        dashboard = self._load_main_dashboard()
+        panel_json = json.dumps(
+            [p for p in dashboard.get("panels", []) if p.get("id") == 9]
+        ).upper()
+        for color in forbidden:
+            assert color not in panel_json, (
+                f"Forbidden Grafana default color {color} found in anomaly family breakdown "
+                f"panel id=9 (UX-DR1)"
+            )
+
+    # ── Label font size (UX-DR2) ──────────────────────────────────────────────
+
+    def test_anomaly_family_breakdown_panel_text_title_size_meets_readability_minimum(self):
+        """AC3 / UX-DR2 (Task 4.23): Anomaly family breakdown barchart
+        options.text.titleSize must be >= 14 for projector readability."""
+        dashboard = self._load_main_dashboard()
+        panel = self._get_panel_by_id(dashboard, 9)
+        assert panel is not None, "Anomaly family breakdown panel (id=9) not found"
+        title_size = panel.get("options", {}).get("text", {}).get("titleSize", 0)
+        assert title_size >= 14, (
+            f"Anomaly family breakdown panel options.text.titleSize must be >= 14px (UX-DR2), "
+            f"got {title_size}"
+        )
+
+    # ── Dashboard version ─────────────────────────────────────────────────────
+
+    def test_dashboard_version_is_at_least_6(self):
+        """Dashboard version must be >= 6 after story 3-2 panel additions (Task 4.24 / NFR12).
+        Version must be bumped from 5 to 6 to reflect the new panels."""
+        dashboard = self._load_main_dashboard()
+        assert dashboard.get("version", 0) >= 6, (
+            f"Dashboard version must be >= 6 after story 3-2, got {dashboard.get('version')}"
+        )

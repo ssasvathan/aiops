@@ -35,7 +35,7 @@
 # - Dev moves story to 'review', then runs code-review (fresh context, different LLM recommended)
 
 generated: 2026-04-11
-last_updated: 2026-04-11  # story 3-1 traceability matrix generated, gate decision: PASS
+last_updated: 2026-04-11  # story 3-2 traceability completed, gate: PASS
 # atdd_3_1_completed: 2026-04-11 — story 3-1 ATDD red-phase tests generated (16 failing, 1 vacuous-pass)
 # atdd_3_1_test_file: tests/integration/test_dashboard_validation.py (class TestGatingIntelligenceFunnel)
 # atdd_3_1_test_count: 17 new tests (16 red-fail, 1 vacuous-pass for palette guard)
@@ -60,6 +60,8 @@ last_updated: 2026-04-11  # story 3-1 traceability matrix generated, gate decisi
 # trace_2_3_file: artifact/test-artifacts/traceability/traceability-report-2-3.md
 # trace_3_1_completed: 2026-04-11 — story 3-1 traceability matrix generated, gate decision: PASS
 # trace_3_1_file: artifact/test-artifacts/traceability/traceability-report-3-1.md
+# trace_3_2_completed: 2026-04-11 — story 3-2 traceability matrix generated, gate decision: PASS
+# trace_3_2_file: artifact/test-artifacts/traceability/traceability-report-3-2.md
 project: aiOps
 project_key: NOKEY
 tracking_system: file-system
@@ -83,7 +85,7 @@ development_status:
   # Epic 3: Noise Suppression & Operational Credibility (Below-the-Fold)
   epic-3: in-progress
   3-1-gating-intelligence-funnel-per-gate-suppression: done
-  3-2-action-distribution-anomaly-family-breakdown: backlog
+  3-2-action-distribution-anomaly-family-breakdown: done
   3-3-llm-diagnosis-engine-statistics: backlog
   3-4-pipeline-capability-stack-throughput-outbox-health: backlog
   epic-3-retrospective: optional
