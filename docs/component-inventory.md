@@ -29,6 +29,21 @@
 - Contracts: `contracts/*` frozen schemas for policy and event interfaces
 - Runtime models: `models/*` stage payloads, casefile entities, and health events
 
+## Observability Dashboard Components
+
+| Component | Category | Location | Notes |
+|---|---|---|---|
+| Main Dashboard | Grafana JSON | `grafana/dashboards/aiops-main.json` | Stakeholder narrative + operational intelligence panels (IDs 1–99) |
+| Drill-Down Dashboard | Grafana JSON | `grafana/dashboards/aiops-drilldown.json` | Per-topic detail panels (IDs 100–199) |
+| Dashboard Provisioning | Grafana Config | `grafana/provisioning/dashboards/dashboards.yaml` | Auto-loads JSON dashboards on startup |
+| Prometheus Data Source | Grafana Config | `grafana/provisioning/datasources/prometheus.yaml` | UID `prometheus`, scrape interval 15s |
+| Findings Instrument | OTLP Metric | `health/metrics.py` | `aiops.findings.total` — counter with anomaly_family, action, topic, routing_key, criticality_tier labels |
+| Gating Instrument | OTLP Metric | `health/metrics.py` | `aiops.gating.evaluations_total` — counter with gate_id, outcome labels |
+| Evidence Instrument | OTLP Metric | `health/metrics.py` | `aiops.evidence.status` — gauge with scope, metric_key, topic, status labels (delta accounting) |
+| Diagnosis Instrument | OTLP Metric | `health/metrics.py` | `aiops.diagnosis.completed_total` — counter with confidence_level, fault_domain labels |
+| Color Palette Validator | Script | `scripts/validate-colors.sh` | Enforces muted palette, rejects Grafana default colors |
+
 ## UI / Design System
 
 - No frontend UI component library detected in this backend repository.
+- Grafana dashboards serve as the observability UI — see Observability Dashboard Components above.

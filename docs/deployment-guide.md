@@ -11,7 +11,8 @@
 - PostgreSQL database
 - Redis cache
 - S3-compatible object storage
-- Prometheus (for evidence collection path)
+- Prometheus (for evidence collection path and dashboard metrics)
+- Grafana (for observability dashboards — auto-provisioned via docker-compose)
 
 ## Runtime Configuration
 
@@ -138,6 +139,63 @@ docker compose up -d --build
 - Service dependency checks via `scripts/smoke-test.sh`
 - Runtime health endpoint support via `health/server.py`
 - Outbox and linkage durability tables ensured by repository schema bootstrap methods
+
+## Grafana Observability Dashboards
+
+The docker-compose stack includes Grafana OSS 12.4.2 with auto-provisioned dashboards and a Prometheus data source.
+
+### Access
+
+- Grafana: `http://localhost:3000` (anonymous admin, no login required)
+- Prometheus: `http://localhost:9090`
+
+### Dashboards
+
+| Dashboard | UID | Description |
+|-----------|-----|-------------|
+| Main | `aiops-main` | Stakeholder narrative (hero banner, topic heatmap, baseline overlay) + operational intelligence (gating funnel, action distribution, LLM stats, pipeline capability stack) |
+| Drill-Down | `aiops-drilldown` | Per-topic detail (evidence status, per-topic timeseries, findings table with action tracing). Linked from main dashboard heatmap tiles via `var-topic` |
+
+### Time Window Presets
+
+The main dashboard supports selectable time windows: **1h, 6h, 24h, 7d, 30d**. Default is **7d**.
+
+### Kiosk Mode
+
+For presentations and screen sharing, append `?kiosk` to the dashboard URL:
+
+```
+http://localhost:3000/d/aiops-main/aiops-main-dashboard?kiosk
+```
+
+### Dashboard JSON Lifecycle
+
+Dashboard JSON files in `grafana/dashboards/` are the single source of truth. The provisioning config (`allowUiUpdates: true`) allows UI editing for iterative design, but the committed JSON files are authoritative.
+
+### Pre-Demo Validation
+
+After starting the stack and completing at least one pipeline cycle:
+
+1. **Color palette enforcement** — verifies no forbidden Grafana default palette colors in dashboard JSON:
+   ```bash
+   bash scripts/validate-colors.sh
+   ```
+
+2. **Stack health** — verify all services are running:
+   ```bash
+   bash scripts/smoke-test.sh
+   ```
+
+### OTLP Instruments for Dashboards
+
+The following instruments (defined in `health/metrics.py`) feed the Grafana dashboard panels:
+
+| Instrument | Type | PromQL Name | Dashboard |
+|-----------|------|-------------|-----------|
+| `aiops.findings.total` | Counter | `aiops_findings_total` | Main (hero stat, anomaly family breakdown) |
+| `aiops.gating.evaluations_total` | Counter | `aiops_gating_evaluations_total` | Main (gating funnel, per-gate suppression) |
+| `aiops.evidence.status` | Gauge | `aiops_evidence_status` | Drill-down (evidence status panel) |
+| `aiops.diagnosis.completed_total` | Counter | `aiops_diagnosis_completed_total` | Main (diagnosis count, quality metrics) |
 
 ## Guardrails
 

@@ -45,6 +45,7 @@ _This file contains critical rules and patterns that AI agents must follow when 
   - Redis: 7.2
   - MinIO: RELEASE.2025-01-20T14-49-07Z
   - Prometheus: v2.50.1
+  - Grafana: grafana/grafana-oss:12.4.2
 
 Implementation notes:
 - `pyproject.toml` is the source of truth for app/runtime dependencies.
@@ -139,6 +140,22 @@ Implementation notes:
   - Health/telemetry signals must flow through existing health/event primitives.
   - OTLP health status numeric mapping: `HEALTHY=0`, `DEGRADED=1`, `UNAVAILABLE=2`.
   - Use `create_up_down_counter` for gauges (health status, inflight counts), `create_counter` for totals, `create_histogram` for latency.
+  - **Per-emit exception isolation**: Every OTLP metric emission call must have its own `try-except` block. Never wrap multiple emit calls in a single try-except at loop or stage level — this silently suppresses all subsequent metrics in the same scope on first error.
+  - All OTLP instruments are centralized in `health/metrics.py`. Do not create meters or instruments inline in stage code.
+  - OTLP naming convention: dotted in Python (`aiops.findings.total`), underscored in PromQL (`aiops_findings_total`).
+  - PromQL aggregation style: `sum by(label) (metric)`, never `sum(metric) by(label)`.
+  - Counter query conventions: `increase(metric[$__range])` for stat panels, `rate(metric[$__rate_interval])` for time-series panels.
+  - Label values: uppercase matching Python contract enums (`BASELINE_DEVIATION`, `PRESENT`, `OBSERVE`, `NOTIFY`, `TICKET`, `PAGE`).
+
+- Grafana dashboard framework:
+  - Dashboard JSON files in `grafana/dashboards/` are the single source of truth. Lifecycle: build panels in Grafana UI → export JSON → hand-maintain JSON as source of truth.
+  - Stable UIDs: `aiops-main` (main dashboard), `aiops-drilldown` (drill-down dashboard) — hardcoded, must survive re-provisioning.
+  - Panel ID ranges: 1–99 for main dashboard, 100–199 for drill-down dashboard.
+  - Inter-dashboard navigation: data links on heatmap tiles (`var-topic=${__field.labels.topic}`) + dashboard header link fallback.
+  - Muted color palette (UX-DR1): semantic-green `#6BAD64`, semantic-amber `#E8913A`, semantic-red `#D94452`, semantic-grey `#7A7A7A`, accent-blue `#4F87DB`, band-fill `#4F87DB` at 12% opacity. Grafana default palette colors are forbidden — enforced by `scripts/validate-colors.sh`.
+  - Zero-state pattern: `or vector(0)` for counters/gauges where zero is meaningful; Grafana `noDataMessage` for panels where absence means "pipeline hasn't run".
+  - Grafana configuration via `GF_` environment variables in docker-compose, no separate `grafana.ini`.
+  - Provisioning volumes: `./grafana/provisioning:/etc/grafana/provisioning`, `./grafana/dashboards:/var/lib/grafana/dashboards`.
 
 - Change validation rule:
   - Any change to these framework behaviors must include targeted unit/integration tests for the touched behaviors.
@@ -339,4 +356,4 @@ Implementation notes:
 - Review quarterly for outdated rules.
 - Remove rules that become obvious over time.
 
-Last Updated: 2026-03-29T00:00:00-00:00
+Last Updated: 2026-04-11T00:00:00-00:00

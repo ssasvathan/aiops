@@ -25,7 +25,8 @@ This starts:
 - Postgres
 - Redis
 - MinIO
-- Prometheus
+- Prometheus (v2.50.1, 15s scrape interval, 15d retention)
+- **Grafana** (OSS 12.4.2, `http://localhost:3000`, anonymous admin)
 - Harness
 - App container (`hot-path`)
 - Outbox publisher container (`outbox-publisher`)
@@ -83,6 +84,24 @@ bash scripts/smoke-test.sh
 ```
 
 It verifies Kafka topics, Postgres, Redis, MinIO bucket, Prometheus, and harness metrics.
+
+## Grafana Dashboards
+
+After `docker compose up`, Grafana is available at `http://localhost:3000` with two auto-provisioned dashboards:
+
+- **Main Dashboard** (`aiops-main`) — stakeholder narrative and operational intelligence
+- **Drill-Down Dashboard** (`aiops-drilldown`) — per-topic detail, linked from main dashboard heatmap
+
+Dashboards require at least one pipeline cycle to populate data. Time window defaults to 7d with presets for 1h, 6h, 24h, 7d, and 30d.
+
+For presentation mode, append `?kiosk` to the URL.
+
+### Dashboard Validation
+
+```bash
+# Verify no forbidden Grafana default palette colors in dashboard JSON
+bash scripts/validate-colors.sh
+```
 
 ## Run Pipeline Modes Manually
 

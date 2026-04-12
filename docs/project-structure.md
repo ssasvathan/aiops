@@ -14,7 +14,8 @@
 - `config/` - environment and policy configuration
 - `harness/` - test/load harness and synthetic patterns
 - `docs/` - architecture and local development documentation
-- `scripts/` - utility scripts (for example smoke tests)
+- `grafana/` - Grafana dashboard JSON files and provisioning config (dashboards, data sources)
+- `scripts/` - utility scripts (smoke tests, dashboard validation)
 - `artifact/` - planning and implementation artifacts
 
 ## Classification Rationale

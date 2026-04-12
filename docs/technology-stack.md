@@ -18,7 +18,8 @@
 | Database Toolkit | SQLAlchemy | 2.0.47 | SQLAlchemy Core repositories and schema DDL |
 | Test Framework | pytest + pytest-asyncio + testcontainers | 9.0.2 / 1.3.0 / 4.14.1 | Unit + integration testing with Docker-backed dependencies |
 | Static Analysis | Ruff | ~0.15 | Lint and style enforcement |
-| Local Infra | docker-compose | v2+ | Kafka, Postgres, Redis, MinIO, Prometheus, harness stack |
+| Dashboards | Grafana OSS | 12.4.2 | Auto-provisioned observability dashboards with Prometheus data source |
+| Local Infra | docker-compose | v2+ | Kafka, Postgres, Redis, MinIO, Prometheus, Grafana, harness stack |
 
 ## Architecture Signals From Stack
 
@@ -26,3 +27,4 @@
 - Event-driven pipeline execution model (scheduler + stage composition + outbox worker).
 - Durable integration boundary (database-backed outbox and retry-state tables).
 - Strong local parity for integration dependencies via compose stack.
+- Observability-first dashboard layer (Grafana + Prometheus auto-provisioned from JSON source of truth).
