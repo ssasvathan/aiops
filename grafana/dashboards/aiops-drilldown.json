@@ -3,7 +3,7 @@
   "title": "aiOps \u2014 Topic Drill-Down",
   "description": "Per-topic SRE triage view with evidence status, findings, and diagnosis details. Panel IDs reserved: 100\u2013199 (drill-down only; main dashboard uses 1\u201399).",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "tags": ["aiops"],
   "timezone": "browser",
   "time": {
@@ -66,6 +66,95 @@
           "expr": "sum(increase(aiops_findings_total{topic=\"$topic\"}[$__range]))",
           "refId": "A",
           "legendFormat": "{{topic}}"
+        }
+      ]
+    },
+    {
+      "id": 102,
+      "type": "stat",
+      "title": "Evidence status",
+      "description": "Per-metric evidence state for the selected topic — shows whether evidence is PRESENT, STALE, UNKNOWN, or ABSENT for each monitored metric.",
+      "transparent": true,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 4, "w": 16, "x": 8, "y": 1 },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "horizontal",
+        "textMode": "value",
+        "text": { "valueSize": 14 },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": true
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "#6BAD64", "value": null },
+              { "color": "#E8913A", "value": 1 },
+              { "color": "#7A7A7A", "value": 2 },
+              { "color": "#D94452", "value": 3 }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": { "text": "PRESENT", "color": "#6BAD64" },
+                "1": { "text": "STALE", "color": "#E8913A" },
+                "2": { "text": "UNKNOWN", "color": "#7A7A7A" },
+                "3": { "text": "ABSENT", "color": "#D94452" }
+              }
+            }
+          ],
+          "noValue": "Awaiting data"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "aiops_evidence_status{topic=\"$topic\"}",
+          "refId": "A",
+          "legendFormat": "{{metric_key}}"
+        }
+      ]
+    },
+    {
+      "id": 110,
+      "type": "timeseries",
+      "title": "Per-topic findings over time",
+      "description": "Rate of findings processed for the selected topic over the time window, broken down by final action taken.",
+      "transparent": true,
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 5 },
+      "options": {
+        "tooltip": { "mode": "multi" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "fixed", "fixedColor": "#4F87DB" },
+          "noValue": "0",
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "expr": "sum by(final_action) (rate(aiops_findings_total{topic=\"$topic\"}[$__rate_interval]))",
+          "refId": "A",
+          "legendFormat": "{{final_action}}"
         }
       ]
     }

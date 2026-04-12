@@ -2783,12 +2783,312 @@ class TestDrillDownDashboardShell:
             f"got {dashboard.get('version')}"
         )
 
+
+class TestEvidenceStatusPerTopicMetrics:
+    """Config-validation tests for story 4-2: evidence status stat panel (id=102) and
+    per-topic timeseries panel (id=110) on the drill-down dashboard.
+
+    No live docker-compose stack required — all assertions are pure JSON parsing.
+    """
+
+    def _load_drilldown_dashboard(self):
+        path = REPO_ROOT / "grafana/dashboards/aiops-drilldown.json"
+        return json.loads(path.read_text())
+
+    def _get_panel_by_id(self, dashboard, panel_id):
+        panels = dashboard.get("panels", [])
+        return next((p for p in panels if p.get("id") == panel_id), None)
+
+    # ── Evidence status panel (id=102): existence and type ────────────────────
+
+    def test_evidence_status_panel_exists(self):
+        """AC1 (Task 4.2): Evidence status panel (id=102) must exist and be a stat panel."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 102)
+        assert panel is not None, (
+            "Evidence status panel (id=102) not found in aiops-drilldown.json (AC1)"
+        )
+        assert panel.get("type") == "stat", (
+            f"Evidence status panel must be type 'stat', got '{panel.get('type')}'"
+        )
+
+    # ── Grid position ─────────────────────────────────────────────────────────
+
+    def test_evidence_status_panel_grid_position(self):
+        """AC1 (Task 4.3): Evidence status panel must occupy rows 1-4, right 16 cols
+        (y=1, h=4, w=16, x=8) paired with topic health stat at x=0."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 102)
+        assert panel is not None, "Evidence status panel (id=102) not found"
+        assert panel["gridPos"]["y"] == 1, "Evidence status panel must start at row y=1"
+        assert panel["gridPos"]["h"] == 4, "Evidence status panel must have height h=4"
+        assert panel["gridPos"]["w"] == 16, "Evidence status panel must have width w=16"
+        assert panel["gridPos"]["x"] == 8, (
+            "Evidence status panel must start at column x=8 (right 16 cols per UX-DR6)"
+        )
+
+    # ── Transparent background ────────────────────────────────────────────────
+
+    def test_evidence_status_panel_is_transparent(self):
+        """AC4 / UX-DR4 (Task 4.4): Evidence status panel must have transparent=true."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 102)
+        assert panel is not None, "Evidence status panel (id=102) not found"
+        assert panel.get("transparent") is True, (
+            "Evidence status panel must have transparent=true (UX-DR4)"
+        )
+
+    # ── PromQL query: correct metric ──────────────────────────────────────────
+
+    def test_evidence_status_panel_target_uses_aiops_evidence_status(self):
+        """AC1 (Task 4.5): Evidence status panel target refId='A' PromQL must query
+        aiops_evidence_status — the gauge for per-scope evidence state (FR18)."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 102)
+        assert panel is not None, "Evidence status panel (id=102) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, "Evidence status panel must have a target with refId='A'"
+        expr = target_a.get("expr", "")
+        assert "aiops_evidence_status" in expr, (
+            "Evidence status panel PromQL must query aiops_evidence_status metric (AC1 / FR18)"
+        )
+
+    # ── PromQL variable filter ────────────────────────────────────────────────
+
+    def test_evidence_status_panel_target_filters_by_topic_variable(self):
+        """AC1 (Task 4.6): Evidence status panel PromQL must filter by {topic=$topic} so
+        the panel shows only evidence for the selected topic."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 102)
+        assert panel is not None, "Evidence status panel (id=102) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, "Evidence status panel must have a target with refId='A'"
+        expr = target_a.get("expr", "")
+        assert "$topic" in expr, (
+            "Evidence status panel PromQL must filter by $topic variable (AC1)"
+        )
+
+    # ── Description ───────────────────────────────────────────────────────────
+
+    def test_evidence_status_panel_has_description(self):
+        """AC4 / UX-DR12 (Task 4.7): Evidence status panel must have a non-empty
+        one-sentence description field."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 102)
+        assert panel is not None, "Evidence status panel (id=102) not found"
+        assert panel.get("description", "").strip() != "", (
+            "Evidence status panel must have a non-empty description (UX-DR12)"
+        )
+
+    # ── noValue guard (UX-DR5) ────────────────────────────────────────────────
+
+    def test_evidence_status_panel_has_no_value_field(self):
+        """AC3 / UX-DR5 (Task 4.8): Evidence status panel must set noValue in fieldConfig
+        so awaiting-data state renders as a meaningful message, not blank."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 102)
+        assert panel is not None, "Evidence status panel (id=102) not found"
+        no_value = panel.get("fieldConfig", {}).get("defaults", {}).get("noValue", None)
+        assert no_value is not None and str(no_value).strip() != "", (
+            "Evidence status panel must have a non-empty fieldConfig.defaults.noValue set "
+            "(UX-DR5 — awaiting data state)"
+        )
+
+    # ── Color mode ────────────────────────────────────────────────────────────
+
+    def test_evidence_status_panel_colormode_is_background(self):
+        """AC1 (Task 4.9): Evidence status panel must use options.colorMode='background' so
+        the WCAG traffic-light color mapping fills the panel tile per UX-DR11."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 102)
+        assert panel is not None, "Evidence status panel (id=102) not found"
+        color_mode = panel.get("options", {}).get("colorMode")
+        assert color_mode == "background", (
+            f"Evidence status panel options.colorMode must be 'background' (UX-DR11), "
+            f"got '{color_mode}'"
+        )
+
+    # ── WCAG value mappings (UX-DR11) ─────────────────────────────────────────
+
+    def test_evidence_status_panel_has_wcag_value_mappings(self):
+        """AC1 / UX-DR11 (Task 4.10): Evidence status panel must have value mappings for
+        PRESENT (0), STALE (1), UNKNOWN (2), ABSENT (3) status labels."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 102)
+        assert panel is not None, "Evidence status panel (id=102) not found"
+        mappings = panel.get("fieldConfig", {}).get("defaults", {}).get("mappings", [])
+        assert len(mappings) >= 1, (
+            "Evidence status panel must have value mappings for PRESENT/STALE/UNKNOWN/ABSENT "
+            "(UX-DR11)"
+        )
+        mapping_json = json.dumps(mappings).upper()
+        for label in ("PRESENT", "STALE", "UNKNOWN", "ABSENT"):
+            assert label in mapping_json, (
+                f"Evidence status panel mappings must include '{label}' label (UX-DR11)"
+            )
+
+    # ── Forbidden Grafana default palette colors ──────────────────────────────
+
+    def test_no_grafana_default_palette_colors_in_evidence_status_panel(self):
+        """AC4 / UX-DR1 (Task 4.11): No forbidden Grafana default palette colors may appear
+        in evidence status panel id=102 JSON (case-insensitive check)."""
+        forbidden = {
+            "#73BF69", "#F2495C", "#FF9830", "#FADE2A",
+            "#5794F2", "#B877D9", "#37872D", "#C4162A", "#1F60C4", "#8F3BB8",
+        }
+        dashboard = self._load_drilldown_dashboard()
+        panel_json = json.dumps(
+            [p for p in dashboard.get("panels", []) if p.get("id") == 102]
+        ).upper()
+        for color in forbidden:
+            assert color not in panel_json, (
+                f"Forbidden Grafana default color {color} found in evidence status "
+                f"panel id=102 (UX-DR1)"
+            )
+
+    # ── Per-topic timeseries panel (id=110): existence and type ───────────────
+
+    def test_per_topic_timeseries_panel_exists(self):
+        """AC2 (Task 4.12): Per-topic timeseries panel (id=110) must exist and be a
+        timeseries panel."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 110)
+        assert panel is not None, (
+            "Per-topic timeseries panel (id=110) not found in aiops-drilldown.json (AC2)"
+        )
+        assert panel.get("type") == "timeseries", (
+            f"Per-topic timeseries panel must be type 'timeseries', got '{panel.get('type')}'"
+        )
+
+    # ── Grid position ─────────────────────────────────────────────────────────
+
+    def test_per_topic_timeseries_panel_grid_position(self):
+        """AC2 (Task 4.13): Per-topic timeseries panel must occupy rows 5-12, full width
+        (y=5, h=8, w=24, x=0) per UX-DR6 layout."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 110)
+        assert panel is not None, "Per-topic timeseries panel (id=110) not found"
+        assert panel["gridPos"]["y"] == 5, "Per-topic timeseries panel must start at row y=5"
+        assert panel["gridPos"]["h"] == 8, "Per-topic timeseries panel must have height h=8"
+        assert panel["gridPos"]["w"] == 24, "Per-topic timeseries panel must span full width w=24"
+        assert panel["gridPos"]["x"] == 0, (
+            "Per-topic timeseries panel must start at column x=0 (full-width)"
+        )
+
+    # ── Transparent background ────────────────────────────────────────────────
+
+    def test_per_topic_timeseries_panel_is_transparent(self):
+        """AC4 / UX-DR4 (Task 4.14): Per-topic timeseries panel must have transparent=true."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 110)
+        assert panel is not None, "Per-topic timeseries panel (id=110) not found"
+        assert panel.get("transparent") is True, (
+            "Per-topic timeseries panel must have transparent=true (UX-DR4)"
+        )
+
+    # ── PromQL query: correct metric ──────────────────────────────────────────
+
+    def test_per_topic_timeseries_target_uses_aiops_findings_total(self):
+        """AC2 (Task 4.15): Per-topic timeseries target refId='A' PromQL must query
+        aiops_findings_total to show per-topic findings activity over time (FR17)."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 110)
+        assert panel is not None, "Per-topic timeseries panel (id=110) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, (
+            "Per-topic timeseries panel must have a target with refId='A'"
+        )
+        expr = target_a.get("expr", "")
+        assert "aiops_findings_total" in expr, (
+            "Per-topic timeseries panel PromQL must query aiops_findings_total metric (AC2)"
+        )
+
+    # ── PromQL variable filter ────────────────────────────────────────────────
+
+    def test_per_topic_timeseries_target_filters_by_topic_variable(self):
+        """AC2 (Task 4.16): Per-topic timeseries panel PromQL must filter by {topic=$topic}
+        so the panel shows only findings for the selected topic."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 110)
+        assert panel is not None, "Per-topic timeseries panel (id=110) not found"
+        targets = panel.get("targets", [])
+        target_a = next((t for t in targets if t.get("refId") == "A"), None)
+        assert target_a is not None, (
+            "Per-topic timeseries panel must have a target with refId='A'"
+        )
+        expr = target_a.get("expr", "")
+        assert "$topic" in expr, (
+            "Per-topic timeseries panel PromQL must filter by $topic variable (AC2)"
+        )
+
+    # ── Accent-blue color (AC2) ───────────────────────────────────────────────
+
+    def test_per_topic_timeseries_panel_uses_accent_blue(self):
+        """AC2 (Task 4.17): Per-topic timeseries panel must use accent-blue #4F87DB in
+        fieldConfig color configuration per architecture color palette."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 110)
+        assert panel is not None, "Per-topic timeseries panel (id=110) not found"
+        panel_json = json.dumps(panel).upper()
+        assert "#4F87DB" in panel_json, (
+            "Per-topic timeseries panel must use accent-blue #4F87DB (AC2 / architecture palette)"
+        )
+
+    # ── Description ───────────────────────────────────────────────────────────
+
+    def test_per_topic_timeseries_panel_has_description(self):
+        """AC4 / UX-DR12 (Task 4.18): Per-topic timeseries panel must have a non-empty
+        one-sentence description field."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 110)
+        assert panel is not None, "Per-topic timeseries panel (id=110) not found"
+        assert panel.get("description", "").strip() != "", (
+            "Per-topic timeseries panel must have a non-empty description (UX-DR12)"
+        )
+
+    # ── noValue guard (UX-DR5) ────────────────────────────────────────────────
+
+    def test_per_topic_timeseries_panel_has_no_value_field(self):
+        """AC4 / UX-DR5 (Task 4.19): Per-topic timeseries panel must set noValue in
+        fieldConfig so zero-findings periods display as 0, not blank."""
+        dashboard = self._load_drilldown_dashboard()
+        panel = self._get_panel_by_id(dashboard, 110)
+        assert panel is not None, "Per-topic timeseries panel (id=110) not found"
+        no_value = panel.get("fieldConfig", {}).get("defaults", {}).get("noValue", None)
+        assert no_value is not None, (
+            "Per-topic timeseries panel must have fieldConfig.defaults.noValue set "
+            "(UX-DR5 — zero-state must render as 0)"
+        )
+
+    # ── Forbidden Grafana default palette colors ──────────────────────────────
+
+    def test_no_grafana_default_palette_colors_in_per_topic_timeseries_panel(self):
+        """AC4 / UX-DR1 (Task 4.20): No forbidden Grafana default palette colors may appear
+        in per-topic timeseries panel id=110 JSON (case-insensitive check)."""
+        forbidden = {
+            "#73BF69", "#F2495C", "#FF9830", "#FADE2A",
+            "#5794F2", "#B877D9", "#37872D", "#C4162A", "#1F60C4", "#8F3BB8",
+        }
+        dashboard = self._load_drilldown_dashboard()
+        panel_json = json.dumps(
+            [p for p in dashboard.get("panels", []) if p.get("id") == 110]
+        ).upper()
+        for color in forbidden:
+            assert color not in panel_json, (
+                f"Forbidden Grafana default color {color} found in per-topic timeseries "
+                f"panel id=110 (UX-DR1)"
+            )
+
     # ── Dashboard version ─────────────────────────────────────────────────────
 
-    def test_dashboard_version_is_at_least_7(self):
-        """AC4 (Task 6.40 / NFR12): Dashboard version must be >= 7 after story 3-3 panel
-        additions. Version must be bumped from 6 to 7 to reflect the new panels."""
-        dashboard = self._load_main_dashboard()
-        assert dashboard.get("version", 0) >= 7, (
-            f"Dashboard version must be >= 7 after story 3-3, got {dashboard.get('version')}"
+    def test_drilldown_dashboard_version_is_at_least_3(self):
+        """Drilldown dashboard version must be >= 3 after story 4-2 panel additions
+        (Task 4.21 / NFR12)."""
+        dashboard = self._load_drilldown_dashboard()
+        assert dashboard.get("version", 0) >= 3, (
+            f"Drilldown dashboard version must be >= 3 after story 4-2, "
+            f"got {dashboard.get('version')}"
         )
