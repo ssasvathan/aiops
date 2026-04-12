@@ -3649,3 +3649,62 @@ class TestTimeWindowPresetsKioskMode:
             f"Drilldown dashboard version must be >= 5 after story 5-1, "
             f"got {dashboard.get('version')}"
         )
+
+
+class TestPreDemoValidation:
+    """Config-validation tests for story 5-2: validate-colors.sh script existence and full
+    forbidden palette check across all dashboard JSON files.
+
+    No live docker-compose stack required — all assertions are pure JSON parsing or file checks.
+    """
+
+    # ── validate-colors.sh script ─────────────────────────────────────────────
+
+    def test_validate_colors_script_exists(self):
+        """AC3 (Task 2.2): scripts/validate-colors.sh must exist as a file."""
+        script_path = REPO_ROOT / "scripts/validate-colors.sh"
+        assert script_path.exists(), (
+            f"scripts/validate-colors.sh not found at {script_path} (AC3)"
+        )
+        assert script_path.is_file(), (
+            "scripts/validate-colors.sh must be a regular file (AC3)"
+        )
+
+    def test_validate_colors_script_is_executable(self):
+        """AC3 (Task 2.3): scripts/validate-colors.sh must be executable."""
+        import os
+        script_path = REPO_ROOT / "scripts/validate-colors.sh"
+        assert script_path.exists(), "scripts/validate-colors.sh not found"
+        assert os.access(script_path, os.X_OK), (
+            "scripts/validate-colors.sh must be executable (chmod +x required)"
+        )
+
+    # ── Full dashboard forbidden palette checks ───────────────────────────────
+
+    def test_main_dashboard_has_no_forbidden_colors_full_file(self):
+        """AC4 (Task 2.4): Full aiops-main.json must contain no forbidden Grafana default
+        palette colors anywhere in the file (full-file case-insensitive check)."""
+        forbidden = {
+            "#73BF69", "#F2495C", "#FF9830", "#FADE2A",
+            "#5794F2", "#B877D9", "#37872D", "#C4162A", "#1F60C4", "#8F3BB8", "#8E8E8E",
+        }
+        dashboard_text = (REPO_ROOT / "grafana/dashboards/aiops-main.json").read_text().upper()
+        for color in forbidden:
+            assert color not in dashboard_text, (
+                f"Forbidden Grafana default color {color} found in aiops-main.json (AC4)"
+            )
+
+    def test_drilldown_dashboard_has_no_forbidden_colors_full_file(self):
+        """AC4 (Task 2.5): Full aiops-drilldown.json must contain no forbidden Grafana default
+        palette colors anywhere in the file (full-file case-insensitive check)."""
+        forbidden = {
+            "#73BF69", "#F2495C", "#FF9830", "#FADE2A",
+            "#5794F2", "#B877D9", "#37872D", "#C4162A", "#1F60C4", "#8F3BB8", "#8E8E8E",
+        }
+        dashboard_text = (
+            REPO_ROOT / "grafana/dashboards/aiops-drilldown.json"
+        ).read_text().upper()
+        for color in forbidden:
+            assert color not in dashboard_text, (
+                f"Forbidden Grafana default color {color} found in aiops-drilldown.json (AC4)"
+            )
