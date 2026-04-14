@@ -154,6 +154,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./config/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./config/prometheus-rules.yml:/etc/prometheus/prometheus-rules.yml:ro
       - prometheus-data:/prometheus
 
   # OpenTelemetry Collector — receives OTLP metrics from app/outbox-publisher/cold-path
@@ -207,7 +208,7 @@ services:
     environment:
       HARNESS_PATTERN: all
       HARNESS_CYCLE_SECONDS: "60"
-      HARNESS_INTENSITY: "0.5"
+      HARNESS_INTENSITY: "0.8"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/metrics"]
       interval: 10s

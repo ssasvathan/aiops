@@ -4,23 +4,36 @@
   "description": "Stakeholder narrative and operational detail for the aiOps triage pipeline. Panel IDs reserved: 1\u201399 (main dashboard only; drill-down uses 100\u2013199).",
   "schemaVersion": 39,
   "version": 11,
-  "tags": ["aiops"],
+  "tags": [
+    "aiops"
+  ],
   "timezone": "browser",
   "time": {
     "from": "now-7d",
     "to": "now"
   },
   "timepicker": {
-    "time_options": ["1h", "6h", "24h", "7d", "30d"]
+    "time_options": [
+      "1h",
+      "6h",
+      "24h",
+      "7d",
+      "30d"
+    ]
   },
   "refresh": "30s",
   "panels": [
     {
       "id": 1,
       "type": "stat",
-      "title": "Pipeline health",
-      "description": "Aggregate health signal — green: all systems operational, amber: degraded performance, red: pipeline unavailable. (Proxy signal pending dedicated health gauge recording rule.)",
-      "gridPos": { "h": 5, "w": 24, "x": 0, "y": 0 },
+      "title": "AiOps Components health",
+      "description": "Aggregate health signal \u2014 green: all systems operational, amber: degraded performance, red: pipeline unavailable. Backed by recording rule aiops:pipeline_health:state = max(aiops_component_health_status) across all registered components.",
+      "gridPos": {
+        "h": 5,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -28,45 +41,83 @@
         "orientation": "horizontal",
         "textMode": "auto",
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         }
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "#6BAD64", "value": null },
-              { "color": "#E8913A", "value": 1 },
-              { "color": "#D94452", "value": 2 }
+              {
+                "color": "#6BAD64",
+                "value": null
+              },
+              {
+                "color": "#E8913A",
+                "value": 1
+              },
+              {
+                "color": "#D94452",
+                "value": 2
+              }
             ]
           },
           "noValue": "Awaiting first pipeline cycle",
           "mappings": [
-            { "type": "value", "options": { "0": { "text": "HEALTHY" }, "1": { "text": "DEGRADED" }, "2": { "text": "UNAVAILABLE" } } }
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "HEALTHY"
+                },
+                "1": {
+                  "text": "DEGRADED"
+                },
+                "2": {
+                  "text": "UNAVAILABLE"
+                }
+              }
+            }
           ]
         },
         "overrides": []
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(aiops_findings_total) or vector(0)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "aiops:pipeline_health:state",
+          "instant": true,
           "refId": "A",
           "legendFormat": ""
         }
       ],
-      "datasource": { "type": "prometheus", "uid": "prometheus" }
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      }
     },
     {
       "id": 2,
       "type": "stat",
       "title": "Anomalies detected & acted on",
-      "description": "Total anomalies the platform detected and dispatched an action for within the selected time window — the core P&L metric.",
-      "gridPos": { "h": 3, "w": 24, "x": 0, "y": 5 },
+      "description": "Total anomalies the platform detected and dispatched an action for within the selected time window \u2014 the core P&L metric.",
+      "gridPos": {
+        "h": 3,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -74,14 +125,19 @@
         "orientation": "horizontal",
         "textMode": "value",
         "reduceOptions": {
-          "calcs": ["sum"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         }
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "fixed", "fixedColor": "#6BAD64" },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#6BAD64"
+          },
           "unit": "short",
           "decimals": 0,
           "noValue": "Awaiting first pipeline cycle",
@@ -91,29 +147,45 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "sum(increase(aiops_findings_total[$__range])) or vector(0)",
           "refId": "A",
           "legendFormat": "Actioned in window"
         }
       ],
-      "datasource": { "type": "prometheus", "uid": "prometheus" }
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      }
     },
     {
       "id": 3,
       "type": "stat",
       "title": "Topic health",
-      "description": "Per-topic health overview — click any tile to drill down into evidence status, findings, and diagnosis for that topic.",
-      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 8 },
+      "description": "Per-topic health overview \u2014 click any tile to drill down into evidence status, findings, and diagnosis for that topic.",
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 8
+      },
       "options": {
         "colorMode": "background",
         "graphMode": "none",
         "justifyMode": "center",
         "orientation": "horizontal",
         "textMode": "value_and_name",
-        "text": { "titleSize": 14, "valueSize": 16 },
+        "text": {
+          "titleSize": 14,
+          "valueSize": 16
+        },
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": true,
           "limit": 10
@@ -121,13 +193,24 @@
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "#6BAD64", "value": null },
-              { "color": "#E8913A", "value": 1 },
-              { "color": "#D94452", "value": 2 }
+              {
+                "color": "#6BAD64",
+                "value": null
+              },
+              {
+                "color": "#E8913A",
+                "value": 1
+              },
+              {
+                "color": "#D94452",
+                "value": 2
+              }
             ]
           },
           "noValue": "Awaiting first pipeline cycle",
@@ -135,9 +218,15 @@
             {
               "type": "value",
               "options": {
-                "0": { "text": "HEALTHY" },
-                "1": { "text": "WARNING" },
-                "2": { "text": "CRITICAL" }
+                "0": {
+                  "text": "HEALTHY"
+                },
+                "1": {
+                  "text": "WARNING"
+                },
+                "2": {
+                  "text": "CRITICAL"
+                }
               }
             }
           ],
@@ -153,19 +242,30 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "sum by(topic) (increase(aiops_findings_total[$__range])) or vector(0)",
           "refId": "A",
           "legendFormat": "{{topic}}"
         }
       ],
-      "datasource": { "type": "prometheus", "uid": "prometheus" }
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      }
     },
     {
       "id": 4,
       "type": "text",
       "title": "",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 14
+      },
       "options": {
         "content": "",
         "mode": "markdown"
@@ -176,16 +276,30 @@
       "id": 5,
       "type": "timeseries",
       "title": "Baseline deviation overlay",
-      "description": "Actual detection rate (blue line) vs expected-range band (shaded) — amber markers indicate AI-detected deviations.",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 15 },
+      "description": "Actual detection rate (blue line) vs expected-range band (shaded) \u2014 amber markers indicate AI-detected deviations.",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 15
+      },
       "transparent": true,
       "options": {
-        "tooltip": { "mode": "multi", "sort": "none" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "fixed", "fixedColor": "#4F87DB" },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#4F87DB"
+          },
           "custom": {
             "lineWidth": 2,
             "fillOpacity": 0,
@@ -199,50 +313,97 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "upper_bound" },
+            "matcher": {
+              "id": "byName",
+              "options": "upper_bound"
+            },
             "properties": [
-              { "id": "custom.lineWidth", "value": 0 },
-              { "id": "custom.fillBelowTo", "value": "lower_bound" },
-              { "id": "custom.fillOpacity", "value": 12 },
-              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#4F87DB" } }
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              },
+              {
+                "id": "custom.fillBelowTo",
+                "value": "lower_bound"
+              },
+              {
+                "id": "custom.fillOpacity",
+                "value": 12
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#4F87DB"
+                }
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "lower_bound" },
+            "matcher": {
+              "id": "byName",
+              "options": "lower_bound"
+            },
             "properties": [
-              { "id": "custom.lineWidth", "value": 0 },
-              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#4F87DB" } }
+              {
+                "id": "custom.lineWidth",
+                "value": 0
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#4F87DB"
+                }
+              }
             ]
           }
         ]
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(aiops_findings_total[$__rate_interval])) or vector(0)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(increase(aiops_findings_total[$__rate_interval])) or vector(0)",
           "refId": "A",
           "legendFormat": "Detections"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
-          "expr": "sum(rate(aiops_findings_total[$__rate_interval])) * 1.3 + 0.1 or vector(0.1)",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(increase(aiops_findings_total[$__rate_interval])) * 1.3 + 1 or vector(1)",
           "refId": "B",
           "legendFormat": "upper_bound"
         },
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "vector(0)",
           "refId": "C",
           "legendFormat": "lower_bound"
         }
       ],
-      "datasource": { "type": "prometheus", "uid": "prometheus" }
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      }
     },
     {
       "id": 6,
       "type": "text",
       "title": "",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 23 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 23
+      },
       "options": {
         "content": "",
         "mode": "markdown"
@@ -253,14 +414,21 @@
       "id": 7,
       "type": "bargauge",
       "title": "Gating intelligence funnel",
-      "description": "Per-gate suppression counts showing how many findings each gate rule eliminated before dispatch — the noise-to-signal funnel.",
-      "gridPos": { "h": 6, "w": 24, "x": 0, "y": 24 },
+      "description": "Per-gate suppression counts showing how many findings each gate rule eliminated before dispatch \u2014 the noise-to-signal funnel.",
+      "gridPos": {
+        "h": 6,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
       "transparent": true,
       "options": {
         "orientation": "horizontal",
         "displayMode": "gradient",
         "reduceOptions": {
-          "calcs": ["sum"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         },
@@ -279,8 +447,14 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "#7A7A7A", "value": null },
-              { "color": "#6BAD64", "value": 0 }
+              {
+                "color": "#7A7A7A",
+                "value": null
+              },
+              {
+                "color": "#6BAD64",
+                "value": 0
+              }
             ]
           },
           "noValue": "0",
@@ -288,39 +462,70 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byFrameRefID", "options": "A" },
+            "matcher": {
+              "id": "byFrameRefID",
+              "options": "A"
+            },
             "properties": [
-              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#4F87DB" } }
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#4F87DB"
+                }
+              }
             ]
           }
         ]
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "sum by(gate_id, outcome) (increase(aiops_gating_evaluations_total[$__range]))",
           "refId": "A",
           "legendFormat": "{{gate_id}} ({{outcome}})"
         }
       ],
-      "datasource": { "type": "prometheus", "uid": "prometheus" }
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      }
     },
     {
       "id": 8,
       "type": "timeseries",
       "title": "Action distribution",
-      "description": "Rate of findings dispatched over time, broken down by action type (OBSERVE, NOTIFY, TICKET, PAGE) — confirms the platform maintains a stable, low-noise action profile.",
-      "gridPos": { "h": 5, "w": 12, "x": 0, "y": 30 },
+      "description": "Rate of findings dispatched over time, broken down by action type (OBSERVE, NOTIFY, TICKET, PAGE) \u2014 confirms the platform maintains a stable, low-noise action profile.",
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 0,
+        "y": 30
+      },
       "transparent": true,
       "options": {
-        "tooltip": { "mode": "multi", "sort": "none" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "fixed", "fixedColor": "#4F87DB" },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#4F87DB"
+          },
           "custom": {
-            "stacking": { "mode": "normal" },
+            "stacking": {
+              "mode": "normal"
+            },
             "lineWidth": 1,
             "fillOpacity": 10,
             "gradientMode": "none",
@@ -333,47 +538,94 @@
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "OBSERVE" },
+            "matcher": {
+              "id": "byName",
+              "options": "OBSERVE"
+            },
             "properties": [
-              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#4F87DB" } }
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#4F87DB"
+                }
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "NOTIFY" },
+            "matcher": {
+              "id": "byName",
+              "options": "NOTIFY"
+            },
             "properties": [
-              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#E8913A" } }
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#E8913A"
+                }
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "TICKET" },
+            "matcher": {
+              "id": "byName",
+              "options": "TICKET"
+            },
             "properties": [
-              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#D94452" } }
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#D94452"
+                }
+              }
             ]
           },
           {
-            "matcher": { "id": "byName", "options": "PAGE" },
+            "matcher": {
+              "id": "byName",
+              "options": "PAGE"
+            },
             "properties": [
-              { "id": "color", "value": { "mode": "fixed", "fixedColor": "#6BAD64" } }
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#6BAD64"
+                }
+              }
             ]
           }
         ]
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "sum by(final_action) (rate(aiops_findings_total[$__rate_interval]))",
           "refId": "A",
           "legendFormat": "{{final_action}}"
         }
       ],
-      "datasource": { "type": "prometheus", "uid": "prometheus" }
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      }
     },
     {
       "id": 9,
       "type": "barchart",
       "title": "Anomaly family breakdown",
-      "description": "Total findings in the selected time window grouped by anomaly family — shows which detection patterns (consumer lag, volume drop, throughput proxy, baseline deviation) are most active.",
-      "gridPos": { "h": 5, "w": 12, "x": 12, "y": 30 },
+      "description": "Total findings in the selected time window grouped by anomaly family \u2014 shows which detection patterns (consumer lag, volume drop, throughput proxy, baseline deviation) are most active.",
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 12,
+        "y": 30
+      },
       "transparent": true,
       "options": {
         "orientation": "horizontal",
@@ -391,8 +643,14 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "#7A7A7A", "value": null },
-              { "color": "#6BAD64", "value": 0 }
+              {
+                "color": "#7A7A7A",
+                "value": null
+              },
+              {
+                "color": "#6BAD64",
+                "value": 0
+              }
             ]
           },
           "noValue": "0"
@@ -401,20 +659,31 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "sum by(anomaly_family) (increase(aiops_findings_total[$__range]))",
           "refId": "A",
           "legendFormat": "{{anomaly_family}}"
         }
       ],
-      "datasource": { "type": "prometheus", "uid": "prometheus" }
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      }
     },
     {
       "id": 10,
       "type": "stat",
       "title": "Diagnosis invocations",
       "description": "Total LLM diagnosis engine invocations completed in the selected time window.",
-      "gridPos": { "h": 2, "w": 12, "x": 12, "y": 36 },
+      "gridPos": {
+        "h": 2,
+        "w": 12,
+        "x": 12,
+        "y": 36
+      },
       "transparent": true,
       "options": {
         "colorMode": "none",
@@ -422,36 +691,54 @@
         "justifyMode": "center",
         "orientation": "horizontal",
         "textMode": "value",
-        "text": { "valueSize": 28 },
+        "text": {
+          "valueSize": 28
+        },
         "reduceOptions": {
-          "calcs": ["sum"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         }
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "fixed", "fixedColor": "#7A7A7A" },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#7A7A7A"
+          },
           "noValue": "0"
         },
         "overrides": []
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "sum(increase(aiops_diagnosis_completed_total[$__range]))",
           "refId": "A",
           "legendFormat": "Invocations"
         }
       ],
-      "datasource": { "type": "prometheus", "uid": "prometheus" }
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      }
     },
     {
       "id": 11,
       "type": "stat",
       "title": "Fault domain identification rate",
       "description": "Percentage of completed diagnoses where a specific fault domain was identified.",
-      "gridPos": { "h": 2, "w": 12, "x": 12, "y": 38 },
+      "gridPos": {
+        "h": 2,
+        "w": 12,
+        "x": 12,
+        "y": 38
+      },
       "transparent": true,
       "options": {
         "colorMode": "background",
@@ -459,23 +746,38 @@
         "justifyMode": "center",
         "orientation": "horizontal",
         "textMode": "value",
-        "text": { "valueSize": 28 },
+        "text": {
+          "valueSize": 28
+        },
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         }
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "unit": "percentunit",
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "#7A7A7A", "value": null },
-              { "color": "#E8913A", "value": 0.5 },
-              { "color": "#6BAD64", "value": 0.8 }
+              {
+                "color": "#7A7A7A",
+                "value": null
+              },
+              {
+                "color": "#E8913A",
+                "value": 0.5
+              },
+              {
+                "color": "#6BAD64",
+                "value": 0.8
+              }
             ]
           },
           "noValue": "0"
@@ -484,20 +786,31 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "sum(increase(aiops_diagnosis_completed_total{fault_domain_present=\"true\"}[$__range])) / sum(increase(aiops_diagnosis_completed_total[$__range]))",
           "refId": "A",
           "legendFormat": "Fault domain rate"
         }
       ],
-      "datasource": { "type": "prometheus", "uid": "prometheus" }
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      }
     },
     {
       "id": 12,
       "type": "barchart",
       "title": "Confidence distribution",
       "description": "Distribution of diagnosis confidence levels (LOW, MEDIUM, HIGH) over the selected time window.",
-      "gridPos": { "h": 3, "w": 12, "x": 12, "y": 40 },
+      "gridPos": {
+        "h": 3,
+        "w": 12,
+        "x": 12,
+        "y": 40
+      },
       "transparent": true,
       "options": {
         "orientation": "horizontal",
@@ -509,12 +822,20 @@
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "#7A7A7A", "value": null },
-              { "color": "#6BAD64", "value": 0 }
+              {
+                "color": "#7A7A7A",
+                "value": null
+              },
+              {
+                "color": "#6BAD64",
+                "value": 0
+              }
             ]
           },
           "noValue": "0"
@@ -523,20 +844,31 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "sum by(confidence) (increase(aiops_diagnosis_completed_total[$__range]))",
           "refId": "A",
           "legendFormat": "{{confidence}}"
         }
       ],
-      "datasource": { "type": "prometheus", "uid": "prometheus" }
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      }
     },
     {
       "id": 13,
       "type": "stat",
       "title": "High confidence rate",
       "description": "Percentage of completed diagnoses that achieved HIGH confidence level.",
-      "gridPos": { "h": 2, "w": 12, "x": 12, "y": 43 },
+      "gridPos": {
+        "h": 2,
+        "w": 12,
+        "x": 12,
+        "y": 43
+      },
       "transparent": true,
       "options": {
         "colorMode": "background",
@@ -544,23 +876,38 @@
         "justifyMode": "center",
         "orientation": "horizontal",
         "textMode": "value",
-        "text": { "valueSize": 28 },
+        "text": {
+          "valueSize": 28
+        },
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         }
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "unit": "percentunit",
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "#7A7A7A", "value": null },
-              { "color": "#E8913A", "value": 0.5 },
-              { "color": "#6BAD64", "value": 0.7 }
+              {
+                "color": "#7A7A7A",
+                "value": null
+              },
+              {
+                "color": "#E8913A",
+                "value": 0.5
+              },
+              {
+                "color": "#6BAD64",
+                "value": 0.7
+              }
             ]
           },
           "noValue": "0"
@@ -569,20 +916,31 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "sum(increase(aiops_diagnosis_completed_total{confidence=\"HIGH\"}[$__range])) / sum(increase(aiops_diagnosis_completed_total[$__range]))",
           "refId": "A",
           "legendFormat": "High confidence rate"
         }
       ],
-      "datasource": { "type": "prometheus", "uid": "prometheus" }
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      }
     },
     {
       "id": 14,
       "type": "stat",
       "title": "Pipeline capability stack",
       "description": "Total findings processed as a proxy for overall pipeline stage activity and operational status.",
-      "gridPos": { "h": 5, "w": 12, "x": 0, "y": 36 },
+      "gridPos": {
+        "h": 5,
+        "w": 12,
+        "x": 0,
+        "y": 36
+      },
       "transparent": true,
       "options": {
         "colorMode": "background",
@@ -590,21 +948,33 @@
         "justifyMode": "center",
         "orientation": "horizontal",
         "textMode": "value_and_name",
-        "text": { "valueSize": 28 },
+        "text": {
+          "valueSize": 28
+        },
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         }
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "#7A7A7A", "value": null },
-              { "color": "#6BAD64", "value": 1 }
+              {
+                "color": "#7A7A7A",
+                "value": null
+              },
+              {
+                "color": "#6BAD64",
+                "value": 1
+              }
             ]
           },
           "noValue": "0"
@@ -613,20 +983,31 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "sum(increase(aiops_findings_total[$__range]))",
           "refId": "A",
           "legendFormat": "Pipeline activity"
         }
       ],
-      "datasource": { "type": "prometheus", "uid": "prometheus" }
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      }
     },
     {
       "id": 15,
       "type": "stat",
       "title": "Pipeline throughput",
       "description": "Total findings processed in the selected window, with sparkline to show throughput trend over time.",
-      "gridPos": { "h": 2, "w": 12, "x": 0, "y": 41 },
+      "gridPos": {
+        "h": 2,
+        "w": 12,
+        "x": 0,
+        "y": 41
+      },
       "transparent": true,
       "options": {
         "colorMode": "none",
@@ -634,36 +1015,54 @@
         "justifyMode": "center",
         "orientation": "horizontal",
         "textMode": "value_and_name",
-        "text": { "valueSize": 28 },
+        "text": {
+          "valueSize": 28
+        },
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         }
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "fixed", "fixedColor": "#7A7A7A" },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#7A7A7A"
+          },
           "noValue": "0"
         },
         "overrides": []
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "sum(increase(aiops_findings_total[$__range]))",
           "refId": "A",
           "legendFormat": "Findings processed"
         }
       ],
-      "datasource": { "type": "prometheus", "uid": "prometheus" }
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      }
     },
     {
       "id": 16,
       "type": "stat",
       "title": "Outbox health",
       "description": "Gating evaluations processed in the selected window as a proxy for outbox processing activity.",
-      "gridPos": { "h": 2, "w": 12, "x": 0, "y": 43 },
+      "gridPos": {
+        "h": 2,
+        "w": 12,
+        "x": 0,
+        "y": 43
+      },
       "transparent": true,
       "options": {
         "colorMode": "background",
@@ -671,22 +1070,37 @@
         "justifyMode": "center",
         "orientation": "horizontal",
         "textMode": "value_and_name",
-        "text": { "valueSize": 28 },
+        "text": {
+          "valueSize": 28
+        },
         "reduceOptions": {
-          "calcs": ["lastNotNull"],
+          "calcs": [
+            "lastNotNull"
+          ],
           "fields": "",
           "values": false
         }
       },
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "#D94452", "value": null },
-              { "color": "#E8913A", "value": 1 },
-              { "color": "#6BAD64", "value": 10 }
+              {
+                "color": "#D94452",
+                "value": null
+              },
+              {
+                "color": "#E8913A",
+                "value": 1
+              },
+              {
+                "color": "#6BAD64",
+                "value": 10
+              }
             ]
           },
           "noValue": "0"
@@ -695,13 +1109,19 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "prometheus" },
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
           "expr": "sum(increase(aiops_gating_evaluations_total[$__range]))",
           "refId": "A",
           "legendFormat": "Outbox health"
         }
       ],
-      "datasource": { "type": "prometheus", "uid": "prometheus" }
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      }
     }
   ],
   "templating": {
@@ -710,7 +1130,10 @@
   "annotations": {
     "list": [
       {
-        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "datasource": {
+          "type": "prometheus",
+          "uid": "prometheus"
+        },
         "enable": true,
         "expr": "increase(aiops_findings_total[$__rate_interval]) > 0",
         "hide": false,

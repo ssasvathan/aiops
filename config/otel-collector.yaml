@@ -29,6 +29,11 @@ exporters:
     # as Prometheus labels so dashboards can filter by them if needed.
     resource_to_telemetry_conversion:
       enabled: true
+    # metric_expiration defaults to 5m. Pipeline-health liveness is detected
+    # via the aiops_pipeline_hot_path_last_cycle_timestamp_seconds heartbeat
+    # staleness check (see config/prometheus-rules.yml), so aggressive
+    # expiration here is unnecessary and caused flapping on low-cadence
+    # pushers straddling the expiration boundary.
 
 extensions:
   # Health endpoint used by the docker-compose healthcheck.

@@ -1,0 +1,55 @@
+groups:
+  - name: aiops_pipeline_health
+    interval: 15s
+    rules:
+      # Aggregate pipeline health into a single stat panel signal, folded from
+      # three independent liveness signals so a dead, stuck, or partially-down
+      # pipeline all surface as UNAVAILABLE. Values: 0=HEALTHY, 1=DEGRADED,
+      # 2=UNAVAILABLE (clamped).
+      #
+      # Signal 1 — component health max. aiops_component_health_status is
+      # emitted by HealthRegistry.update() at
+      # src/aiops_triage_pipeline/health/registry.py:50, one series per
+      # component (llm, baseline_deviation, kafka_cold_path_*, ...). `max`
+      # collapses to the worst current state; `or on() vector(0)` substitutes
+      # 0 when the series is missing.
+      #
+      # Signal 2 — scrape liveness. up{job="aiops-pipeline"} is 0 when
+      # Prometheus cannot reach the otel-collector exporter. Only catches
+      # collector-down, NOT app-down (otel-collector keeps scraping even when
+      # aiops-app-1 exits). `2 * (1 - min(up))` adds +2 on scrape failure.
+      #
+      # Signal 3 — hot-path heartbeat staleness. The scheduler loop emits
+      # aiops_pipeline_hot_path_last_cycle_timestamp_seconds at the top of
+      # every cycle (src/aiops_triage_pipeline/__main__.py:_hot_path_scheduler_loop,
+      # via record_hot_path_heartbeat) as its first statement, before any
+      # await/try/except, so it advances once per cycle and stalls immediately
+      # on (a) container exit, (b) hung event loop, (c) scheduler crashed
+      # while container alive. `absent()` covers cold-start before the first
+      # heartbeat; `time() - max(gauge) > bool 60` fires when the heartbeat
+      # is stale. `2 *` adds +2 → UNAVAILABLE.
+      #
+      # Threshold 60s couples to config/.env.docker
+      # HOT_PATH_SCHEDULER_INTERVAL_SECONDS=30 and config/prometheus.yml
+      # scrape_interval=15s: 30s cycle + 15s scrape + 15s jitter headroom.
+      # If either upstream interval changes, update this threshold.
+      #
+      # Cold-start caveat: rule reads UNAVAILABLE for ~15–45s after stack
+      # boot until the app emits its first heartbeat — intentional ("pipeline
+      # has not reported yet" is not HEALTHY).
+      #
+      # clamp_max caps the sum at 2 so the panel flips to UNAVAILABLE within
+      # one rule-eval cycle of liveness loss. `on()` is required because
+      # max()/min()/absent()/time() outputs carry no labels while up{} has
+      # job/instance.
+      - record: aiops:pipeline_health:state
+        expr: |
+          clamp_max(
+            (max(aiops_component_health_status) or on() vector(0))
+            + on() (2 * (1 - min(up{job="aiops-pipeline"})))
+            + on() (2 * (
+                absent(aiops_pipeline_hot_path_last_cycle_timestamp_seconds)
+                or on() ((time() - max(aiops_pipeline_hot_path_last_cycle_timestamp_seconds)) > bool 60)
+              )),
+            2
+          )

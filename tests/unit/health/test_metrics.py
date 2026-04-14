@@ -910,3 +910,41 @@ def test_current_evidence_status_state_dict_exists_in_metrics_module() -> None:
     assert isinstance(metrics._current_evidence_status, dict), (
         "_current_evidence_status must be a dict"
     )
+
+
+class _RecordingGauge:
+    def __init__(self) -> None:
+        self.calls: list[tuple[float, dict[str, str] | None]] = []
+
+    def set(self, value: float, attributes: dict[str, str] | None = None) -> None:
+        self.calls.append((value, attributes))
+
+
+def test_record_hot_path_heartbeat_increments_counter_and_advances_gauge(monkeypatch) -> None:
+    """record_hot_path_heartbeat() advances both liveness instruments per call.
+
+    The counter increments by 1 per cycle; the gauge is set to time.time() so the
+    aiops:pipeline_health:state recording rule can detect staleness via
+    `time() - max(gauge) > 60`.
+    """
+    from aiops_triage_pipeline.health import metrics
+
+    counter = _RecordingInstrument()
+    gauge = _RecordingGauge()
+    monkeypatch.setattr(metrics, "_hot_path_cycles_total", counter)
+    monkeypatch.setattr(metrics, "_hot_path_last_cycle_timestamp_seconds", gauge)
+
+    fake_now = [1_700_000_000.0, 1_700_000_030.0]
+    monkeypatch.setattr(metrics.time, "time", lambda: fake_now.pop(0))
+
+    metrics.record_hot_path_heartbeat()
+    metrics.record_hot_path_heartbeat()
+
+    assert counter.calls == [
+        (1, {"component": "hot_path"}),
+        (1, {"component": "hot_path"}),
+    ]
+    assert gauge.calls == [
+        (1_700_000_000.0, {"component": "hot_path"}),
+        (1_700_000_030.0, {"component": "hot_path"}),
+    ]

@@ -1,5 +1,6 @@
 """OTLP metric definitions for component health and pipeline telemetry."""
 
+import time
 from collections import deque
 from threading import Lock
 from typing import Literal, NamedTuple
@@ -227,6 +228,21 @@ _diagnosis_completed_total = _meter.create_counter(
     name="aiops.diagnosis.completed_total",
     description="Total LLM diagnosis completions by confidence and fault domain presence",
     unit="1",
+)
+# Hot-path liveness heartbeat — emitted unconditionally at the top of every
+# scheduler cycle before any I/O or branching. Consumed by the
+# aiops:pipeline_health:state recording rule (config/prometheus-rules.yml) via
+# timestamp staleness, which catches container exit, hung event loops, and
+# scheduler crashes independent of HealthRegistry component state.
+_hot_path_cycles_total = _meter.create_counter(
+    name="aiops.pipeline.hot_path.cycles_total",
+    description="Total hot-path scheduler cycles started",
+    unit="1",
+)
+_hot_path_last_cycle_timestamp_seconds = _meter.create_gauge(
+    name="aiops.pipeline.hot_path.last_cycle_timestamp_seconds",
+    description="Unix timestamp (seconds) at which the most recent hot-path scheduler cycle started",
+    unit="s",
 )
 
 _prev_status_values: dict[str, int] = {}
@@ -710,4 +726,20 @@ def record_diagnosis_completed(
             "fault_domain_present": fault_domain_present,
             "topic": topic,
         },
+    )
+
+
+def record_hot_path_heartbeat() -> None:
+    """Emit hot-path liveness heartbeat (PromQL: aiops_pipeline_hot_path_cycles_total,
+    aiops_pipeline_hot_path_last_cycle_timestamp_seconds).
+
+    Must be called at the top of every scheduler cycle — before any await, I/O, or
+    branching that could short-circuit — so a mid-cycle hang still marks the gauge
+    stale. Consumed by the aiops:pipeline_health:state recording rule, which flips
+    to UNAVAILABLE when (time() - max(gauge)) > 60s.
+    """
+    _hot_path_cycles_total.add(1, attributes={"component": "hot_path"})
+    _hot_path_last_cycle_timestamp_seconds.set(
+        time.time(),
+        attributes={"component": "hot_path"},
     )

@@ -61,6 +61,7 @@ from aiops_triage_pipeline.health.metrics import (
     record_cycle_lock_fail_open,
     record_cycle_lock_yielded,
     record_finding,
+    record_hot_path_heartbeat,
     record_pipeline_peak_history_evictions,
     record_pipeline_peak_history_scope_count,
     record_shard_assignment,
@@ -825,6 +826,10 @@ async def _hot_path_scheduler_loop(
     _last_harness_cleanup_at: datetime | None = None
 
     while True:
+        # Hot-path liveness heartbeat — first statement in the loop body, before
+        # any await/try/except so a mid-cycle hang still marks the gauge stale.
+        # Consumed by the aiops:pipeline_health:state recording rule.
+        record_hot_path_heartbeat()
         evaluation_time = datetime.now(UTC)
         coordination_state.last_cycle_time_utc = evaluation_time.isoformat()
         tick = evaluate_scheduler_tick(
