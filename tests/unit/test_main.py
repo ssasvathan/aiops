@@ -1005,7 +1005,7 @@ async def test_hot_path_scheduler_loop_calls_backfill_before_first_cycle(
     # Verify key parameters passed to backfill
     kwargs = backfill_mock.call_args.kwargs
     assert kwargs["lookback_days"] == settings.BASELINE_BACKFILL_LOOKBACK_DAYS
-    assert kwargs["step_seconds"] == settings.HOT_PATH_SCHEDULER_INTERVAL_SECONDS
+    assert kwargs["step_seconds"] == __main__._BASELINE_RECOMPUTE_STEP_SECONDS
     assert kwargs["timeout_seconds"] == settings.BASELINE_BACKFILL_TIMEOUT_SECONDS
     assert kwargs["total_timeout_seconds"] == settings.BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS
     assert kwargs["metric_queries"] is metric_queries

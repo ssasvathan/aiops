@@ -165,6 +165,33 @@ _HARNESS_OBJECT_DELETE_BATCH_SIZE = 1000
 
 # Weekly recomputation interval: 7 days in seconds
 _RECOMPUTE_INTERVAL_SECONDS = 7 * 24 * 3600
+# Recompute Prometheus query step: 1 hour, matching the (dow, hour) bucket granularity.
+# Using the hot-path scheduler interval (e.g. 30s) would produce ~86 400 steps for a
+# 30-day lookback, exceeding Prometheus's 11 000-point-per-series limit (HTTP 400).
+_BASELINE_RECOMPUTE_STEP_SECONDS = 3600
+# Cooldown between recompute retries after a failure — prevents per-tick log spam
+# when Prometheus is degraded. In-process only; resets on container restart.
+_RECOMPUTE_FAILURE_COOLDOWN_SECONDS = 3600
+
+
+def _in_recompute_failure_backoff(
+    last_attempt_at: datetime | None,
+    last_success_iso: str | None,
+    now: datetime,
+    cooldown_seconds: int,
+) -> bool:
+    """Return True if a failed recompute attempt is still within the cooldown window.
+
+    Detects failure by checking whether the success timestamp (last_success_iso) was
+    recorded at or after last_attempt_at. If not, the attempt failed and retries are
+    suppressed until cooldown_seconds have elapsed.
+    """
+    if last_attempt_at is None:
+        return False
+    last_success = datetime.fromisoformat(last_success_iso) if last_success_iso else None
+    if last_success is not None and last_success >= last_attempt_at:
+        return False  # last attempt succeeded — no backoff
+    return (now - last_attempt_at).total_seconds() < cooldown_seconds
 
 
 def _should_trigger_periodic_harness_cleanup(
@@ -801,7 +828,7 @@ async def _hot_path_scheduler_loop(
                 peak_history_retention=peak_history_retention,
                 seasonal_baseline_client=seasonal_baseline_client,
                 lookback_days=settings.BASELINE_BACKFILL_LOOKBACK_DAYS,
-                step_seconds=interval_seconds,
+                step_seconds=_BASELINE_RECOMPUTE_STEP_SECONDS,
                 timeout_seconds=settings.BASELINE_BACKFILL_TIMEOUT_SECONDS,
                 total_timeout_seconds=settings.BASELINE_BACKFILL_TOTAL_TIMEOUT_SECONDS,
                 logger=logger,
@@ -822,6 +849,7 @@ async def _hot_path_scheduler_loop(
         )
 
     _recompute_task: asyncio.Task[int] | None = None
+    _recompute_last_attempt_at: datetime | None = None
     _harness_cleanup_task: asyncio.Task[None] | None = None
     _last_harness_cleanup_at: datetime | None = None
 
@@ -853,14 +881,20 @@ async def _hot_path_scheduler_loop(
             last_recompute_iso = seasonal_baseline_client.get_last_recompute()
             if _should_trigger_recompute(
                 last_recompute_iso, evaluation_time, _RECOMPUTE_INTERVAL_SECONDS
+            ) and not _in_recompute_failure_backoff(
+                _recompute_last_attempt_at,
+                last_recompute_iso,
+                evaluation_time,
+                _RECOMPUTE_FAILURE_COOLDOWN_SECONDS,
             ):
+                _recompute_last_attempt_at = evaluation_time
                 _recompute_task = asyncio.create_task(
                     _run_baseline_recompute(
                         seasonal_baseline_client=seasonal_baseline_client,
                         prometheus_client=prometheus_client,
                         metric_queries=metric_queries,
                         lookback_days=settings.BASELINE_BACKFILL_LOOKBACK_DAYS,
-                        step_seconds=settings.HOT_PATH_SCHEDULER_INTERVAL_SECONDS,
+                        step_seconds=_BASELINE_RECOMPUTE_STEP_SECONDS,
                         timeout_seconds=settings.BASELINE_BACKFILL_TIMEOUT_SECONDS,
                         logger=logger,
                     ),

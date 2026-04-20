@@ -26,7 +26,7 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "AiOps Components health",
+      "title": "AiOps Overall Components health",
       "description": "Aggregate health signal \u2014 green: all systems operational, amber: degraded performance, red: pipeline unavailable. Backed by recording rule aiops:pipeline_health:state = max(aiops_component_health_status) across all registered components.",
       "gridPos": {
         "h": 5,
@@ -111,7 +111,7 @@
       "id": 2,
       "type": "stat",
       "title": "Anomalies detected & acted on",
-      "description": "Total anomalies the platform detected and dispatched an action for within the selected time window \u2014 the core P&L metric.",
+      "description": "Total anomalies the platform detected and dispatched an action for within the selected time window",
       "gridPos": {
         "h": 3,
         "w": 24,
