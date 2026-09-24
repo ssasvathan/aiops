@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Extending baseline anomaly detection to data-quality signal</title>
+<style>
+:root{
+  --ink:#16181d; --muted:#5c6370; --faint:#8b929e;
+  --accent:#1f5fa9; --accent-soft:#eaf1fa;
+  --rule:#e2e5ea; --bg:#fff; --panel:#f7f8fa;
+  --measure:34rem;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font:400 20px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Inter,Roboto,Helvetica,Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;
+}
+main{padding:0 0 8rem}
+section{
+  max-width:64rem; margin:0 auto; padding:4.5rem 2.5rem 4rem;
+  border-bottom:1px solid var(--rule);
+}
+section:last-child{border-bottom:0}
+.num{
+  font-size:.8rem; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--accent); font-weight:650; margin:0 0 .9rem;
+}
+h1{font-size:2.9rem; line-height:1.12; letter-spacing:-.02em; margin:0 0 1.2rem; font-weight:680}
+h2{font-size:2.1rem; line-height:1.18; letter-spacing:-.018em; margin:0 0 1.3rem; font-weight:660; max-width:var(--measure)}
+h3{font-size:1.15rem; margin:2.2rem 0 .7rem; font-weight:650}
+p,li{max-width:var(--measure)}
+p{margin:0 0 1.1rem}
+ul,ol{margin:0 0 1.2rem; padding-left:1.3rem}
+li{margin:0 0 .6rem}
+strong{font-weight:640}
+em{font-style:italic; color:var(--ink)}
+a{color:var(--accent); text-underline-offset:3px}
+code{font:.88em ui-monospace,SFMono-Regular,Menlo,monospace; background:var(--panel); padding:.1em .35em; border-radius:4px}
+
+.lede{font-size:1.32rem; line-height:1.45; color:var(--ink); max-width:var(--measure)}
+.sub{color:var(--muted)}
+.tiny{font-size:.92rem; color:var(--muted)}
+
+.pull{
+  margin:1.8rem 0; padding:1.1rem 0 1.1rem 1.4rem;
+  border-left:4px solid var(--accent); font-size:1.28rem; line-height:1.4;
+  max-width:var(--measure);
+}
+.callout{
+  background:var(--accent-soft); border-radius:10px; padding:1.3rem 1.5rem;
+  margin:1.8rem 0; max-width:var(--measure);
+}
+.callout p:last-child{margin-bottom:0}
+.quiet{background:var(--panel); border-radius:10px; padding:1.3rem 1.5rem; margin:1.8rem 0; max-width:var(--measure)}
+.quiet p:last-child{margin-bottom:0}
+
+.diagram{
+  background:#fff; border:1px solid var(--rule); border-radius:12px;
+  padding:1.5rem; margin:2rem 0; overflow-x:auto; text-align:center;
+}
+.diagram svg{max-width:100%; height:auto}
+
+table{border-collapse:collapse; margin:1.6rem 0; font-size:.95rem; width:100%}
+th,td{text-align:left; padding:.7rem .9rem; border-bottom:1px solid var(--rule); vertical-align:top}
+th{font-weight:650; font-size:.82rem; letter-spacing:.06em; text-transform:uppercase; color:var(--muted)}
+
+.jump{
+  display:inline-block; font-size:.95rem; color:var(--accent);
+  border:1px solid var(--rule); border-radius:999px; padding:.3rem .85rem;
+  text-decoration:none; margin:.2rem .35rem .2rem 0; white-space:nowrap;
+}
+.jump:hover{background:var(--accent-soft); border-color:var(--accent)}
+
+.steps{list-style:none; padding:0; counter-reset:s; max-width:42rem}
+.steps li{
+  counter-increment:s; position:relative; padding-left:3rem;
+  margin:0 0 1.35rem; max-width:none;
+}
+.steps li::before{
+  content:counter(s); position:absolute; left:0; top:.1rem;
+  width:2rem; height:2rem; border-radius:50%; background:var(--accent-soft);
+  color:var(--accent); font-size:.9rem; font-weight:650;
+  display:flex; align-items:center; justify-content:center;
+}
+.time{color:var(--faint); font-variant-numeric:tabular-nums; font-size:.92rem}
+
+.cols{display:grid; grid-template-columns:1fr 1fr; gap:1.5rem; margin:1.8rem 0}
+.cols>div{background:var(--panel); border-radius:10px; padding:1.2rem 1.35rem}
+.cols h4{margin:0 0 .6rem; font-size:.82rem; letter-spacing:.08em; text-transform:uppercase; color:var(--muted)}
+.cols p{margin:0; max-width:none; font-size:.98rem}
+@media(max-width:800px){.cols{grid-template-columns:1fr}}
+
+#appendix-start{background:var(--panel); border-top:3px solid var(--accent)}
+.apx{background:var(--panel)}
+.apx .num{color:var(--muted)}
+
+nav#hud{
+  position:fixed; top:0; right:0; z-index:40; padding:.9rem 1.2rem;
+  font-size:.82rem; color:var(--faint); letter-spacing:.06em;
+  font-variant-numeric:tabular-nums; user-select:none;
+}
+#toc{
+  position:fixed; inset:0; z-index:50; background:rgba(255,255,255,.98);
+  display:none; padding:4rem 2rem; overflow-y:auto;
+}
+#toc.open{display:block}
+#toc ol{max-width:40rem; margin:0 auto; font-size:1.05rem}
+#toc a{text-decoration:none; color:var(--ink)}
+#toc a:hover{color:var(--accent)}
+#toc h3{max-width:40rem; margin:2.2rem auto .8rem; color:var(--muted); font-size:.82rem; letter-spacing:.08em; text-transform:uppercase}
+
+@media print{
+  nav#hud,#toc,.jump{display:none}
+  section{page-break-after:always; border:0; padding:1.5rem 0}
+  body{font-size:12pt}
+  .diagram{break-inside:avoid}
+}
+</style>
+</head>
+<body>
+
+<nav id="hud"><span id="hud-pos">1 / 10</span> &nbsp;·&nbsp; <span>C for contents</span></nav>
+
+<div id="toc">
+  <ol id="toc-list"></ol>
+  <h3>Appendix</h3>
+  <ol id="toc-apx"></ol>
+</div>
+
+<main>
+
+<!-- ===================== 1 ===================== -->
+<section id="s1" data-title="The ask">
+  <p class="num">The ask</p>
+  <h1>Extending baseline anomaly detection to data-quality signal</h1>
+  <p class="lede">We detect that the pipe broke. We detect nothing about what the pipe was carrying. This is a proposal to change that, and to prove it on a path we own end to end.</p>
+
+  <div class="callout">
+    <p><strong>I'm asking for one thing today: agreement on the direction.</strong> Data-quality and infrastructure signal converge into one triaged case. Detection starts in Snowflake, where the data lives, and the seam that lets it move into our own store gets built now rather than promised.</p>
+  </div>
+
+  <p>Two facts before anything else, because they change what kind of conversation this is:</p>
+  <ul>
+    <li><strong>Nothing here is blocked on another team.</strong> The proving run lives in E2's own Snowflake space, monitored by our own dbt project, correlated against metric series we already collect. We can build all of it without anyone's permission.</li>
+    <li><strong>The first deliverable is a cost probe, not the pipeline.</strong> Days of work, and it converts our largest unknown into a number before we ask anyone for anything.</li>
+  </ul>
+  <p>And nothing here is live, so every contract in this proposal is a design choice rather than a migration.</p>
+
+  <p class="tiny">This generalises to the whole medallion. I'm not asking for that today — <a href="#a1">the picture is here</a> whenever you want it.</p>
+</section>
+
+<!-- ===================== 2 ===================== -->
+<section id="s2" data-title="The problem">
+  <p class="num">The problem</p>
+  <h2>We detect the pipe, never the payload</h2>
+  <p>We detect anomalies in operational metric series — Kafka consumer lag, throughput — and turn them into triaged cases. We detect nothing about the data those topics carry.</p>
+  <p>The failures that actually reach consumers are usually not "the broker was down". They are:</p>
+  <div class="pull">"the table has a third of yesterday's rows"<br>"a column went null"<br>"the load never ran"</div>
+  <p>Today those are found by a consumer noticing — which means the blast radius is already downstream, and the person who notices is the person least able to fix it.</p>
+</section>
+
+<!-- ===================== 3 ===================== -->
+<section id="s3" data-title="The correlation problem">
+  <p class="num">The problem, second half</p>
+  <h2>Cause and impact arrive as two unrelated observations</h2>
+  <p>Even where data-quality checks exist as dbt tests, their results live in a different system from the operational signal, keyed differently, read by different people.</p>
+  <div class="pull">A stalled consumer group and the short load it caused are one incident. They arrive as two unrelated observations — or as one observation and a silence.</div>
+  <p>What we want is that both kinds of signal land in the same triaged <strong>case</strong>, keyed so the responder sees the cause and the impact together.</p>
+</section>
+
+<!-- ===================== 4 ===================== -->
+<section id="s4" data-title="What one case looks like">
+  <p class="num">The destination</p>
+  <h2>What one case looks like</h2>
+  <p class="sub">The first of six scenarios we intend to inject. Concretely, end to end:</p>
+  <ol class="steps">
+    <li><span class="time">02:14</span> &nbsp;A consumer group stalls. Lag climbs, throughput drops — two co-deviating metric series in one Kafka scope. <strong>The detector raises a finding today.</strong> It has nowhere to go.</li>
+    <li><span class="time">03:00</span> &nbsp;The daily load runs against the landing table and lands a third of the usual rows. Elementary's volume monitor — a dbt test — writes a measurement and a verdict.</li>
+    <li><span class="time">03:12</span> &nbsp;The pipeline reads that verdict and raises a <strong>DQ finding</strong> in our own vocabulary: <em>volume</em>, not Elementary's test name.</li>
+    <li>Correlation uses <strong>the measurement's own interval</strong>, widened by a lead-in margin — so the 02:14 stall, which sits well before the 03:00 measurement timestamp, falls inside the window.</li>
+    <li>The <strong>declared source mapping</strong> links that landing table back to the topic. That is the entity link; dataset identity and topic identity share nothing.</li>
+    <li><strong>One case.</strong> Root: the infrastructure scope. The dataset anomaly attaches as impact rather than opening a case of its own. Severity is derived — from how close the root sits to consumers, and from the size of the blast radius.</li>
+  </ol>
+  <div class="cols">
+    <div><h4>Today</h4><p>A lag alert nobody connects to anything, and a short table nobody notices until a consumer complains.</p></div>
+    <div><h4>After</h4><p>One case, carrying the cause, the impact, the measurement curve with its expected range, and the dbt checks that failed in the same run.</p></div>
+  </div>
+</section>
+
+<!-- ===================== 5 ===================== -->
+<section id="s5" data-title="Elementary">
+  <p class="num">The one new component</p>
+  <h2>Elementary, in one screen</h2>
+  <p><strong>It is a dbt package, and its monitors <em>are</em> dbt tests.</strong> That single fact is most of why this proposal is cheap.</p>
+  <ul>
+    <li>It writes a time-bucketed <strong>measurement history</strong> (<code>data_monitoring_metrics</code>) and <strong>verdicts</strong> (<code>elementary_test_results</code>) into tables it builds itself.</li>
+    <li>Measurements are produced <em>where the data lives</em>, by the same dbt run that builds the data.</li>
+    <li>So adding it needs <strong>no new detection infrastructure</strong> — only an egress path and a contract.</li>
+  </ul>
+  <p>What we take from it: volume, null rate, freshness. What the triage pipeline then does is the part only it can do — link the dataset back to the source, correlate with operational anomalies in the same window, decide the root, gather the blast radius, derive severity, and route.</p>
+  <p class="tiny">Elementary also stores whole raw failing rows. We never read them — <a href="#a5">what the pipeline is allowed to read</a>.</p>
+</section>
+
+<!-- ===================== 6 ===================== -->
+<section id="s6" data-title="The proving run">
+  <p class="num">v1</p>
+  <h2>A proving run on a path we own end to end</h2>
+  <p>E2 sits outside the medallion. It owns a repository and a Snowflake space holding the <strong>landing table</strong> its topic data arrives in and the <strong>consumer table</strong> it exposes for reading. v1 runs entirely there — three nodes, all ours, mimicking at small scale the downstream movement the medallion performs at large scale.</p>
+
+  <div class="diagram">
+<pre class="mermaid">
+flowchart LR
+    T[Kafka topic]
+
+    subgraph E2S[E2's Snowflake space — ours]
+        L[(Landing table)]
+        CT[(Consumer table)]
+        EL{{Elementary monitors<br>measure and judge<br>inside our own dbt project}}
+    end
+
+    subgraph TP[Triage pipeline — ours]
+        CH[(ClickHouse)]
+        D[Baseline detector]
+        SM[Source mapping<br>declared]
+        C[CASE<br>root + blast radius<br>+ derived severity]
+    end
+
+    T --> L --> CT
+    T --> M[Metric series<br>lag, throughput] --> CH --> D
+
+    L -.monitored.-> EL
+    CT -.monitored.-> EL
+
+    T -.-> SM
+    L -.-> SM
+
+    EL --&gt;|verdicts + curves| C
+    D --&gt;|metric findings| C
+    SM --&gt;|links dataset to source| C
+</pre>
+  </div>
+
+  <p>Monitors run from a minimal dbt project of ours that declares those two tables as <strong>sources</strong> and builds no models — which is also the materialisation Elementary's bucket reuse actually supports. It needs a Snowflake role and a warehouse, not another team's agreement.</p>
+
+  <div class="quiet">
+    <p><strong>No downstream consumer reads that consumer table. So this is a proving run, not a pilot</strong> — and the difference matters for what we're allowed to claim. It can prove the mechanism end to end, the cost, the correlation rate and the false-positive behaviour. It cannot prove that incidents were caught before a consumer reported them, and we don't claim it.</p>
+  </div>
+  <p>What we get in exchange: we control both ends, so we <em>inject</em> the failures instead of waiting for them. That produces evidence in week four rather than week sixteen.</p>
+</section>
+
+<!-- ===================== 7 ===================== -->
+<section id="s7" data-title="The seam">
+  <p class="num">The one structural change</p>
+  <h2>The seam gets built in v1</h2>
+  <p>The baseline detector's mathematics is series-agnostic. Everything around it is not — it was shaped by its only user.</p>
+  <div class="pull">So we rebuild it against a seam one level lower: <strong>a baseline is computed over a series identity plus the observation's own time</strong>, with cadence, bucketing, minimum history and gating treated as properties of the series kind.</div>
+  <p>That reframing is what lets a once-a-day <strong>DQ measurement series</strong> and a 300-second <strong>metric series</strong> share a detector at all. We build it in v1 even though v1 detects data-quality anomalies in Snowflake, because metric series move to ClickHouse in v1 regardless — the storage layer is being touched anyway, and nothing is live.</p>
+  <p class="tiny">The before-and-after, and what the current abstraction wrongly assumes: <a href="#a2">the seam in full (ADR-0001)</a>.</p>
+</section>
+
+<!-- ===================== 8 ===================== -->
+<section id="s8" data-title="The three hard things">
+  <p class="num">Where the difficulty actually is</p>
+  <h2>Three things that are genuinely hard</h2>
+
+  <h3>1. Linking a dataset back to its source</h3>
+  <p>Correlation needs an entity link, and dataset identity shares nothing with topic identity. The hop from <strong>source → landing table</strong> is recorded by no tool in our stack. We declare it in a <strong>source mapping</strong>. Time co-occurrence alone was rejected: it would correlate every dataset with every lag spike in the same window.</p>
+
+  <h3>2. Root dataset and blast radius</h3>
+  <p>Because data flows downstream, one upstream problem surfaces everywhere below it. So a dataset-keyed case is keyed on the <strong>root dataset</strong> — the most upstream <em>monitored</em> dataset anomalous in the window. Anomalies below it attach as blast radius rather than opening cases of their own.</p>
+  <p>The word <em>monitored</em> is load-bearing. A defect introduced where nothing is monitored surfaces as a root further downstream than its true cause, so a case whose root has a clean monitored ancestor is marked <strong>transform-suspected</strong> and is not attributed to the root's owner. How often that happens is something the proving run measures — it's the evidence for how much lineage coverage v2 needs.</p>
+
+  <h3>3. Silence</h3>
+  <p>Detection inside the pipeline cannot see the pipeline stopping. If a job never runs, Elementary produces no verdict and no measurement — <strong>the quietest failure mode produces the quietest signal.</strong> So silence is a first-class finding raised by the triage pipeline, from the set of series we expect to produce.</p>
+  <p>Cadence for the v1 set is <strong>declared</strong>, not learned. Learned cadence was our first instinct and it is blind exactly where silence matters most: a series that has never produced has nothing to learn from, so a dataset whose load never runs at all would be invisible.</p>
+</section>
+
+<!-- ===================== 9 ===================== -->
+<section id="s9" data-title="C now, A as the target">
+  <p class="num">The decision</p>
+  <h2>Detect in Snowflake now. Our own detector as the target.</h2>
+  <p>Both options put metric series in ClickHouse. They differ on <strong>one axis: where data-quality detection runs.</strong></p>
+  <div class="cols">
+    <div><h4>Option C — now</h4><p>Elementary judges, inside the dbt run. Measurements stay where they're produced. No copy, because the series already exist where the data lives.</p></div>
+    <div><h4>Option A — the target</h4><p>Our own baseline detector judges. Measurements are copied into ClickHouse. Raw curves natively; any measurement producer, not just dbt.</p></div>
+  </div>
+  <p><strong>We move to A when any one of these becomes true:</strong> Elementary's z-score proves too noisy to triage; correlation needs the raw curves rather than verdicts; or a producer of measurements outside dbt appears that Elementary cannot see.</p>
+  <p>Three things keep that door genuinely open rather than nominally:</p>
+  <ul>
+    <li>The finding vocabulary uses <strong>our own DQ families</strong> — volume, null rate, freshness, silence — not Elementary's test names, so the contract survives the switch.</li>
+    <li>Curve polling in C is a <strong>rehearsal</strong> of A.</li>
+    <li>The <strong>seam is built in v1</strong>, so A is the registration of a second series kind rather than a refactor we'd have to find appetite for at the exact moment we were unhappy with the detector.</li>
+  </ul>
+  <p class="tiny"><a href="#a4">Full comparison table</a> · <a href="#a7">Why not OpenLineage, why not Cortex</a></p>
+</section>
+
+<!-- ===================== 10 ===================== -->
+<section id="s10" data-title="How we would know it worked">
+  <p class="num">The evidence bar</p>
+  <h2>How we would know it worked</h2>
+  <p>We own both ends of this path, so we inject the failures rather than waiting for them. The headline measure is <strong>scenario coverage</strong> — six scenarios, each with an expected case shape:</p>
+  <ol>
+    <li>Consumer group stalls, load lands short → one case, infrastructure root, dataset anomaly merged.</li>
+    <li>A monitored column starts arriving null → one case, dataset root, no correlated cause.</li>
+    <li>The load job does not run → a silence finding, not a freshness anomaly.</li>
+    <li>A late-arriving backfill → <strong>no</strong> case.</li>
+    <li>A legitimate business volume spike → a case dispositioned benign-real, not wrong.</li>
+    <li>A cluster-wide stall across more than five scopes → one storm case with children attached.</li>
+  </ol>
+  <p>The last two carry the most weight: <em>a detector is proven as much by what it declines to raise as by what it raises.</em></p>
+
+  <div class="callout">
+    <p><strong>These thresholds are committed now, before the numbers exist. I'm not asking you to ratify them — I'm asking whether any of them is obviously wrong.</strong></p>
+  </div>
+  <table>
+    <tr><th>Measure</th><th>Committed rule</th></tr>
+    <tr><td><strong>False positives</strong></td><td>No more than one <em>wrong</em> case per dataset per week, sustained. If we miss it, the response is Option A or revisited sensitivity — <strong>not</strong> suppression.</td></tr>
+    <tr><td><strong>Cost</strong></td><td>Under 2% of the warehouse's existing daily credits, proceed. 2–10%, proceed and carry a per-table cost table into the platform ask. Above 10%, retune and re-probe before asking anyone for anything.</td></tr>
+    <tr><td><strong>Correlated share</strong></td><td>Above 30%, correlation stays the headline claim. 10–30%, reframe as one triage surface with correlation where it exists. Below 10%, the case merge doesn't pay for the declared graph's upkeep.</td></tr>
+  </table>
+  <p>Every case gets a human <strong>disposition</strong> — <em>actionable</em>, <em>benign-real</em>, or <em>wrong</em>. One named person, one pass a day, for the duration: a real recurring cost, and the instrument that produces the evidence. A two-way pass/fail would hide the benign-real class and push us to detune a detector that is working.</p>
+
+  <h3>Two gates</h3>
+  <p>Elementary needs roughly two weeks of history before its baseline is useful, and fourteen before seasonal comparison works.</p>
+  <ul>
+    <li><strong>Gate 1, ~4 weeks:</strong> cost number, scenario coverage, mechanism end to end, seam built. The go/no-go — and what comes back to you.</li>
+    <li><strong>Gate 2, ~16 weeks:</strong> sustained false-positive rate, correlated share, transform-suspected share, seasonal comparison live.</li>
+  </ul>
+  <p>Any false-positive number before Gate 2 is indicative, not deciding.</p>
+
+  <div class="quiet">
+    <p><strong>One thing to flag, not to decide today.</strong> After Gate 2 we'll ask the dbt platform team to carry a standard monitor set and our read grants in its tenant template. Every request has a fallback, so none of them blocks v1 — but it's an organisational conversation, and it goes better pre-socialised than cold. <a href="#a9">The full list of requests</a>.</p>
+  </div>
+  <p class="tiny">Nobody outside the triage team gets paged, for now — <a href="#a6">why</a>.</p>
+</section>
+
+<!-- ===================== APPENDIX ===================== -->
+<section id="appendix-start" class="apx" data-apx="1" data-title="Appendix">
+  <p class="num">Appendix</p>
+  <h2>Everything below is a jump target</h2>
+  <p>
+    <a class="jump" href="#a1">Where this goes</a>
+    <a class="jump" href="#a2">The seam in full</a>
+    <a class="jump" href="#a3">What it costs</a>
+    <a class="jump" href="#a4">C vs A in full</a>
+    <a class="jump" href="#a5">What the pipeline may read</a>
+    <a class="jump" href="#a6">Who gets paged</a>
+    <a class="jump" href="#a7">Not OpenLineage, not Cortex</a>
+    <a class="jump" href="#a8">Verdict egress</a>
+    <a class="jump" href="#a9">Requests of other platforms</a>
+    <a class="jump" href="#a10">The 16 ADRs</a>
+  </p>
+</section>
+
+<section id="a1" class="apx" data-apx="1" data-title="Where this goes">
+  <p class="num">Appendix A</p>
+  <h2>Where this goes</h2>
+  <p>The same machinery, applied to the medallion, is the end state. <strong>It is the ambition, not the deliverable.</strong></p>
+  <div class="diagram">
+<pre class="mermaid">
+flowchart LR
+    subgraph E2P[E2 — ours]
+        T[Kafka topic]
+        R[(Landing table)]
+        M[Metric series]
+    end
+
+    subgraph SF[Snowflake — dbt medallion, multitenant]
+        B[(bronze)]
+        S[(silver)]
+        G[(gold)]
+        H[(hosting zone)]
+        EL{{Elementary, from the<br>tenant template}}
+    end
+
+    subgraph TP[Triage pipeline — ours]
+        CH[(ClickHouse)]
+        D[Baseline detector]
+        SM[Source mapping]
+        LG[dbt lineage<br>from manifests]
+        C[CASE]
+    end
+
+    T --> R --> B
+    B --&gt;|lineage| S --&gt;|lineage| G --&gt;|lineage| H
+    T --> M --> CH --> D
+
+    B -.monitored.-> EL
+    S -.monitored.-> EL
+    G -.monitored.-> EL
+    H -.monitored.-> EL
+
+    T -.-> SM
+    EL --&gt;|verdicts + curves| C
+    D --> C
+    SM --> C
+    LG --&gt;|root and blast radius| C
+</pre>
+  </div>
+  <p>Two things in that picture are <strong>v2 requests</strong> rather than v1 mechanisms: monitors arriving through the platform's tenant template, and lineage derived from dbt manifests. Those manifests are not available to us today, and on a self-serve multitenant platform there is no single manifest spanning bronze to hosting in any case — so for v1 the graph is declared end to end. On a three-node path we own that is cheap and honest. Across the medallion it would not be, which is exactly why manifest access is a v2 prerequisite rather than a convenience.</p>
+</section>
+
+<section id="a2" class="apx" data-apx="1" data-title="The seam in full">
+  <p class="num">Appendix B</p>
+  <h2>The seam in full (ADR-0001)</h2>
+  <p>The baseline detector computes a modified z-score over MAD against seasonal buckets held in Redis, rebuilt weekly from Prometheus. The mathematics is series-agnostic. <strong>Everything around it is not:</strong></p>
+  <ul>
+    <li>Buckets derive from the hot-path cycle time rather than from the observation's own timestamp.</li>
+    <li>Bucketing is fixed at hour-of-week for every series.</li>
+    <li>Zero-variance series are silently skipped.</li>
+    <li>A finding requires two co-deviating metrics in a scope.</li>
+    <li>Scope identity is built from Prometheus labels and rejects anything without <code>env</code>, <code>cluster_id</code> and <code>topic</code>.</li>
+    <li>Severity is hard-coded.</li>
+    <li>The finding vocabulary is a closed set of Kafka families.</li>
+  </ul>
+  <p>We state that plainly rather than claiming the abstraction generalises — it was shaped by its only user. The seam sits one level lower: <strong>a baseline is computed over a series identity plus the observation's own time</strong>, with cadence, bucketing, minimum history and gating treated as properties of the series kind.</p>
+  <p>Nothing is live, so the hot path is <em>rebuilt against</em> the seam rather than migrated behind it. Building it in v1 is what turns Option A from a migration into the registration of a second series kind.</p>
+  <h3>The related contract change</h3>
+  <p><strong>One anomalous measurement raises a finding.</strong> The metric path's two-series corroboration gate exists because a lone noisy Prometheus series means little. A dataset may carry one monitor, and requiring corroboration would discard most of the signal this proposal exists to catch. Corroboration instead <em>raises severity</em>.</p>
+</section>
+
+<section id="a3" class="apx" data-apx="1" data-title="What it costs">
+  <p class="num">Appendix C</p>
+  <h2>What it costs</h2>
+  <p>Elementary's monitors are dbt tests: they run in a warehouse, on someone's credit. For the proving run that someone is us. For the medallion it would be each tenant — a real fact to put in front of you rather than hide.</p>
+  <p>We have no credit estimate, no published benchmarks exist, and any number we invented would be a guess dressed as evidence. So the <strong>first deliverable is a cost probe</strong>: Elementary on the proving run's tables with the standard monitor set and a <code>timestamp_column</code> present, measured in credits from <code>QUERY_HISTORY</code> and extrapolated per table per day. It also doubles as the history warm-up the cold start needs anyway.</p>
+  <h3>The four knobs that decide the number</h3>
+  <table>
+    <tr><th>Knob</th><th>Why it matters</th></tr>
+    <tr><td><code>timestamp_column</code></td><td>Without one, a table is full-scanned every run, produces one point per run, and supports no freshness monitor.</td></tr>
+    <tr><td>Materialisation</td><td>Bucket reuse applies only to dbt sources and incremental models. A <code>table</code>-materialised model recomputes its whole training window every run.</td></tr>
+    <tr><td>Monitor set</td><td><code>all_columns_anomalies</code> issues two queries <em>per column</em>. The standard set uses <code>column_anomalies</code> on key columns instead.</td></tr>
+    <tr><td>Coverage</td><td>Which tables are monitored at all.</td></tr>
+  </table>
+</section>
+
+<section id="a4" class="apx" data-apx="1" data-title="C vs A in full">
+  <p class="num">Appendix D</p>
+  <h2>The two options, in full</h2>
+  <table>
+    <tr><th></th><th>Option C — detect in Snowflake</th><th>Option A — detect in ClickHouse</th></tr>
+    <tr><td><strong>Who judges</strong></td><td>Elementary, inside the dbt run</td><td>Our baseline detector</td></tr>
+    <tr><td><strong>Measurements</strong></td><td>Stay where they are produced</td><td>Copied out of Snowflake into ClickHouse</td></tr>
+    <tr><td><strong>New pipeline</strong></td><td>Verdict egress and curve polling</td><td>Measurement copy and egress</td></tr>
+    <tr><td><strong>Correlation input</strong></td><td>Verdict plus a fetched curve</td><td>Raw curves, natively</td></tr>
+    <tr><td><strong>Cost lands on</strong></td><td>The warehouse running dbt</td><td>Our own infrastructure</td></tr>
+    <tr><td><strong>Coverage ceiling</strong></td><td>What dbt can see</td><td>Any measurement producer</td></tr>
+  </table>
+  <p>Both options put metric series in ClickHouse. Greenfield makes that a platform choice rather than a migration, and it removes the weekly Prometheus rebuild of Redis buckets, since history then lives in the table.</p>
+  <p><strong>Option B</strong> — data quality in Snowflake, metrics in ClickHouse, two detectors, no shared contract — was considered and dropped: it is C with the correlation goal abandoned.</p>
+  <h3>Why curve polling is mandatory, not enriching</h3>
+  <p>A passing test does not close a case. An Elementary anomaly test fires only while the bad bucket is inside <code>backfill_days</code> (default two) and then silently returns to pass, whether or not anything was fixed. A case closes when the series produces in-range measurements for <strong>three consecutive buckets</strong>, or when a human resolves it — and an absent measurement is silence, not recovery, so auto-close never fires on a bucket Elementary did not write.</p>
+  <p>"In range" is observable only from <code>data_monitoring_metrics</code>, never from verdicts. Reading curves is therefore load-bearing in Option C — which tilts the cost balance toward Option A by more than the original framing suggested.</p>
+</section>
+
+<section id="a5" class="apx" data-apx="1" data-title="What the pipeline may read">
+  <p class="num">Appendix E</p>
+  <h2>What the pipeline is allowed to read</h2>
+  <p>Elementary stores up to five whole raw failing rows per ordinary dbt test in <code>test_result_rows</code>. Those are real business records and may contain personal data, and our pipeline writes casefiles to MinIO, outside Snowflake.</p>
+  <div class="pull">The claim: <strong>the triage pipeline holds counts, rates and timings about data, never field values.</strong></div>
+  <p>"Aggregates, never the data" would be too loose to defend — <code>min</code>/<code>max</code> on a column is an aggregate <em>and</em> a value from a real record. Concretely:</p>
+  <ul>
+    <li>Grant the pipeline's role <code>USAGE</code> on database and schema and <code>SELECT</code> table by table, <em>excluding</em> <code>test_result_rows</code>.</li>
+    <li>Propose <code>test_sample_row_count: 0</code> so samples are never collected.</li>
+    <li>Keep <code>dimension_anomalies</code> and freshness's raw timestamp fields out of the monitor set.</li>
+    <li>Enable <code>column_anomalies</code> monitor types by name, excluding <code>min</code>, <code>max</code>, <code>min_length</code> and <code>max_length</code>.</li>
+  </ul>
+  <p>That costs little detection power, because every failure in the problem statement is a count, a rate or a timing.</p>
+  <p>On the multitenant platform this is not a single grant — each tenant's Elementary tables live in that tenant's own space, so <code>SELECT</code> belongs in the tenant template rather than in a conversation per team. Otherwise coverage stops depending on who adds monitors and starts depending on who grants access, which is the same failure wearing a different hat.</p>
+  <p class="tiny">One caveat for whoever implements it: Elementary's sample-gating flags are mostly undocumented and were found by reading its source, so they need verifying against the installed version.</p>
+</section>
+
+<section id="a6" class="apx" data-apx="1" data-title="Who gets paged">
+  <p class="num">Appendix F</p>
+  <h2>Who gets paged</h2>
+  <p><strong>Nobody outside the triage team, for now.</strong> Monitors applied by convention plus routing to dataset owners would page teams that asked for nothing, from a detector whose error rate we cannot yet state — the fastest way to get the whole thing muted.</p>
+  <p>Every case routes to us; we disposition and hand off by hand. Owner routing is a later step gated on the false-positive bar, which is also the moment data owners need to be told the system exists.</p>
+  <h3>Above everything: the storm case</h3>
+  <p>A cluster-wide incident makes every topic anomalous and every landing table short at once. Without a rollup that is hundreds of cases describing one event. Above five co-firing scopes in one cluster, they become one <strong>storm case</strong> with the scope cases as children, notifying once.</p>
+</section>
+
+<section id="a7" class="apx" data-apx="1" data-title="Not OpenLineage, not Cortex">
+  <p class="num">Appendix G</p>
+  <h2>Why not OpenLineage, and why not Cortex</h2>
+  <h3>OpenLineage</h3>
+  <p>It was the research's starting point as the carrier for data-quality signal, and it carries less than we need: column-level distributions have no first-party producer outside Great Expectations, streaming ingestion emits no statistics facets, and the Spark–Snowflake connector probably never fills the output counters we would read. Manual emission is real and cheaper than expected at platform level — but dbt has no extension point at all, and emitting a measurement means measuring it ourselves, which is Elementary's job.</p>
+  <p>So v1 takes <strong>no OpenLineage dependency.</strong> It remains the convergence path for lineage, on our own schedule, and publishing our declared source mapping as OpenLineage events is a stated bonus: it fills an ingestion hop the org's lineage tooling also lacks.</p>
+  <h3>Snowflake Cortex <code>ANOMALY_DETECTION</code></h3>
+  <p>Researched as a detector; an evaluated upgrade path, not v1. It is better statistics than a z-score, but it needs explicit models, manual retraining, and the same egress problem — and it would bind detection harder to Snowflake at exactly the moment the stated target is to move detection out.</p>
+</section>
+
+<section id="a8" class="apx" data-apx="1" data-title="Verdict egress">
+  <p class="num">Appendix H</p>
+  <h2>Verdict egress</h2>
+  <p>The pipeline <strong>re-reads a bounded 48-hour window every 15 minutes and deduplicates</strong>, rather than advancing a watermark. Three verified facts rule the watermark out:</p>
+  <ul>
+    <li>Elementary's result tables are append-only with no purge.</li>
+    <li><code>created_at</code> is recorded in <em>session</em> timezone, unlike its sibling columns.</li>
+    <li><code>id</code> values repeat.</li>
+  </ul>
+  <p>A cursor over a column that is neither monotonic nor timezone-stable drops rows silently, which is the worst available failure mode here. Ingestion is idempotent by construction, so re-reading is free correctness. A daily reconciliation compares verdict counts in Snowflake against findings ingested, because we cannot detect our own silence.</p>
+  <p>A case therefore exists within an hour of a verdict being written. Total latency is dominated by the load cadence, not by this pipeline: on a daily table we detect within an hour of the load finishing, and not before.</p>
+  <p>Repeat verdicts on an open case attach as recurrences, deduplicated on Elementary's own key; its own suppression state is an <code>edr</code> CLI feature invisible to a table reader, so deduplication is ours.</p>
+  <p class="tiny">Open question, a spike rather than a dependency: a Snowflake Python stored procedure writing to Kafka directly would remove the poller entirely. The Snowflake Kafka connector is ingest-only, so this is the only outbound-to-Kafka shape available.</p>
+</section>
+
+<section id="a9" class="apx" data-apx="1" data-title="Requests of other platforms">
+  <p class="num">Appendix I</p>
+  <h2>Requests of other platforms</h2>
+  <p><strong>v1 has no live cross-team request.</strong> That's a deliberate change from the first draft, which led with the dbt-platform ask. The fallback to that ask — monitor what we can reach ourselves — covers the entire proving run, so the ask isn't needed to ship or to be judged. Spending influence on it now, with no evidence, risks a "not yet" that would poison the version of the request that actually matters.</p>
+  <p>These go in after Gate 2, each with a fallback, so none of them blocks:</p>
+  <table>
+    <tr><th>Request</th><th>Owner</th><th>Why</th><th>Fallback</th></tr>
+    <tr><td><strong>Standard monitor set and our <code>SELECT</code> grants in the tenant template</strong>, opt-out per dataset</td><td>dbt platform team (in our org)</td><td>The platform is self-serve and multitenant, so coverage is decided by what a tenant's space contains at provisioning. Per-team opt-in makes coverage correlate with diligence rather than risk.</td><td>Monitor what we can reach ourselves. Covers the proving run; does not scale past it.</td></tr>
+    <tr><td><strong>Read access to dbt manifests</strong></td><td>dbt platform team</td><td>Root dataset and blast radius across the medallion need lineage; the declared graph does not scale past paths we own.</td><td>Declared graph, path by path.</td></tr>
+    <tr><td>IDP emits job metrics</td><td>IDP platform</td><td>The batch half of the correlation.</td><td>DQ anomaly with no correlated cause; case still raised.</td></tr>
+    <tr><td>IDP enables OpenLineage</td><td>IDP platform</td><td>Replaces the declared source → landing table hop for batch feeds.</td><td>Declared source mapping.</td></tr>
+    <tr><td>IDP adds a load timestamp to bronze loads</td><td>IDP platform</td><td>Without it a source gets volume only, one value per run, and no freshness.</td><td>Volume-only monitoring.</td></tr>
+  </table>
+  <p>Load timestamps on E2's tables are ours, and we will add them.</p>
+  <h3>Explicitly not covered</h3>
+  <ul>
+    <li><strong>Cross-platform reconciliation.</strong> The hosting zone is also delivered to Databricks and an on-prem lakehouse. Whether those copies match is reconciliation, not anomaly detection, and needs its own proposal.</li>
+    <li><strong>Silver and gold monitoring.</strong> v2 monitors the entry and the exit first; the zones between are where cost grows fastest and diagnostic value is lowest.</li>
+    <li><strong>Checks as baselined signal.</strong> A dbt test result is pass/fail, carried as case context, not treated as a series.</li>
+    <li><strong>Flink.</strong> No data-quality signal from stream processing in v1.</li>
+    <li><strong>Infrastructure signal above the source.</strong> A service's CPU and memory sit a level above a topic, and one application serves many topics — so one such anomaly is a shared cause across several cases at once. Extending the graph upward by a level would replace the storm case's count threshold with a real shared root. Case identity is keyed so that this is an extension rather than a redesign.</li>
+  </ul>
+</section>
+
+<section id="a10" class="apx" data-apx="1" data-title="The 16 ADRs">
+  <p class="num">Appendix J</p>
+  <h2>Sixteen decisions, all written down</h2>
+  <p class="sub">All <code>status: proposed</code>, in <code>docs/adr/</code>. Vocabulary in <code>CONTEXT.md</code>.</p>
+  <ol>
+    <li>Baseline seam keys on series identity and observation time</li>
+    <li>Source mapping declared, not derived</li>
+    <li>Case identity: infrastructure scope or dataset</li>
+    <li>OpenLineage is a lineage source, not DQ transport</li>
+    <li>ClickHouse stores metric series in both options</li>
+    <li>Detect in Snowflake now, ClickHouse detector as target</li>
+    <li>Monitors are a dbt platform default, not per-dataset opt-in</li>
+    <li>Correlation uses the measurement interval plus a lead-in margin</li>
+    <li>DQ finding and case contract</li>
+    <li>The pipeline reads aggregates, never raw rows</li>
+    <li>v1 covers the E2 path only</li>
+    <li>Cases route to the triage team until the false-positive bar is met</li>
+    <li>Verdict egress reads a re-readable window, not a watermark</li>
+    <li>Co-firing scopes roll up into a storm case</li>
+    <li>The dataset graph is declared end to end</li>
+    <li>A proving run judged at two gates against pre-committed thresholds</li>
+  </ol>
+  <h3>Three numbers that come from the proving run, not the design</h3>
+  <p>The lead-in margin, the storm threshold of five co-firing scopes, and the three-bucket recovery rule.</p>
+  <p class="tiny">Research, primary sources cited per claim: Elementary operations · medallion path facts · manual OpenLineage emission · Snowflake Cortex DQ anomaly detection · ClickHouse metrics and OpenLineage storage · OpenLineage data-quality facets.</p>
+</section>
+
+</main>
+
+<script type="module">
+import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+mermaid.initialize({
+  startOnLoad:true, theme:'base', securityLevel:'loose',
+  themeVariables:{
+    fontFamily:'ui-sans-serif,-apple-system,Segoe UI,Inter,Roboto,sans-serif',
+    fontSize:'15px',
+    primaryColor:'#eaf1fa', primaryTextColor:'#16181d', primaryBorderColor:'#1f5fa9',
+    lineColor:'#5c6370', tertiaryColor:'#f7f8fa',
+    clusterBkg:'#fbfcfd', clusterBorder:'#c9d2dd'
+  }
+});
+</script>
+
+<script>
+(function(){
+  const sections = [...document.querySelectorAll('section')];
+  const main = sections.filter(s => !s.dataset.apx);
+  const apx  = sections.filter(s => s.dataset.apx && s.id !== 'appendix-start');
+  const pos  = document.getElementById('hud-pos');
+
+  // contents
+  const fill = (el, list, prefix) => {
+    el.innerHTML = list.map((s,i) =>
+      `<li><a href="#${s.id}">${prefix ? prefix(i) : ''}${s.dataset.title}</a></li>`).join('');
+  };
+  fill(document.getElementById('toc-list'), main);
+  fill(document.getElementById('toc-apx'), apx);
+
+  const toc = document.getElementById('toc');
+  const closeToc = () => toc.classList.remove('open');
+  toc.addEventListener('click', e => { if (e.target.tagName === 'A' || e.target === toc) closeToc(); });
+
+  // position readout
+  const io = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (!e.isIntersecting) return;
+      const i = main.indexOf(e.target);
+      pos.textContent = i >= 0 ? `${i+1} / ${main.length}` : 'appendix';
+    });
+  }, {rootMargin:'-45% 0px -45% 0px'});
+  sections.forEach(s => io.observe(s));
+
+  // keyboard driving
+  let lastMain = 0;
+  const current = () => {
+    const y = window.scrollY + window.innerHeight*0.3;
+    let idx = 0;
+    sections.forEach((s,i) => { if (s.offsetTop <= y) idx = i; });
+    return idx;
+  };
+  const goto = i => {
+    i = Math.max(0, Math.min(sections.length-1, i));
+    sections[i].scrollIntoView({behavior:'smooth', block:'start'});
+  };
+  document.addEventListener('keydown', e => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key;
+    if (k === 'c' || k === 'C') { toc.classList.toggle('open'); e.preventDefault(); return; }
+    if (k === 'Escape') {
+      if (toc.classList.contains('open')) { closeToc(); return; }
+      goto(lastMain); return;                       // escape hatch: back to the main line
+    }
+    if (k === 'ArrowRight' || k === 'PageDown' || k === ' ') {
+      const i = current(); if (!sections[i].dataset.apx) lastMain = i;
+      goto(i+1); e.preventDefault();
+    }
+    if (k === 'ArrowLeft' || k === 'PageUp') {
+      const i = current(); if (!sections[i].dataset.apx) lastMain = i;
+      goto(i-1); e.preventDefault();
+    }
+  });
+  // remember the main section you jumped from
+  document.querySelectorAll('a[href^="#a"]').forEach(a => {
+    a.addEventListener('click', () => { const i = current(); if (!sections[i].dataset.apx) lastMain = i; });
+  });
+})();
+</script>
+</body>
+</html>
