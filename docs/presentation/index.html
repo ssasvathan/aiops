@@ -177,12 +177,13 @@ nav#hud{
   <h2>What one case looks like</h2>
   <p class="sub">The first of six scenarios we intend to inject. Concretely, end to end:</p>
   <ol class="steps">
-    <li><span class="time">02:14</span> &nbsp;A consumer group stalls. Lag climbs, throughput drops — two co-deviating metric series in one Kafka scope. <strong>The detector raises a finding today.</strong> It has nowhere to go.</li>
-    <li><span class="time">03:00</span> &nbsp;The daily load runs against the landing table and lands a third of the usual rows. Elementary's volume monitor — a dbt test — writes a measurement and a verdict.</li>
+    <li><span class="time">02:14 – 02:58</span> &nbsp;A consumer group stalls. Lag climbs, throughput drops — two co-deviating metric series in one Kafka scope. <strong>The detector raises a finding today.</strong> It has nowhere to go. The deviating cycles collapse into one <strong>episode</strong> with a first and last time, which is new: today each cycle would be its own finding.</li>
+    <li><span class="time">03:00</span> &nbsp;The 02:00 hour closes. The landing table took a third of its usual rows for that hour.</li>
+    <li><span class="time">03:05</span> &nbsp;The hourly dbt test runs. The 02:00–03:00 bucket is complete, so Elementary scores it and writes a measurement and a verdict. The bucket now filling is <em>ignored</em> — a half-filled hour always looks short.</li>
     <li><span class="time">03:12</span> &nbsp;The pipeline reads that verdict and raises a <strong>DQ finding</strong> in our own vocabulary: <em>volume</em>, not Elementary's test name.</li>
-    <li>Correlation uses <strong>the measurement's own interval</strong>, widened by a lead-in margin — so the 02:14 stall, which sits well before the 03:00 measurement timestamp, falls inside the window.</li>
-    <li>The <strong>declared source mapping</strong> links that landing table back to the topic. That is the entity link; dataset identity and topic identity share nothing.</li>
-    <li><strong>One case.</strong> Root: the infrastructure scope. The dataset anomaly attaches as impact rather than opening a case of its own. Severity is derived — from how close the root sits to consumers, and from the size of the blast radius.</li>
+    <li>The <strong>declared source mapping</strong> links that landing table back to the topic. <strong>That is the join.</strong> Dataset identity and topic identity share nothing, and time alone would correlate every dataset with every lag spike.</li>
+    <li>Only then does time filter the candidates: the measurement's own interval, extended back by half a bucket — <span class="time">01:30 – 03:00</span>. The episode <span class="time">02:14 – 02:58</span> overlaps it.</li>
+    <li><strong>One case, 12 minutes after the hour ended</strong> — and at worst 75, if the bucket closes just after a test run rather than just before. Root: the infrastructure scope. The dataset anomaly attaches as impact rather than opening a case of its own. Severity is derived — from how close the root sits to consumers, and from the size of the blast radius.</li>
   </ol>
   <div class="cols">
     <div><h4>Today</h4><p>A lag alert nobody connects to anything, and a short table nobody notices until a consumer complains.</p></div>
@@ -209,6 +210,10 @@ nav#hud{
   <p class="num">v1</p>
   <h2>A proving run on a path we own end to end</h2>
   <p>E2 sits outside the medallion. It owns a repository and a Snowflake space holding the <strong>landing table</strong> its topic data arrives in and the <strong>consumer table</strong> it exposes for reading. v1 runs entirely there — three nodes, all ours, mimicking at small scale the downstream movement the medallion performs at large scale.</p>
+
+  <div class="callout">
+    <p><strong>Neither hop is a daily batch.</strong> The topic streams into the landing table continuously; a separate job copies landing into the consumer table <strong>every 15 minutes</strong>. So the chain is exercised every hour rather than once a day — and the consumer table carries the landing row's load timestamp through rather than restamping, so both tables bucket on the same clock and a catch-up refills the hour that was short instead of showing up as a spike in the next one.</p>
+  </div>
 
   <div class="diagram">
 <pre class="mermaid">
@@ -257,7 +262,11 @@ flowchart LR
   <h2>The seam gets built in v1</h2>
   <p>The baseline detector's mathematics is series-agnostic. Everything around it is not — it was shaped by its only user.</p>
   <div class="pull">So we rebuild it against a seam one level lower: <strong>a baseline is computed over a series identity plus the observation's own time</strong>, with cadence, bucketing, minimum history and gating treated as properties of the series kind.</div>
-  <p>That reframing is what lets a once-a-day <strong>DQ measurement series</strong> and a 300-second <strong>metric series</strong> share a detector at all. We build it in v1 even though v1 detects data-quality anomalies in Snowflake, because metric series move to ClickHouse in v1 regardless — the storage layer is being touched anyway, and nothing is live.</p>
+  <p>That reframing is what lets an hourly <strong>DQ measurement series</strong> and a 300-second <strong>metric series</strong> share a detector at all — and a once-daily IDP series after them, without a third code path. We build it in v1 even though v1 detects data-quality anomalies in Snowflake, because metric series move to ClickHouse in v1 regardless — the storage layer is being touched anyway, and nothing is live.</p>
+  <p>Those properties are <strong>declared in one series-kind registry</strong>, not scattered across the tools that read them. That is what makes "registering a second series kind" the real shape of the work later, rather than a figure of speech.</p>
+  <div class="quiet">
+    <p><strong>Bucket width follows a rule, not a preference.</strong> The smallest shortfall a volume monitor can see is about one load unit spread over the bucket. The consumer table is copied every 15 minutes, so an <strong>hourly</strong> bucket holds four and one failed copy is a <strong>25% drop</strong>. A daily bucket would hold ninety-six, and the same failure would be a 1% drop — invisible. A once-daily IDP load gets daily buckets by the same rule.</p>
+  </div>
   <p class="tiny">The before-and-after, and what the current abstraction wrongly assumes: <a href="#a2">the seam in full (ADR-0001)</a>.</p>
 </section>
 
@@ -303,9 +312,9 @@ flowchart LR
   <h2>How we would know it worked</h2>
   <p>We own both ends of this path, so we inject the failures rather than waiting for them. The headline measure is <strong>scenario coverage</strong> — six scenarios, each with an expected case shape:</p>
   <ol>
-    <li>Consumer group stalls, load lands short → one case, infrastructure root, dataset anomaly merged.</li>
+    <li>Consumer group stalls, the hour's rows land short → one case, infrastructure root, dataset anomaly merged.</li>
     <li>A monitored column starts arriving null → one case, dataset root, no correlated cause.</li>
-    <li>The load job does not run → a silence finding, not a freshness anomaly.</li>
+    <li>The copy job stops entirely → a silence finding, not a freshness anomaly. A <em>single</em> missed copy is injected separately: an hourly bucket sees that as a 25% volume shortfall, not silence.</li>
     <li>A late-arriving backfill → <strong>no</strong> case.</li>
     <li>A legitimate business volume spike → a case dispositioned benign-real, not wrong.</li>
     <li>A cluster-wide stall across more than five scopes → one storm case with children attached.</li>
@@ -324,7 +333,7 @@ flowchart LR
   <p>Every case gets a human <strong>disposition</strong> — <em>actionable</em>, <em>benign-real</em>, or <em>wrong</em>. One named person, one pass a day, for the duration: a real recurring cost, and the instrument that produces the evidence. A two-way pass/fail would hide the benign-real class and push us to detune a detector that is working.</p>
 
   <h3>Two gates</h3>
-  <p>Elementary needs roughly two weeks of history before its baseline is useful, and fourteen before seasonal comparison works.</p>
+  <p>Elementary's cold start has two halves, weeks apart. Hourly bucketing shortens the first one sharply: a non-seasonal baseline gates on <code>min_training_set_size</code> (default 7), which on an hourly series is <strong>seven complete hours</strong> — not the two weeks a daily series would need. Seasonal comparison still takes roughly <strong>fourteen weeks</strong>, because <code>hour_of_week</code> seasonality multiplies <code>days_back</code> by seven and each seasonal bucket gains one sample per week.</p>
   <ul>
     <li><strong>Gate 1, ~4 weeks:</strong> cost number, scenario coverage, mechanism end to end, seam built. The go/no-go — and what comes back to you.</li>
     <li><strong>Gate 2, ~16 weeks:</strong> sustained false-positive rate, correlated share, transform-suspected share, seasonal comparison live.</li>
@@ -351,7 +360,7 @@ flowchart LR
     <a class="jump" href="#a7">Not OpenLineage, not Cortex</a>
     <a class="jump" href="#a8">Verdict egress</a>
     <a class="jump" href="#a9">Requests of other platforms</a>
-    <a class="jump" href="#a10">The 16 ADRs</a>
+    <a class="jump" href="#a10">The 19 ADRs</a>
   </p>
 </section>
 
@@ -418,8 +427,10 @@ flowchart LR
   </ul>
   <p>We state that plainly rather than claiming the abstraction generalises — it was shaped by its only user. The seam sits one level lower: <strong>a baseline is computed over a series identity plus the observation's own time</strong>, with cadence, bucketing, minimum history and gating treated as properties of the series kind.</p>
   <p>Nothing is live, so the hot path is <em>rebuilt against</em> the seam rather than migrated behind it. Building it in v1 is what turns Option A from a migration into the registration of a second series kind.</p>
-  <h3>The related contract change</h3>
+  <h3>Two related contract changes</h3>
   <p><strong>One anomalous measurement raises a finding.</strong> The metric path's two-series corroboration gate exists because a lone noisy Prometheus series means little. A dataset may carry one monitor, and requiring corroboration would discard most of the signal this proposal exists to catch. Corroboration instead <em>raises severity</em>.</p>
+  <p><strong>A metric finding is an episode, not a sample.</strong> Correlation needs the metric side to have a time extent, and today it has none: Prometheus is read with instant queries only, grouped by scope with no time dimension. A forty-minute stall produces one finding per cycle, each an instant. So consecutive deviating cycles collapse into one <strong>deviation episode</strong> with <code>first_seen</code> and <code>last_seen</code>.</p>
+  <p>The reason is the evidence bar, not elegance. A deviation from 02:40 to 03:20 against a window ending 03:00 puts four cycles inside and five outside — one incident becomes four correlated fragments and five orphans. <strong>Correlated share</strong> is a number we commit to at Gate 2, and it has to count incidents rather than move with scheduler alignment.</p>
 </section>
 
 <section id="a3" class="apx" data-apx="1" data-title="What it costs">
@@ -430,7 +441,8 @@ flowchart LR
   <h3>The four knobs that decide the number</h3>
   <table>
     <tr><th>Knob</th><th>Why it matters</th></tr>
-    <tr><td><code>timestamp_column</code></td><td>Without one, a table is full-scanned every run, produces one point per run, and supports no freshness monitor.</td></tr>
+    <tr><td><code>timestamp_column</code></td><td>No default. Without one: full table scan every run, one point per run, no freshness monitor, and <code>bucket_start</code> is <code>NULL</code> — which leaves correlation nothing to key on. Must be a <strong>load</strong> timestamp, not a business event timestamp.</td></tr>
+    <tr><td><code>time_bucket</code></td><td>Hourly multiplies rows ~24× against the daily default, and <code>hour</code> is the finest period Elementary offers. Not a free knob: it is part of the identity Elementary keys stored history on, so changing it <strong>forks the history</strong> and forces a full <code>days_back</code> recompute. Settled before the probe, not after.</td></tr>
     <tr><td>Materialisation</td><td>Bucket reuse applies only to dbt sources and incremental models. A <code>table</code>-materialised model recomputes its whole training window every run.</td></tr>
     <tr><td>Monitor set</td><td><code>all_columns_anomalies</code> issues two queries <em>per column</em>. The standard set uses <code>column_anomalies</code> on key columns instead.</td></tr>
     <tr><td>Coverage</td><td>Which tables are monitored at all.</td></tr>
@@ -502,7 +514,11 @@ flowchart LR
     <li><code>id</code> values repeat.</li>
   </ul>
   <p>A cursor over a column that is neither monotonic nor timezone-stable drops rows silently, which is the worst available failure mode here. Ingestion is idempotent by construction, so re-reading is free correctness. A daily reconciliation compares verdict counts in Snowflake against findings ingested, because we cannot detect our own silence.</p>
-  <p>A case therefore exists within an hour of a verdict being written. Total latency is dominated by the load cadence, not by this pipeline: on a daily table we detect within an hour of the load finishing, and not before.</p>
+  <p>A case therefore exists within an hour of a verdict being written. Total latency is set by <strong>bucket width and test cadence</strong> — not by this pipeline, and not by the load cadence. The bucket has to close, the next <code>dbt test</code> has to run, and the poll has to come round: on E2's hourly series that is <strong>a case within 75 minutes of the end of the hour the shortfall happened in</strong> — twelve if the bucket closes just before a test run, seventy-five if just after. On a daily IDP series it is a day, because a daily bucket cannot close sooner.</p>
+  <p>The monitoring project therefore runs <strong>one schedule per cadence tier</strong>, selected by tag. A single hourly run across daily-bucketed series would recompute the same two buckets twenty-four times a day for no new information.</p>
+  <h3>The bucket that has not closed</h3>
+  <p>A measurement for the hour currently filling describes a partial hour, which Elementary scores against complete ones and finds a shortfall that does not exist — <strong>one false verdict per series per run, every run</strong>, self-healing an hour later when <code>backfill_days</code> recomputes the finished bucket. Against a bar of one wrong case per dataset per week, that alone would miss by two orders of magnitude.</p>
+  <p>So the pipeline ignores any verdict or measurement whose <code>bucket_end</code> is in the future. It sits in the bounded-window read, and it is safe there because <code>bucket_end</code> — unlike <code>created_at</code> — is timezone-stable. <strong>One predicate, three readers:</strong> finding ingest would raise the false verdict; auto-close would count a half-filled bucket that happens to read in-range toward its three and close a live incident early; silence would fire for every series for the duration of its current bucket. Elementary's <code>detection_delay</code> helps only the first, and its boundary behaviour is undocumented — so it stays a cost question for the probe, not a correctness mechanism.</p>
   <p>Repeat verdicts on an open case attach as recurrences, deduplicated on Elementary's own key; its own suppression state is an <code>edr</code> CLI feature invisible to a table reader, so deduplication is ours.</p>
   <p class="tiny">Open question, a spike rather than a dependency: a Snowflake Python stored procedure writing to Kafka directly would remove the poller entirely. The Snowflake Kafka connector is ingest-only, so this is the only outbound-to-Kafka shape available.</p>
 </section>
@@ -531,9 +547,9 @@ flowchart LR
   </ul>
 </section>
 
-<section id="a10" class="apx" data-apx="1" data-title="The 16 ADRs">
+<section id="a10" class="apx" data-apx="1" data-title="The 19 ADRs">
   <p class="num">Appendix J</p>
-  <h2>Sixteen decisions, all written down</h2>
+  <h2>Nineteen decisions, all written down</h2>
   <p class="sub">All <code>status: proposed</code>, in <code>docs/adr/</code>. Vocabulary in <code>CONTEXT.md</code>.</p>
   <ol>
     <li>Baseline seam keys on series identity and observation time</li>
@@ -543,7 +559,7 @@ flowchart LR
     <li>ClickHouse stores metric series in both options</li>
     <li>Detect in Snowflake now, ClickHouse detector as target</li>
     <li>Monitors are a dbt platform default, not per-dataset opt-in</li>
-    <li>Correlation uses the measurement interval plus a lead-in margin</li>
+    <li>Correlation uses the measurement interval plus a derived lead-in margin</li>
     <li>DQ finding and case contract</li>
     <li>The pipeline reads aggregates, never raw rows</li>
     <li>v1 covers the E2 path only</li>
@@ -552,9 +568,14 @@ flowchart LR
     <li>Co-firing scopes roll up into a storm case</li>
     <li>The dataset graph is declared end to end</li>
     <li>A proving run judged at two gates against pre-committed thresholds</li>
+    <li>Copied tables propagate the load timestamp rather than restamping</li>
+    <li>Series-kind properties live in one declared registry</li>
+    <li>A metric finding is a deviation episode, not a sample</li>
   </ol>
-  <h3>Three numbers that come from the proving run, not the design</h3>
-  <p>The lead-in margin, the storm threshold of five co-firing scopes, and the three-bucket recovery rule.</p>
+  <h3>Two numbers that come from the proving run, not the design</h3>
+  <p>The storm threshold of five co-firing scopes, and the three-bucket recovery rule. The lead-in margin was a third until it became a formula — half a bucket width — so the proving run validates it rather than discovering it.</p>
+  <h3>Three facts to verify before Gate 1</h3>
+  <p>dbt's selector semantics over sources, and whether Elementary's <code>on-run-end</code> hook writes results correctly for a selected subset — the per-tier schedule depends on both. And <code>detection_delay</code>'s behaviour at bucket boundaries, which decides only whether it is worth setting for cost.</p>
   <p class="tiny">Research, primary sources cited per claim: Elementary operations · medallion path facts · manual OpenLineage emission · Snowflake Cortex DQ anomaly detection · ClickHouse metrics and OpenLineage storage · OpenLineage data-quality facets.</p>
 </section>
 
