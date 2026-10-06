@@ -46,3 +46,8 @@ artifact/test-artifacts/atdd-temp/
 
 # BMAD runner logs
 artifact/implementation-artifacts/runner-logs/
+
+# Vendored agent skills. skills-lock.json is committed; the content is
+# reinstallable from it, so the checked-out copies stay out of the repo.
+.agents/skills/
+.claude/skills/
