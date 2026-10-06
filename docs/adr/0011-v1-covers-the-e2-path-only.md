@@ -2,19 +2,26 @@
 status: proposed
 ---
 
-# v1 covers the E2 path only, from topic to hosting
+# v1 is a proving run on the E2 path, from topic to consumer table, inside E2's own Snowflake space
 
-v1 monitors datasets fed by E2, the Kafka ingestion platform we own, and follows them from the E2 repository through bronze to the hosting zone. We own the topics, the repository tables and their load timestamps, and the Kafka metric series on the other side of the correlation, so the whole loop can be proved without waiting on another team. The IDP batch path is deliberately left for v2: every ingredient it needs (job metrics, OpenLineage, load timestamps) is a request to IDP's owners, and none of them is needed to show the idea works.
+E2 does not sit in the medallion architecture. It owns a repository outside the datahub, and its Snowflake space holds the tables its data lands in and the tables it exposes for reading. v1 runs entirely there: a Kafka topic, the **landing table** it is written to, and the **consumer table** built from it — three nodes, all ours, mimicking inside E2's space the downstream movement the medallion performs at larger scale. We own the topics, the tables, their load timestamps, and the Kafka metric series on the other side of the correlation, so the whole loop can be proved without waiting on any other team.
 
-This trades breadth for speed. The reviewer will reasonably ask why the pilot skips half the ingestion landscape, and the answer is that the design already covers it: the source mapping (ADR-0002) is path-agnostic, case identity is keyed on datasets rather than Kafka scopes (ADR-0003), and the IDP requests are written up with their fallbacks. What v1 does not do is prove the batch half in practice.
+**Neither hop is a daily batch.** The topic streams into the landing table continuously, and a separate job copies the landing table into the consumer table every 15 minutes. The path therefore carries two cadences rather than one, and neither is the once-a-day shape the first draft assumed: the load cadence is no longer the dominant term in detection latency, and bucket width rather than load cadence sets the smallest shortfall we can see (ADR-0008).
+
+Monitors run from our own minimal dbt project, which declares those tables as **sources** and builds no models. Sources are also the materialisation Elementary's bucket reuse actually supports, so this is not only the cheapest path politically but the cheapest one to run. It needs a Snowflake role and a warehouse, not the platform team's agreement (ADR-0007).
+
+Because no downstream consumer reads the consumer table, this is a **proving run**, not a pilot, and it is judged accordingly (ADR-0016): it can prove mechanism, cost, correlation and false-positive behaviour, and it explicitly cannot prove that incidents were caught before a consumer reported them. Saying so is the difference between evidence and assertion.
+
+The medallion path and the IDP batch path are both v2. Every ingredient IDP needs — job metrics, OpenLineage emission, load timestamps on bronze — is a request to its owners, and the medallion additionally needs dbt manifests we do not have (ADR-0015). None of it is needed to show the idea works.
 
 ## Considered Options
 
-- **A pilot spanning both ingestion paths.** Rejected for v1: it makes first delivery depend on another team's yes, and the weakest part of the batch story (correlating a DQ anomaly with Airflow/Spark job signal) is also the slowest to arrange.
-- **Everything the platform default touches.** Rejected: the cold start means roughly two weeks before anything is useful and fourteen before seasonal comparison works, so a wide launch spends warehouse credit on datasets before there is any evidence the verdicts are worth acting on.
+- **A proving run spanning the medallion zones.** Rejected: it needs manifest access for lineage and monitors inside tenants we do not own, making first delivery depend on two other teams' yes.
+- **A proving run spanning both ingestion paths.** Rejected for v1: the weakest part of the batch story, correlating a DQ anomaly with Airflow and Spark job signal, is also the slowest to arrange.
+- **Wait for a path with real consumers.** Rejected: it trades months of delay for one metric, when the three measures that actually decide the design are all available here.
 
 ## Consequences
 
-- The v1 correlation story is the one we can demonstrate end to end: consumer lag or throughput trouble on a topic, and a volume or null-rate anomaly on the bronze table it lands in, in one case.
-- Monitors still have to be declared in dbt projects owned by data owners, so ADR-0007's platform default remains the one live cross-team ask in v1, with "monitor bronze sources and hosting ourselves" as its fallback.
-- The IDP requests move from prerequisites to v2 preparation, which is a better position to ask from: the ask arrives with a working system behind it.
+- The demonstrable correlation story is consumer lag or throughput trouble on a topic, and a volume or null-rate anomaly on the landing table it feeds, in one case.
+- The declared graph is three nodes, so root and blast radius are exercised but not stressed. The medallion is where they are stressed, and where manifest access becomes a prerequisite rather than a nice-to-have.
+- The requests of other platforms move from prerequisites to v2 preparation, which is a better position to ask from: the ask arrives with a working system behind it.

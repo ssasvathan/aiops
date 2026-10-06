@@ -14,3 +14,9 @@ We checked whether our baseline deviation detector generalizes to DQ measurement
 ## Consequences
 
 Moving computation into ClickHouse changes where the baseline is computed, not what a baseline means for each series kind. That offload does not settle this decision.
+
+The four properties named above are only real if a series kind is a thing somewhere rather than a phrase in this ADR. Gating is made concrete for DQ measurement series in ADR-0009; cadence, bucketing and minimum history are declared in the registry of ADR-0018, which is also what makes "registering a second series kind" an accurate description of the work rather than a figure of speech.
+
+The seam is built in v1, on the metric path, even though v1 detects DQ anomalies in Snowflake (ADR-0006). Metric series move to ClickHouse in v1 regardless (ADR-0005), so the detector's storage layer is being touched anyway, and building the seam then is what turns Option A from a migration into the registration of a second series kind. Deferring it until an exit criterion fires would mean deciding to move detection at the moment we have the least appetite for a refactor.
+
+Nothing is live and no one depends on the current hot path, so it is rebuilt against the new seam rather than migrated behind it. A future reader should not go looking for a migration that never happened, or for a compatibility shim that was never needed.
