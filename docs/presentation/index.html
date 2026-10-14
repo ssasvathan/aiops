@@ -419,62 +419,20 @@ flowchart LR
 </section>
 
 <!-- ===================== 8 ===================== -->
-<section id="s8" data-title="What we do not know yet">
-  <p class="num">Open questions</p>
-  <h2>What we do not know yet</h2>
-
-  <p><strong>Whether Elementary's z-score is good enough to triage on real series.</strong> This is the reason our own detector exists as a target. We find out at the second checkpoint.</p>
-
-  <p><strong>Two facts to verify against the installed versions before the run starts.</strong> dbt's selector semantics over sources, and whether Elementary's <code>on-run-end</code> hook writes results correctly for a selected subset. The per-cadence schedule depends on both.</p>
-
-  <p><strong>Where the lead-in margin should sit.</strong> Half a bucket is a reasoned starting point and not a measured one.</p>
-
-  <p><strong>How much monitoring coverage we will get.</strong> Routing accuracy depends on it, and a defect introduced in an unmonitored zone surfaces further downstream than its true cause.</p>
-
-  <p><strong>Running cost.</strong> Elementary collects metrics on every dbt invocation. We have a probe planned and no number yet.</p>
-
-  <div class="callout">
-    <p><strong>What we would like advice on.</strong> Whether treating data quality as a second signal kind on the existing substrate is the right design, and what we have missed.</p>
-  </div>
-
-  <div class="quiet">
-    <p>One thing to flag rather than decide. After the second checkpoint we will ask the dbt platform team to carry a standard monitor set and our read grants in its tenant template. Every request has a fallback, so none of them blocks v1, but it is an organisational conversation and it goes better pre-socialised than cold. <a href="#a9">The full list of requests</a>.</p>
-  </div>
-  <p class="tiny">Nobody outside the triage team gets paged, for now: <a href="#a6">why</a>.</p>
-</section>
-
-<!-- ===================== APPENDIX ===================== -->
-<section id="appendix-start" class="apx" data-apx="1" data-title="Appendix">
-  <p class="num">Appendix</p>
-  <h2>Everything below is a jump target</h2>
-  <p>
-    <a class="jump" href="#a1">Where this goes</a>
-    <a class="jump" href="#a2">The seam in full</a>
-    <a class="jump" href="#a3">What it costs</a>
-    <a class="jump" href="#a4">C vs A in full</a>
-    <a class="jump" href="#a5">What the pipeline may read</a>
-    <a class="jump" href="#a6">Who gets paged</a>
-    <a class="jump" href="#a7">Not OpenLineage, not Cortex</a>
-    <a class="jump" href="#a8">Verdict egress</a>
-    <a class="jump" href="#a9">Requests of other platforms</a>
-    <a class="jump" href="#a10">The 19 ADRs</a>
-  </p>
-</section>
-
-<section id="a1" class="apx" data-apx="1" data-title="Where this goes">
-  <p class="num">Appendix A</p>
+<section id="s8" data-title="Where this goes">
+  <p class="num">Where we are going</p>
   <h2>Where this goes</h2>
   <p>The same machinery, applied to the medallion, is the end state. <strong>It is the ambition, not the deliverable.</strong></p>
   <div class="diagram">
 <pre class="mermaid">
 flowchart LR
-    subgraph E2P[E2 — ours]
+    subgraph E2P[E2, ours]
         T[Kafka topic]
         R[(Landing table)]
         M[Metric series]
     end
 
-    subgraph SF[Snowflake — dbt medallion, multitenant]
+    subgraph SF[Snowflake, dbt medallion, multitenant]
         B[(bronze)]
         S[(silver)]
         G[(gold)]
@@ -482,7 +440,7 @@ flowchart LR
         EL{{Elementary, from the<br>tenant template}}
     end
 
-    subgraph TP[Triage pipeline — ours]
+    subgraph TP[Triage pipeline, ours]
         CH[(ClickHouse)]
         D[Baseline detector]
         SM[Source mapping]
@@ -506,7 +464,49 @@ flowchart LR
     LG --&gt;|root and blast radius| C
 </pre>
   </div>
-  <p>Two things in that picture are <strong>v2 requests</strong> rather than v1 mechanisms: monitors arriving through the platform's tenant template, and lineage derived from dbt manifests. Those manifests are not available to us today, and on a self-serve multitenant platform there is no single manifest spanning bronze to hosting in any case — so for v1 the graph is declared end to end. On a three-node path we own that is cheap and honest. Across the medallion it would not be, which is exactly why manifest access is a v2 prerequisite rather than a convenience.</p>
+  <p>Two things in that picture are <strong>v2 requests</strong> rather than v1 mechanisms: monitors arriving through the platform's tenant template, and lineage derived from dbt manifests. Those manifests are not available to us today, and on a self-serve multitenant platform there is no single manifest spanning bronze to hosting in any case, so for v1 the graph is declared end to end. On a three-node path we own that is cheap and honest. Across the medallion it would not be, which is exactly why manifest access is a v2 prerequisite rather than a convenience.</p>
+</section>
+
+<!-- ===================== APPENDIX ===================== -->
+<section id="appendix-start" class="apx" data-apx="1" data-title="Appendix">
+  <p class="num">Appendix</p>
+  <h2>Everything below is a jump target</h2>
+  <p>
+    <a class="jump" href="#a1">What we do not know yet</a>
+    <a class="jump" href="#a2">The seam in full</a>
+    <a class="jump" href="#a3">What it costs</a>
+    <a class="jump" href="#a4">C vs A in full</a>
+    <a class="jump" href="#a5">What the pipeline may read</a>
+    <a class="jump" href="#a6">Who gets paged</a>
+    <a class="jump" href="#a7">Not OpenLineage, not Cortex</a>
+    <a class="jump" href="#a8">Verdict egress</a>
+    <a class="jump" href="#a9">Requests of other platforms</a>
+    <a class="jump" href="#a10">The 19 ADRs</a>
+  </p>
+</section>
+
+<section id="a1" class="apx" data-apx="1" data-title="What we do not know yet">
+  <p class="num">Appendix A</p>
+  <h2>What we do not know yet</h2>
+
+  <p><strong>Whether Elementary's z-score is good enough to triage on real series.</strong> This is the reason our own detector exists as a target. We find out at the second checkpoint.</p>
+
+  <p><strong>Two facts to verify against the installed versions before the run starts.</strong> dbt's selector semantics over sources, and whether Elementary's <code>on-run-end</code> hook writes results correctly for a selected subset. The per-cadence schedule depends on both.</p>
+
+  <p><strong>Where the lead-in margin should sit.</strong> Half a bucket is a reasoned starting point and not a measured one.</p>
+
+  <p><strong>How much monitoring coverage we will get.</strong> Routing accuracy depends on it, and a defect introduced in an unmonitored zone surfaces further downstream than its true cause.</p>
+
+  <p><strong>Running cost.</strong> Elementary collects metrics on every dbt invocation. We have a probe planned and no number yet.</p>
+
+  <div class="callout">
+    <p><strong>What we would like advice on.</strong> Whether treating data quality as a second signal kind on the existing substrate is the right design, and what we have missed.</p>
+  </div>
+
+  <div class="quiet">
+    <p>One thing to flag rather than decide. After the second checkpoint we will ask the dbt platform team to carry a standard monitor set and our read grants in its tenant template. Every request has a fallback, so none of them blocks v1, but it is an organisational conversation and it goes better pre-socialised than cold. <a href="#a9">The full list of requests</a>.</p>
+  </div>
+  <p class="tiny">Nobody outside the triage team gets paged, for now: <a href="#a6">why</a>.</p>
 </section>
 
 <section id="a2" class="apx" data-apx="1" data-title="The seam in full">
